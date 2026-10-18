@@ -98,6 +98,9 @@ const RECTANGULAR_PATTERN_FEATURE_TYPE: [u8; 16] = [
 const MIRROR_FEATURE_TYPE: [u8; 16] = [
     0xb5, 0xa9, 0xd9, 0xfa, 0xd2, 0x11, 0x05, 0x33, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
 ];
+const REGION_SELECTION_TYPE: [u8; 16] = [
+    0x47, 0x3f, 0x20, 0xfc, 0xd1, 0x11, 0x01, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
+];
 const PROFILE_SELECTION_TYPE: [u8; 16] = [
     0x3b, 0x24, 0x77, 0xa4, 0xd1, 0x11, 0x8f, 0x96, 0x00, 0x08, 0x26, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
@@ -824,7 +827,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         FILLET_EDGE_SETS_TYPE => Some(parse_fillet_edge_sets),
         RDX_VARIABLE_TYPE => Some(parse_rdx_variable),
         SURFACE_BODY_TYPE => Some(parse_surface_body),
-        PROFILE_SELECTION_TYPE => Some(parse_profile_selection),
+        PROFILE_SELECTION_TYPE | REGION_SELECTION_TYPE => Some(parse_profile_selection),
         PLACEMENT_TYPE => Some(parse_placement),
         FILLET_EDGE_SET_TYPE => Some(parse_fillet_edge_set),
         EDGE_COLLECTION_TYPE => Some(parse_edge_collection),
@@ -1305,6 +1308,12 @@ const FILLET_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const CHAMFER_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x3f, 0x71, 0x00, 0xf9, 0xd2, 0x11, 0x8b, 0x6f, 0x60, 0x00, 0xf0, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
 ]));
+const CORNER_ROUND_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xb5, 0x4d, 0xd6, 0xf6, 0xd3, 0x11, 0xc4, 0x96, 0x60, 0x00, 0xf2, 0xb2, 0x1d, 0x6e, 0xef, 0xb0,
+]));
+const SHEET_METAL_PLATE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xc6, 0x5f, 0x58, 0x55, 0xd3, 0x11, 0x73, 0x0c, 0x60, 0x00, 0x3a, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
+]));
 const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ]));
@@ -1418,24 +1427,10 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     ),
     (
         [
-            0xb5, 0x4d, 0xd6, 0xf6, 0xd3, 0x11, 0xc4, 0x96, 0x60, 0x00, 0xf2, 0xb2, 0x1d, 0x6e,
-            0xef, 0xb0,
-        ],
-        "CornerRound",
-    ),
-    (
-        [
             0xba, 0xa8, 0x71, 0x83, 0xd3, 0x11, 0x34, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf,
             0x72, 0x4f,
         ],
         "Split",
-    ),
-    (
-        [
-            0xc6, 0x5f, 0x58, 0x55, 0xd3, 0x11, 0x73, 0x0c, 0x60, 0x00, 0x3a, 0xa9, 0x9d, 0xcc,
-            0xef, 0xb0,
-        ],
-        "SheetMetalPlate",
     ),
     (
         [
@@ -1515,6 +1510,8 @@ pub(crate) enum FeatureFamily {
     Fillet,
     Chamfer,
     Hole,
+    CornerRound,
+    SheetMetalPlate,
 }
 
 impl FeatureFamily {
@@ -1524,6 +1521,8 @@ impl FeatureFamily {
             Self::Fillet => FILLET_CLASS_ID,
             Self::Chamfer => CHAMFER_CLASS_ID,
             Self::Hole => HOLE_CLASS_ID,
+            Self::CornerRound => CORNER_ROUND_CLASS_ID,
+            Self::SheetMetalPlate => SHEET_METAL_PLATE_CLASS_ID,
         }
     }
 
@@ -1533,13 +1532,49 @@ impl FeatureFamily {
             Self::Fillet => 15,
             Self::Chamfer => 11,
             Self::Hole => 24,
+            Self::CornerRound => 15,
+            Self::SheetMetalPlate => 6,
         }
     }
 
     fn from_class_id(class_id: ClassId) -> Option<Self> {
-        [Self::Extrusion, Self::Fillet, Self::Chamfer, Self::Hole]
-            .into_iter()
-            .find(|family| family.class_id() == class_id)
+        [
+            Self::Extrusion,
+            Self::Fillet,
+            Self::Chamfer,
+            Self::Hole,
+            Self::CornerRound,
+            Self::SheetMetalPlate,
+        ]
+        .into_iter()
+        .find(|family| family.class_id() == class_id)
+    }
+
+    pub(crate) fn from_label_class(class_id: ClassId) -> Option<Self> {
+        Self::from_class_id(class_id)
+    }
+
+    /// Whether `definition` is the neutral operation this label family projects to.
+    pub(crate) fn accepts(self, definition: &FeatureDefinition) -> bool {
+        matches!(
+            (self, definition),
+            (
+                Self::Extrusion,
+                FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+            ) | (
+                Self::Fillet | Self::CornerRound,
+                FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+            ) | (
+                Self::Chamfer,
+                FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+            ) | (
+                Self::Hole,
+                FeatureDefinition::Operation(FeatureOperation::Hole { .. })
+            ) | (
+                Self::SheetMetalPlate,
+                FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. })
+            )
+        )
     }
 
     pub(crate) fn from_definition(definition: &FeatureDefinition) -> Option<Self> {
@@ -1548,6 +1583,9 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. }) => {
+                Some(Self::SheetMetalPlate)
+            }
             _ => None,
         }
     }
@@ -1563,6 +1601,7 @@ struct ProjectionIndex<'a> {
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
+    containing_labels: HashMap<(&'a str, u32), Option<&'a PmDcFeatureLabel>>,
 }
 
 pub(crate) fn project(
@@ -1685,6 +1724,31 @@ pub(crate) fn project(
         },
         "index Inventor feature directions",
     )?;
+    let (unique_containing_labels, _containing_labels_storage) = ctx.unique_index(
+        inventory.labels.iter().flat_map(|label| {
+            label
+                .participants
+                .references()
+                .iter()
+                .filter_map(move |reference| {
+                    Some((
+                        (
+                            label.identity.segment_token.as_str(),
+                            reference.record_ordinal()?,
+                        ),
+                        label,
+                    ))
+                })
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor containing labels", 0, u64::MAX)
+                })
+        },
+        "index Inventor containing labels",
+    )?;
     let (unique_work_planes, _work_planes_storage) = ctx.unique_index(
         inventory.work_planes.iter().map(|record| {
             (
@@ -1781,6 +1845,7 @@ pub(crate) fn project(
             links
         },
         work_planes: unique_work_planes,
+        containing_labels: unique_containing_labels,
     };
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
@@ -1829,6 +1894,8 @@ pub(crate) fn project(
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
+                FeatureFamily::CornerRound => project_corner_round(ctx, feature, label, &index),
+                FeatureFamily::SheetMetalPlate => project_plate(ctx, feature, label, &index),
             }
             .transpose()?,
             None => None,
@@ -2219,6 +2286,8 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Fillet => NativeFeatureKind::Fillet,
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
+            FeatureFamily::CornerRound => NativeFeatureKind::Other("CornerRound".into()),
+            FeatureFamily::SheetMetalPlate => NativeFeatureKind::Other("SheetMetalPlate".into()),
         };
     }
     NATIVE_CLASSES
@@ -2508,6 +2577,177 @@ fn termination_target(
     Some(cadmpeg_ir::features::FaceSelection::Native(surface.id()))
 }
 
+/// Project the plate of a sheet-metal face: a planar profile from the face's
+/// sketch thickened along the sketch normal.
+fn project_plate(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    let references = source.properties.references();
+    if references.len() != 15
+        || [4, 5].into_iter().chain(9..15).any(|slot| {
+            references
+                .get(slot)
+                .is_none_or(|reference| reference.index() != 0)
+        })
+    {
+        return None;
+    }
+    let selection = slot_property(source, 0, index)?;
+    let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &selection.kind else {
+        return None;
+    };
+    if !index
+        .entity_style_links
+        .contains(&(token, entity_link.index().checked_sub(1)?))
+    {
+        return None;
+    }
+    if boolean(source, 2, index)? {
+        return None;
+    }
+    let thickness =
+        cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 3, index)?).ok()?;
+    let edges = slot_property(source, 7, index)?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &edges.kind
+    else {
+        return None;
+    };
+    if !items.references().is_empty() {
+        return None;
+    }
+    let wrapper = index
+        .containing_labels
+        .get(&(token, source.identity.record_ordinal))
+        .and_then(Option::as_ref)?;
+    let members = wrapper.participants.references();
+    let [first, second] = members else {
+        return None;
+    };
+    if second.record_ordinal() != Some(source.identity.record_ordinal) {
+        return None;
+    }
+    let sketch = index
+        .sketches
+        .get(&(token, first.record_ordinal()?))
+        .and_then(Option::as_ref)?;
+    if sketch.direction.index() == 0 || sketch.direction != *references.get(1)? {
+        return None;
+    }
+    let sketch_id = index.sketch_ids.get(sketch.id().as_str())?;
+    let sketch_id = match sketch_id.try_clone_for_decode(ctx, "retain Inventor plate sketch id") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(selection.id_len()?),
+        "retain Inventor plate selection id",
+    ) {
+        return Some(Err(error));
+    }
+    let profile = match PlanarProfileRef::sketch_selection(sketch_id, vec![selection.id()], ctx) {
+        Ok(Ok(profile)) => profile,
+        Ok(Err(_)) => return None,
+        Err(limit) => return Some(Err(limit.into())),
+    };
+    let (feature_id, result) = match body_result(ctx, source, 6, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = admit_projected_feature(ctx, source, label, "sheet_metal_plate") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: label.name().map(str::to_owned),
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("sheet_metal_plate".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
+                    profile,
+                    thickness,
+                    side: cadmpeg_ir::features::SheetMetalThicknessSide::Forward,
+                }),
+            ),
+            native_ref: Some(source.id()),
+        },
+        result,
+    )))
+}
+
+/// Result topology of a feature whose output slot names one surface body.
+fn body_result(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
+    let body = slot_property(source, slot, index)?;
+    if !matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
+        return None;
+    }
+    let body_id = cadmpeg_core::text::NonBlankString::new(body.id())?;
+    let members = match cadmpeg_ir::features::FeatureResultMembers::new(
+        vec![body_id],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        ctx,
+        "precheck Inventor feature result body",
+    ) {
+        Ok(Ok(members)) => members,
+        Ok(Err(_)) => return None,
+        Err(limit) => return Some(Err(limit.into())),
+    };
+    let compose = || -> Result<(FeatureId, FeatureResultTopologyId), CodecError> {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                body.id_len()
+                    .and_then(|length| length.checked_mul(3))
+                    .ok_or_else(|| CodecError::malformed("Inventor body id length overflows"))?,
+            ),
+            "retain Inventor feature result identities",
+        )?;
+        ctx.charge_collection_items(1, "project Inventor feature result topology")?;
+        ctx.charge_entities(1, "project Inventor feature result topology")?;
+        Ok((
+            FeatureId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+                source.identity.key(ctx)?,
+            ),
+            FeatureResultTopologyId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-result"),
+                source.identity.key(ctx)?,
+            ),
+        ))
+    };
+    let (feature_id, result_id) = match compose() {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let output_of = match feature_id.try_clone_for_decode(ctx, "retain Inventor feature result id")
+    {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok((
+        feature_id,
+        FeatureResultTopology::new(result_id, output_of, members, Some(body.id())),
+    )))
+}
+
 fn admit_projected_feature(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
@@ -2538,6 +2778,32 @@ fn project_fillet(
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    project_edge_round(ctx, source, label, index, false)
+}
+
+/// A sheet-metal corner round is a constant-radius edge round whose edge
+/// sets may omit the continuity Boolean.
+fn project_corner_round(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    project_edge_round(ctx, source, label, index, true).map(|projected| {
+        projected.map(|(mut feature, result)| {
+            feature.source_tag = Some("corner_round".into());
+            (feature, result)
+        })
+    })
+}
+
+fn project_edge_round(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    continuity_optional: bool,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     if enum16(source, 11, PmDcFeatureEnumFamily::Fillet, index)? != 0
         || source.properties.references().get(1)?.index() != 0
@@ -2573,15 +2839,17 @@ fn project_fillet(
                 type_value: 4,
                 value: 0
             }
-        ) || !matches!(
-            resolve_property(
-                source.identity.segment_token.as_str(),
-                continuity.index(),
-                index
-            )?
-            .kind,
-            PmDcFeaturePropertyKind::Boolean { value: false, .. }
-        ) {
+        ) || !((continuity_optional && continuity.index() == 0)
+            || matches!(
+                resolve_property(
+                    source.identity.segment_token.as_str(),
+                    continuity.index(),
+                    index
+                )?
+                .kind,
+                PmDcFeaturePropertyKind::Boolean { value: false, .. }
+            ))
+        {
             return None;
         }
         let edge_collection =

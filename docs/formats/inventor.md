@@ -293,7 +293,7 @@ The part-operation, extent, hole-form, fillet-form, and chamfer-form records use
 
 Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
 
-Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
+Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Types `3b2477a4d1118f96000826bd0663dc09` and `473f20fcd11101cf000835bd0663dc09` add an entity-link reference and one u8 value. They are the profile selection and the region selection. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
 A feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
 
@@ -328,7 +328,7 @@ Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge s
 
 Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges.
 
-Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively.
+Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, `1a7d751fd2119c54a00020803603c8c9`, `c65f5855d311730c60003aa99dccefb0`, and `b54dd6f6d311c4966000f2b21d6eefb0` identify extrusion, fillet, chamfer, hole, sheet-metal plate, and corner-round records respectively.
 
 An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 2, 4, 5, 6, and 7 mean fixed dimension, symmetric fixed dimension, through next, through all, from-to, and to. A fixed dimension uses the slot-4 length. Extent 2 occurs only with a true symmetric-extent Boolean, and its length is the total travel split evenly around the profile plane. A true symmetric-extent Boolean with extent 5 extends through all material on both sides of the profile plane. Other extents with a true symmetric-extent Boolean are outside the supported branch.
 
@@ -345,6 +345,10 @@ A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, sl
 An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
 
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
+
+A sheet-metal plate has 15 property slots. Slot 0 is a region selection, slot 1 the plate direction, slot 2 a flip Boolean, slot 3 the thickness, slot 6 the result surface body, slot 7 an edge collection, and slot 8 the feature dimensions. The other slots are null. A sheet-metal face is a group whose label lists exactly its profile sketch and its plate. The plate direction of a face is the direction record of that sketch, which is the sketch normal. With a false flip Boolean the plate thickness lies along the sketch normal from the sketch plane.
+
+A corner round uses the constant-radius edge-fillet slots. Its edge sets can omit the continuity Boolean with a null reference.
 
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 

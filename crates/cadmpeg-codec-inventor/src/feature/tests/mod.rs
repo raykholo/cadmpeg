@@ -673,6 +673,7 @@ fn test_projection_index<'a>(
             })
             .collect(),
         work_planes: std::collections::HashMap::new(),
+        containing_labels: std::collections::HashMap::new(),
     }
 }
 
@@ -1784,3 +1785,4 @@ fn feature_label_native_writer_refuses_retained_limit_before_clone() {
 
 mod extents;
 mod records;
+mod sheet_metal;

@@ -1092,26 +1092,26 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
-        let Some(family) =
-            crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
-        else {
+        if crate::feature::FeatureFamily::from_definition(feature.evaluation.definition()).is_none()
+        {
             continue;
-        };
-        let expected_class = family.class_id();
-        let output_slot = family.output_slot();
-        if labels
+        }
+        let family = labels
             .get(&(
                 raw_feature.identity.segment_token.as_str(),
                 raw_feature.identity.record_ordinal,
             ))
-            .is_none_or(|label| label.class_id() != expected_class)
-        {
+            .and_then(|label| crate::feature::FeatureFamily::from_label_class(label.class_id()))
+            .filter(|family| family.accepts(feature.evaluation.definition()));
+        let Some(family) = family else {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature family does not match its PmDc label".into(),
                 Some(feature.id.as_str().to_owned()),
             ));
-        }
+            continue;
+        };
+        let output_slot = family.output_slot();
         let expected_collection = raw_feature
             .properties
             .references()
@@ -1148,6 +1148,21 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
+        if matches!(collection.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
+            if result
+                .bodies()
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .ne([collection.id().as_str()])
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor feature result body does not match its PmDc surface body".into(),
+                    Some(result.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         let PmDcFeaturePropertyKind::References {
             family: crate::feature::PmDcFeatureReferenceFamily::ObjectCollection,
             items,
