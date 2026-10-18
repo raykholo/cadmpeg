@@ -96,7 +96,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record families define embedded local prototypes and parent-child placement inside one document?
 
-**Known.** A `UFRxDoc` occurrence joins its external reference through the exact file-reference identifier and joins `AmDc` and `AmGraphics` through the exact occurrence identifier. Current-document external occurrences are root placements. A referenced assembly remains one unresolved external prototype because the codec does not load it. External-reference state bit `0x2000` marks a suppressed occurrence.
+**Known.** A `UFRxDoc` occurrence joins its external reference through its first-section document identifier, narrowed by component name when copies share that identifier, and joins `AmDc` and `AmGraphics` through the exact occurrence identifier. Current-document external occurrences are root placements. A referenced assembly remains one unresolved external prototype because the codec does not load it. External-reference state bit `0x2000` marks a suppressed occurrence.
 
 The schema-15 representation/model-state branch and its occurrence table are framed exactly. Unsupported property and export tags stop semantic transfer without inventing a record boundary.
 
@@ -107,6 +107,12 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 **Question.** Which UFRxDoc schemas outside 11 through 15 and which occurrence property/export tags have stable field grammars and semantic roles?
 
 **Known.** Schemas 11 through 15 and the supported occurrence/export tag sets are framed. Other schemas and tags are refused as unsupported semantic branches; their containing UFRx records remain bounded and are reported without inventing fields.
+
+Pre-schema-15 level-of-detail records are framed, but their member semantics are not transferred: kind 1 members and the kind 2 subassembly level-of-detail selection are retained natively. Which members a level of detail suppresses, and how the active level of detail is chosen, is unproven.
+
+The weldment templates of the analyst corpus (`Weldment*.iam`, 40 saves) and three other saves store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records.
+
+The meaning of the eight export-entry state bytes, of the export padding byte, and of first-section tag `0x1e` (a second name that usually equals the component name) is unknown.
 
 **Need.** Each additional schema or tag requires exact field widths, repeated-tag rules, identity joins, and loss behavior before semantic transfer.
 

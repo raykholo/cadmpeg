@@ -130,6 +130,7 @@ pub(crate) struct UfrxParsedPrefix {
     pub(crate) caption: String,
     pub(crate) representation: Option<UfrxRepresentationRecord>,
     pub(crate) model_states: Vec<UfrxModelStateRecord>,
+    pub(crate) levels_of_detail: Vec<UfrxLevelOfDetailRecord>,
     pub(crate) external_references: Vec<ExternalReferenceRecord>,
     pub(crate) embedded_references: Vec<EmbeddedReferenceRecord>,
     pub(crate) occurrences: Vec<UfrxOccurrenceRecord>,
@@ -275,6 +276,27 @@ impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
     }
 }
 
+/// A pre-schema-15 level-of-detail record, kept inline in its `UFRx` record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxLevelOfDetailRecord {
+    pub(crate) prefix: u8,
+    pub(crate) name: String,
+    pub(crate) state: [u16; 2],
+    pub(crate) members: Vec<UfrxLevelOfDetailMemberRecord>,
+}
+
+/// One level-of-detail member. Kind 2 members carry the nested state and
+/// the subassembly level-of-detail name; kind 1 members carry neither.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxLevelOfDetailMemberRecord {
+    pub(crate) occurrence: String,
+    pub(crate) kind: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) nested_state: Option<[u16; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) nested_level_of_detail: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct UfrxModelStateParameterRecord {
     pub(crate) name: String,
@@ -305,6 +327,8 @@ struct UfrxRecordWire {
     caption: Option<String>,
     representation: Option<UfrxRepresentationRecord>,
     model_state_count: u64,
+    #[serde(default)]
+    levels_of_detail: Vec<UfrxLevelOfDetailRecord>,
     reference_count: u64,
     embedded_reference_count: u64,
     occurrence_count: u64,
@@ -324,6 +348,8 @@ struct UfrxRecordView<'a> {
     caption: Option<&'a str>,
     representation: Option<&'a UfrxRepresentationRecord>,
     model_state_count: u64,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    levels_of_detail: &'a [UfrxLevelOfDetailRecord],
     reference_count: u64,
     embedded_reference_count: u64,
     occurrence_count: u64,
@@ -347,6 +373,7 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                 caption: None,
                 representation: None,
                 model_state_count: 0,
+                levels_of_detail: &[],
                 reference_count: 0,
                 embedded_reference_count: 0,
                 occurrence_count: 0,
@@ -364,6 +391,7 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                     caption,
                     representation,
                     model_states,
+                    levels_of_detail,
                     external_references,
                     embedded_references,
                     occurrences,
@@ -380,6 +408,7 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                     caption: Some(caption),
                     representation: representation.as_ref(),
                     model_state_count: cadmpeg_core::decode::u64_from_index(model_states.len()),
+                    levels_of_detail,
                     reference_count: cadmpeg_core::decode::u64_from_index(
                         external_references.len(),
                     ),
@@ -410,6 +439,7 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                 caption: None,
                 representation: None,
                 model_state_count: 0,
+                levels_of_detail: &[],
                 reference_count: 0,
                 embedded_reference_count: 0,
                 occurrence_count: 0,
@@ -431,6 +461,7 @@ impl<'a> TryFrom<&'a UfrxRecord> for UfrxRecordView<'a> {
                 caption: None,
                 representation: None,
                 model_state_count: 0,
+                levels_of_detail: &[],
                 reference_count: 0,
                 embedded_reference_count: 0,
                 occurrence_count: 0,
@@ -466,6 +497,7 @@ impl UfrxRecordWire {
             return Err("UFRx occurrence_count does not match its arena".into());
         }
         let has_children = !model_states.is_empty()
+            || !wire.levels_of_detail.is_empty()
             || !external_references.is_empty()
             || !embedded_references.is_empty()
             || !occurrences.is_empty();
@@ -515,6 +547,7 @@ impl UfrxRecordWire {
                         .ok_or_else(|| "parsed UFRxDoc requires caption".to_owned())?,
                     representation: wire.representation,
                     model_states,
+                    levels_of_detail: wire.levels_of_detail,
                     external_references,
                     embedded_references,
                     occurrences,
@@ -707,6 +740,24 @@ impl ExternalReferenceRecord {
         }
     }
 
+    fn document_id(&self) -> Option<&str> {
+        match &self.identity {
+            ExternalReferenceIdentity::Path { document_id, .. } => {
+                document_id.as_ref().map(NonzeroDocumentId::as_str)
+            }
+            ExternalReferenceIdentity::DocumentId(document_id) => Some(document_id.as_str()),
+        }
+    }
+
+    /// The file name of the persisted path without its extension.
+    fn path_stem(&self) -> Option<&str> {
+        let ExternalReferenceIdentity::Path { path, .. } = &self.identity else {
+            return None;
+        };
+        let name = path.as_str().rsplit(['\\', '/']).next()?;
+        Some(name.rsplit_once('.').map_or(name, |(stem, _)| stem))
+    }
+
     pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocument {
         use cadmpeg_ir::products::ExternalDocument;
         match &self.identity {
@@ -814,26 +865,36 @@ pub(crate) struct UfrxOccurrenceRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     end_string_flag: u32,
-    pub(crate) file_reference_id: u32,
     pub(crate) occurrence_id: u32,
+    pub(crate) occurrence_key: u32,
     header_value: u32,
     pub(crate) title: Option<String>,
     header_padding_words: u8,
+    pub(crate) prototype_document_id: Option<NativeBytes<[u8; 16]>>,
+    pub(crate) component_name: Option<String>,
     record_len: NonZeroU64,
     record_sha256: Sha256Digest,
 }
 
 impl Serialize for UfrxOccurrenceRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut fields = serializer.serialize_struct("UfrxOccurrenceRecordWire", 10)?;
+        let mut fields = serializer.serialize_struct("UfrxOccurrenceRecordWire", 12)?;
         fields.serialize_field("id", &self.id)?;
         fields.serialize_field("ordinal", &self.ordinal)?;
         fields.serialize_field("end_string_flag", &self.end_string_flag)?;
-        fields.serialize_field("file_reference_id", &self.file_reference_id)?;
         fields.serialize_field("occurrence_id", &self.occurrence_id)?;
+        fields.serialize_field("occurrence_key", &self.occurrence_key)?;
         fields.serialize_field("header_value", &self.header_value)?;
         fields.serialize_field("title", &self.title)?;
         fields.serialize_field("header_padding_words", &self.header_padding_words)?;
+        match &self.prototype_document_id {
+            Some(id) => fields.serialize_field("prototype_document_id", id)?,
+            None => fields.skip_field("prototype_document_id")?,
+        }
+        match &self.component_name {
+            Some(name) => fields.serialize_field("component_name", name)?,
+            None => fields.skip_field("component_name")?,
+        }
         fields.serialize_field("record_len", &self.record_len.get())?;
         fields.serialize_field("record_sha256", &self.record_sha256)?;
         fields.end()
@@ -845,13 +906,61 @@ pub(crate) struct UfrxOccurrenceRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) end_string_flag: u32,
-    pub(crate) file_reference_id: u32,
     pub(crate) occurrence_id: u32,
+    pub(crate) occurrence_key: u32,
     pub(crate) header_value: u32,
     pub(crate) title: Option<String>,
     pub(crate) header_padding_words: u8,
+    #[serde(default)]
+    pub(crate) prototype_document_id: Option<NativeBytes<[u8; 16]>>,
+    #[serde(default)]
+    pub(crate) component_name: Option<String>,
     pub(crate) record_len: u64,
     pub(crate) record_sha256: String,
+}
+
+/// Resolves the external reference that an occurrence instantiates.
+///
+/// The occurrence's prototype document identifier selects the references
+/// with that document identifier. Copies of one file share a document
+/// identifier, so several candidates are narrowed to the one whose path stem
+/// equals the occurrence's component name. Anything other than exactly one
+/// remaining candidate is unresolved.
+pub(crate) fn resolve_occurrence_reference<'r>(
+    occurrence: &UfrxOccurrenceRecord,
+    references: &'r [ExternalReferenceRecord],
+) -> Option<&'r ExternalReferenceRecord> {
+    let document = hex_id(occurrence.prototype_document_id.as_ref()?);
+    let mut candidates = references.iter().filter(|reference| {
+        reference
+            .document_id()
+            .is_some_and(|id| id.eq_ignore_ascii_case(&document))
+    });
+    let first = candidates.next()?;
+    let Some(second) = candidates.next() else {
+        return Some(first);
+    };
+    let name = occurrence.component_name.as_deref()?.to_lowercase();
+    let mut named = [first, second]
+        .into_iter()
+        .chain(candidates)
+        .filter(|reference| {
+            reference
+                .path_stem()
+                .is_some_and(|stem| stem.to_lowercase() == name)
+        });
+    let found = named.next()?;
+    named.next().is_none().then_some(found)
+}
+
+fn hex_id(id: &[u8; 16]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut text = String::with_capacity(32);
+    for byte in id {
+        text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    text
 }
 
 impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
@@ -864,11 +973,13 @@ impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
             id: wire.id,
             ordinal: wire.ordinal,
             end_string_flag: wire.end_string_flag,
-            file_reference_id: wire.file_reference_id,
             occurrence_id: wire.occurrence_id,
+            occurrence_key: wire.occurrence_key,
             header_value: wire.header_value,
             title: wire.title,
             header_padding_words: wire.header_padding_words,
+            prototype_document_id: wire.prototype_document_id,
+            component_name: wire.component_name,
             record_len: NonZeroU64::new(wire.record_len).ok_or("record_len must not be zero")?,
             record_sha256: Sha256Digest::try_from(wire.record_sha256)
                 .map_err(|error| format!("record_sha256: {error}"))?,
@@ -1025,8 +1136,8 @@ mod tests {
     fn ufrx_occurrence_streams_once_with_retained_limit() {
         let expected = serde_json::json!({
             "id": "inventor:ufrx:occurrence#0", "ordinal": 0,
-            "end_string_flag": 0, "file_reference_id": 1,
-            "occurrence_id": 1, "header_value": 0, "title": null,
+            "end_string_flag": 0, "occurrence_id": 1,
+            "occurrence_key": 1, "header_value": 0, "title": null,
             "header_padding_words": 8, "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
@@ -1045,6 +1156,7 @@ mod tests {
             original_file_name: "part.ipt".into(),
             caption: "part".into(),
             representation: None,
+            levels_of_detail: vec![],
             model_states: vec![],
             external_references: vec![],
             embedded_references: vec![],
@@ -1175,7 +1287,7 @@ mod tests {
     fn reference_framing_admission_rejects_invalid_wire_values() {
         let occurrence = serde_json::json!({
             "id": "occurrence", "ordinal": 0, "end_string_flag": 0,
-            "file_reference_id": 1, "occurrence_id": 1, "header_value": 0,
+            "occurrence_id": 1, "occurrence_key": 1, "header_value": 0,
             "title": null, "header_padding_words": 8, "record_len": 1,
             "record_sha256": "a".repeat(64)
         });
@@ -1300,6 +1412,7 @@ mod tests {
             original_file_name: "part.ipt".into(),
             caption: "part".into(),
             representation: None,
+            levels_of_detail: vec![],
             model_states: vec![UfrxModelStateRecord::try_from(UfrxModelStateRecordWire {
                 id: "inventor:ufrx:model-state#0".into(),
                 ordinal: 0,
