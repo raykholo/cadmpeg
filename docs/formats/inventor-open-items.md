@@ -62,6 +62,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The count owner, bias, and multi-object consistency rule must be exact before the value can frame the following node records.
 
+### RS-06. Record selector high bits
+
+**Question.** What do bits 8 through 31 of a bulk-record selector encode, and how does a record select a type descriptor at index 256 or later?
+
+**Known.** The selector low byte indexes the section 4 type table. Bits 8 through 15 hold 1 and bits 16 through 31 hold 0 in every record. A section 4 table can hold more than 256 descriptors; the descriptors after index 255 have no record that selects them.
+
+**Need.** The selector width must be exact before a segment whose records use more than 256 record types can be framed.
+
 ## 2. Kernel ownership
 
 ### KE-01. Multiple part carriers
@@ -175,6 +183,22 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 **Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, and ellipse entities form closed planar sketch graphs. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, radius, diameter, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands.
 
 **Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps require exact locus semantics before neutral transfer. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
+
+### DE-04. Parameter tables without a model owner
+
+**Question.** Which record owns a PmDc parameter table whose context reference is null, and what scope applies to its parameters?
+
+**Known.** These tables have flags `0x20` and two-entry member lists. No record references the table. Their parameters are referenced by records of type `b038b999d211c35b6000b3856c2387b0`. Their parameters remain native with a parameter-scope loss.
+
+**Need.** The owning record and its feature or sketch identity must be exact before these parameters can enter a neutral scope.
+
+### DE-05. Model-root and parameter-table fields
+
+**Question.** What do the model-root flags, the model-root values other than values 3 and 9, the model-root `scale` and `terminal_value`, the parameter-table member list, and the parameter-table suffix encode?
+
+**Known.** Value 3 references the root's parameter table and value 9 is null or repeats it. Value 12 is 1 in document model roots and 7 in flat-pattern model roots. The member list and the name map contain every parameter of the table and also other records. The suffix is retained by length.
+
+**Need.** The model graph, the flat-pattern definition operands, and the table membership rule must be exact before the flat-pattern model can transfer more than its parameter scope.
 
 ## 5. Adjacent envelopes
 

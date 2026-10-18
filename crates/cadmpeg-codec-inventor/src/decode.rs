@@ -72,9 +72,16 @@ fn decode_container<'a>(
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
     let mut admitted_entities = 0_u64;
-    let (design_parameters, unresolved_design_parameters) =
-        crate::design::project_parameters(ctx, &design_inventory, &mut admitted_entities)?;
-    ir.model.parameters = design_parameters;
+    let parameter_scopes = crate::design::parameter_scopes(ctx, &design_inventory)?;
+    let parameter_projection = crate::design::project_parameters(
+        ctx,
+        &design_inventory,
+        &parameter_scopes,
+        &mut admitted_entities,
+    )?;
+    let unresolved_design_parameters = parameter_projection.unresolved_graphs;
+    let unscoped_design_parameters = parameter_projection.unresolved_scopes;
+    ir.model.parameters = parameter_projection.parameters;
     let sketch_projection = crate::sketch::project(ctx, &sketch_inventory, &ir.model.parameters)?;
     let unresolved_sketches = sketch_projection.unresolved_sketches;
     let unresolved_sketch_entities = sketch_projection.unresolved_entities;
@@ -94,6 +101,25 @@ fn decode_container<'a>(
     let unresolved_feature_states = feature_projection.unresolved_states;
     ir.model.features = feature_projection.features;
     ir.model.feature_result_topologies = feature_projection.result_topologies;
+    let first_model_ordinal = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .max()
+        .map_or(Some(0), |ordinal| ordinal.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("Inventor feature ordinal", u64::MAX, u64::MAX))?;
+    let model_features = crate::design::scope::project_model_features(
+        ctx,
+        &design_inventory.model_roots,
+        &design_inventory.brep_segments,
+        first_model_ordinal,
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(model_features.len()),
+        "collect Inventor model features",
+    )?;
+    ir.model.features.extend(model_features);
     admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
     let mut attributes = BTreeMap::new();
     insert_source_attribute(
@@ -582,6 +608,12 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
     namespace.set_arena(ctx, "pm_dc_units", &design_inventory.units)?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_parameter_tables",
+        &design_inventory.parameter_tables,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_model_roots", &design_inventory.model_roots)?;
     namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
     namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
     namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
@@ -890,6 +922,11 @@ fn decode_container<'a>(
                 "Transferred {unresolved_feature_states} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state."
             ))?);
         }
+        if unscoped_design_parameters != 0 {
+            losses.push(admitted_loss(ctx, InventorLossCode::ParameterScopeUnresolved, format_args!(
+                "Retained {unscoped_design_parameters} Inventor parameter record(s) whose parameter table has no established owning model."
+            ))?);
+        }
         if unresolved_design_parameters != 0 {
             losses.push(admitted_loss(ctx, InventorLossCode::ParameterGraphOpen, format_args!(
                 "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
@@ -1184,6 +1221,14 @@ fn decode_container<'a>(
             design_inventory.expressions.len(),
         ),
         (crate::coverage::PM_DC_UNITS, design_inventory.units.len()),
+        (
+            crate::coverage::PM_DC_PARAMETER_TABLES,
+            design_inventory.parameter_tables.len(),
+        ),
+        (
+            crate::coverage::PM_DC_MODEL_ROOTS,
+            design_inventory.model_roots.len(),
+        ),
         (
             crate::coverage::DESIGN_PARAMETERS_TRANSFERRED,
             design_parameter_count,
