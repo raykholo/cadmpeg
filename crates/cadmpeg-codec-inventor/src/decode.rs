@@ -89,6 +89,7 @@ fn decode_container<'a>(
         &sketch_inventory,
         &ir.model.parameters,
         &ir.model.sketches,
+        &ir.model.sketch_entities,
     )?;
     let unresolved_features = feature_projection.unresolved_features;
     let unresolved_feature_states = feature_projection.unresolved_states;

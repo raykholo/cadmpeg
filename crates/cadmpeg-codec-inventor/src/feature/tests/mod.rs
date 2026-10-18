@@ -67,7 +67,7 @@ fn feature_projection_refuses_collection_limit_before_token_index() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
     assert!(matches!(
-        super::project(&ctx, &inventory, &design, &sketch, &[], &[]),
+        super::project(&ctx, &inventory, &design, &sketch, &[], &[], &[]),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "index Inventor feature token"
@@ -75,7 +75,7 @@ fn feature_projection_refuses_collection_limit_before_token_index() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service projection context");
     assert_eq!(
-        super::project(&ctx, &inventory, &design, &sketch, &[], &[])
+        super::project(&ctx, &inventory, &design, &sketch, &[], &[], &[])
             .expect("feature projection")
             .unresolved_features,
         1
@@ -674,6 +674,8 @@ fn test_projection_index<'a>(
             .collect(),
         work_planes: std::collections::HashMap::new(),
         containing_labels: std::collections::HashMap::new(),
+        sketch_entities: std::collections::HashMap::new(),
+        sketch_entity_ids: std::collections::HashMap::new(),
     }
 }
 
@@ -1784,5 +1786,6 @@ fn feature_label_native_writer_refuses_retained_limit_before_clone() {
 }
 
 mod extents;
+mod holes;
 mod records;
 mod sheet_metal;

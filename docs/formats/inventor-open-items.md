@@ -160,6 +160,8 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** Body-level evaluation dependencies, current-model body joins, pattern and mirror transforms, revolve operands, extrusion targets other than work planes and plane faces, the meaning of the termination flag, the true plate flip Boolean, plates outside a two-member face group, flat-pattern definition records, non-default fillet laws, oriented chamfers, and the remaining operation families require exact record joins before transfer. These fields must resolve before the score advances to L4.
 
+**Conflict.** The specification states that the slot-16 direction record supplies the drilling direction of a hole with a slot-21 placement, and the decoder uses it unchanged. A sketch-point hole drills opposite the same slot-16 record, which is the sketch direction. A decision must establish whether placement holes also drill opposite their direction record.
+
 ### DE-02. Compound parameter units and function expressions
 
 **Question.** Which PmDc unit graphs and function records define compound dimensions, derived units, offsets, and function-call expression text?

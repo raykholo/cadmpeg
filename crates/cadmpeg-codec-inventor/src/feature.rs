@@ -98,6 +98,9 @@ const RECTANGULAR_PATTERN_FEATURE_TYPE: [u8; 16] = [
 const MIRROR_FEATURE_TYPE: [u8; 16] = [
     0xb5, 0xa9, 0xd9, 0xfa, 0xd2, 0x11, 0x05, 0x33, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
 ];
+const HOLE_CENTERS_TYPE: [u8; 16] = [
+    0xb1, 0x22, 0x65, 0x93, 0xd2, 0x11, 0x53, 0x59, 0xa0, 0x00, 0x21, 0x80, 0x36, 0x03, 0xc8, 0xc9,
+];
 const REGION_SELECTION_TYPE: [u8; 16] = [
     0x47, 0x3f, 0x20, 0xfc, 0xd1, 0x11, 0x01, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
@@ -258,6 +261,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     ObjectCollection,
     FilletEdgeSets,
     EdgeCollection,
+    HoleCenters,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -832,6 +836,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         FILLET_EDGE_SET_TYPE => Some(parse_fillet_edge_set),
         EDGE_COLLECTION_TYPE => Some(parse_edge_collection),
         EDGE_ITEM_TYPE => Some(parse_edge_item),
+        HOLE_CENTERS_TYPE => Some(parse_hole_centers),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         _ => None,
     }
@@ -993,6 +998,7 @@ reference_parser!(parse_feature_dimensions, FeatureDimensions);
 reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
 reference_parser!(parse_edge_collection, EdgeCollection);
+reference_parser!(parse_hole_centers, HoleCenters);
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -1602,6 +1608,8 @@ struct ProjectionIndex<'a> {
     entity_style_links: HashSet<(&'a str, u32)>,
     work_planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
     containing_labels: HashMap<(&'a str, u32), Option<&'a PmDcFeatureLabel>>,
+    sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
+    sketch_entity_ids: HashMap<&'a str, &'a cadmpeg_ir::sketches::SketchEntityId>,
 }
 
 pub(crate) fn project(
@@ -1611,6 +1619,7 @@ pub(crate) fn project(
     sketch: &SketchInventory,
     parameters: &[DesignParameter],
     sketches: &[Sketch],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Result<FeatureProjection, CodecError> {
     let total = inventory
         .features
@@ -1723,6 +1732,25 @@ pub(crate) fn project(
                 })
         },
         "index Inventor feature directions",
+    )?;
+    let (unique_sketch_entities, _sketch_entities_storage) = ctx.unique_index(
+        sketch.entities.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor feature sketch entities", 0, u64::MAX)
+                })
+        },
+        "index Inventor feature sketch entities",
     )?;
     let (unique_containing_labels, _containing_labels_storage) = ctx.unique_index(
         inventory.labels.iter().flat_map(|label| {
@@ -1846,6 +1874,21 @@ pub(crate) fn project(
         },
         work_planes: unique_work_planes,
         containing_labels: unique_containing_labels,
+        sketch_entities: unique_sketch_entities,
+        sketch_entity_ids: {
+            let mut ids = HashMap::new();
+            for entity in sketch_entities {
+                if let Some(native) = entity.native_ref.as_deref() {
+                    ctx.insert_hash_map(
+                        &mut ids,
+                        native,
+                        entity.id(),
+                        "index Inventor feature sketch entity ids",
+                    )?;
+                }
+            }
+            ids
+        },
     };
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
@@ -3061,26 +3104,40 @@ fn project_hole(
         direction_record.direction[1].get(),
         direction_record.direction[2].get(),
     ))?;
-    let placement = slot_property(source, 21, index)?;
-    let PmDcFeaturePropertyKind::Placement {
-        transform: placement_transform,
-        point,
-        value,
-    } = &placement.kind
-    else {
-        return None;
+    let (placements, profile) = if source.properties.references().get(21)?.index() != 0 {
+        let placement = slot_property(source, 21, index)?;
+        let PmDcFeaturePropertyKind::Placement {
+            transform: placement_transform,
+            point,
+            value,
+        } = &placement.kind
+        else {
+            return None;
+        };
+        if placement_transform.index() != transform_reference.index()
+            || point.index() == 0
+            || value.index() == 0
+        {
+            return None;
+        }
+        let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            transform.matrix.rows()[0][3] * 10.0,
+            transform.matrix.rows()[1][3] * 10.0,
+            transform.matrix.rows()[2][3] * 10.0,
+        ))?;
+        (
+            vec![HolePlacement::Directed {
+                position,
+                direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+            }],
+            None,
+        )
+    } else {
+        match sketch_point_placements(ctx, source, label, index, transform, direction)? {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
     };
-    if placement_transform.index() != transform_reference.index()
-        || point.index() == 0
-        || value.index() == 0
-    {
-        return None;
-    }
-    let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-        transform.matrix.rows()[0][3] * 10.0,
-        transform.matrix.rows()[1][3] * 10.0,
-        transform.matrix.rows()[2][3] * 10.0,
-    ))?;
     let shape = cadmpeg_ir::features::holes::HoleShape::new(
         cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind,
@@ -3114,14 +3171,13 @@ fn project_hole(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Hole {
-                    profile: None,
-                    profile_filter: None,
+                    profile_filter: profile
+                        .is_some()
+                        .then_some(cadmpeg_ir::features::holes::HoleProfileFilter::Points),
+                    profile,
                     face: None,
                     direction: None,
-                    placements: Some(vec![HolePlacement::Directed {
-                        position,
-                        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-                    }]),
+                    placements: Some(placements),
                     shape,
 
                     extent: Some(extent),
@@ -3134,6 +3190,114 @@ fn project_hole(
         },
         result,
     )))
+}
+
+/// Hole placements and the optional sketch-point profile that supplies them.
+type HoleLocations = (Vec<HolePlacement>, Option<PlanarProfileRef>);
+
+/// Placements of a hole located by the points of its consumed sketch.
+///
+/// Each center is a sketch point of the hole's sole consumed sketch. The hole
+/// transform and direction are the sketch's own records. A hole drills
+/// opposite the sketch direction. A center's model position is the sketch
+/// transform applied to its internal-centimetre sketch coordinates.
+fn sketch_point_placements(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    transform: &crate::sketch::PmDcTransform,
+    direction: cadmpeg_ir::units::UnitVector3,
+) -> Option<Result<HoleLocations, CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    let slots = source.properties.references();
+    if [13, 15].into_iter().any(|slot| {
+        slots
+            .get(slot)
+            .is_none_or(|reference| reference.index() != 0)
+    }) {
+        return None;
+    }
+    let [sketch_reference] = label.participants.references() else {
+        return None;
+    };
+    let sketch = index
+        .sketches
+        .get(&(token, sketch_reference.record_ordinal()?))
+        .and_then(Option::as_ref)?;
+    if sketch.transform.index() == 0
+        || sketch.transform != *slots.get(8)?
+        || sketch.direction != *slots.get(16)?
+    {
+        return None;
+    }
+    let centers = references(source, 7, PmDcFeatureReferenceFamily::HoleCenters, index)?;
+    if centers.references().is_empty() {
+        return None;
+    }
+    let rows = transform.matrix.rows();
+    let drilling = cadmpeg_ir::features::FeatureDirection3::from(direction.reversed());
+    let mut placements = Vec::new();
+    let mut entities = Vec::new();
+    for center in centers.references() {
+        let ordinal = center.record_ordinal()?;
+        let point = index
+            .sketch_entities
+            .get(&(token, ordinal))
+            .and_then(Option::as_ref)?;
+        let crate::sketch::PmDcSketchEntityKind::Point { position, .. } = &point.kind else {
+            return None;
+        };
+        if point.sketch.index() != sketch_reference.index()
+            || !sketch
+                .entities
+                .references()
+                .iter()
+                .any(|entity| entity.index() == center.index())
+        {
+            return None;
+        }
+        let [u, v] = [position[0].get(), position[1].get()];
+        let model = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            (rows[0][0] * u + rows[0][1] * v + rows[0][3]) * 10.0,
+            (rows[1][0] * u + rows[1][1] * v + rows[1][3]) * 10.0,
+            (rows[2][0] * u + rows[2][1] * v + rows[2][3]) * 10.0,
+        ))?;
+        if let Err(error) = ctx.charge_collection_items(1, "project Inventor hole center") {
+            return Some(Err(error));
+        }
+        placements.push(HolePlacement::Directed {
+            position: model,
+            direction: drilling,
+        });
+        entities.push(index.sketch_entity_ids.get(point.id().as_str()));
+    }
+    let profile = match (
+        index.sketch_ids.get(sketch.id().as_str()),
+        entities.into_iter().collect::<Option<Vec<_>>>(),
+    ) {
+        (Some(sketch_id), Some(entities)) => {
+            let sketch_id =
+                match sketch_id.try_clone_for_decode(ctx, "retain Inventor hole sketch id") {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
+            let mut ids = Vec::new();
+            for entity in entities {
+                match entity.try_clone_for_decode(ctx, "retain Inventor hole center entity id") {
+                    Ok(value) => ids.push(value),
+                    Err(error) => return Some(Err(error)),
+                }
+            }
+            match PlanarProfileRef::sketch_entities(sketch_id, ids, ctx) {
+                Ok(Ok(profile)) => Some(profile),
+                Ok(Err(_)) => None,
+                Err(limit) => return Some(Err(limit.into())),
+            }
+        }
+        _ => None,
+    };
+    Some(Ok((placements, profile)))
 }
 
 fn feature_result(
