@@ -50,6 +50,8 @@ pub(crate) const PM_DC_TRANSFORMS: CoverageKey = CoverageKey::new("pm_dc_transfo
 pub(crate) const PM_DC_DIRECTIONS: CoverageKey = CoverageKey::new("pm_dc_directions");
 pub(crate) const PM_DC_SKETCH_CONSTRAINTS: CoverageKey =
     CoverageKey::new("pm_dc_sketch_constraints");
+pub(crate) const PM_DC_SKETCH_PROJECTIONS: CoverageKey =
+    CoverageKey::new("pm_dc_sketch_projections");
 pub(crate) const SKETCH_RECORD_ISSUES: CoverageKey = CoverageKey::new("sketch_record_issues");
 pub(crate) const PM_DC_FEATURES: CoverageKey = CoverageKey::new("pm_dc_features");
 pub(crate) const PM_DC_PATTERN_FEATURES: CoverageKey = CoverageKey::new("pm_dc_pattern_features");

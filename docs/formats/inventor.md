@@ -324,28 +324,87 @@ Type `114d8790d011f8d10008cabc0663dc09` is a planar sketch. The content header i
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
-Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. The construction mask is `0x04080040`; an entity is construction geometry when any masked bit is set.
+Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch or sketch-block definition. Entity-flag bit `0x00080000` marks construction geometry. Bit `0x00040000` is set on sketch-block definition members, offset results, and spline helper points. The other flag bits do not mark construction geometry.
 
 The planar entity types are:
 
 - `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional u32 state plus type-2 association list.
-- `3adf52ced011d0d20008ccbc0663dc09`: line. It stores a type-2 endpoint list, versioned auxiliary type-2 lists, and two-f64 origin and direction vectors.
-- `3bdf52ced011d0d20008ccbc0663dc09`: circle. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a positive f64 radius, and a u8 state.
-- `60d40745d111bee680006fb1e13554c7`: ellipse. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a two-f64 major-axis direction, positive f64 major and minor radii, and a u8 state.
+- `3adf52ced011d0d20008ccbc0663dc09`: line. It stores a type-2 point list, versioned auxiliary type-2 lists, and two-f64 origin and direction vectors. The first two points are the start and end points. Further points lie on the line and are bound to it by relations.
+- `3bdf52ced011d0d20008ccbc0663dc09`: circle or circular arc. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a positive f64 radius, and a u8 state. A point list whose first two references are null, or an empty point list, is the complete circle. Otherwise the first two points are the start and end points of an arc that runs counterclockwise from start to end about the center. Further points lie on the arc.
+- `60d40745d111bee680006fb1e13554c7`: ellipse. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a two-f64 major-axis direction, positive f64 major and minor radii, and a u8 state. A point list with two null leading references is the complete ellipse.
+- `46737b31d3117c7a60001cb3d1c1fbb0`: spline. It stores a type-2 point list whose first two points are the start and end points, a second type-2 list, and a u32 curve selector. Selector 4 stores a B-spline. Selector 5 stores `value:u32` and `key:u32` and no curve geometry; the geometry is the projected model curve.
+- `4c12f14c1d4f0fb4d3f80f8244528fcb`: sketch-block instance. It stores a block-definition reference, an instance-relation reference, a compact 3-by-3 planar transform, and a u32 value.
+- `7e71a918ee49612a268c549c6584f7fe`: sketch-block proxy. It stores a type-2 list with exactly one instance reference and one block-definition member reference.
+- `384853529f445255e1e1dab410eb06c4`: sketch mirror node. It stores the mirror-axis line reference and a mirror-data reference.
 
-Sketch coordinates and radii use internal centimetres. Neutral planar coordinates and lengths multiply these values by 10 to obtain millimetres. A line's ordered endpoint references define its bounded direction. A circle or ellipse forms a closed profile by itself. Non-construction line records form a profile loop when every endpoint in their connected component has degree two and the ordered traversal closes.
+A stored B-spline continues after selector 4:
+
+```text
+values u32[2]
+degree u32
+knot_tolerance f64
+knots     count:u32 capacity:u32 element_size:u32 = 8  f64[count]
+weights   count:u32 capacity:u32 element_size:u32 = 8  f64[count]
+poles     count:u32 capacity:u32 element_size:u32 = 8  f64[2 * count]
+pole_tolerance f64
+flags u32[2]
+range f64[2]
+trailer   count:u32 = 0 capacity:u32 element_size:u32 = 8
+```
+
+An empty weight array selects a non-rational spline; otherwise the weight count equals the pole count. Poles are two-dimensional and use internal centimetres. The knot count equals the pole count plus the degree plus one. The range repeats the first and last knot.
+
+The compact 3-by-3 transform stores `value_mask:u16`, `zero_mask:u16`, and the explicit f64 cells in row-major order. Mask bits 0 through 8 select the nine cells with the same rules as the 4-by-4 sketch transform; bits 9 through 15 are clear. The last row is `[0, 0, 1]`. The first two rows map block-definition coordinates into the host sketch; the translation uses internal centimetres.
+
+Type `c4aaa4865f4a916625d4ae83c3122a26` is a sketch-block definition. It stores the planar-sketch layout through the auxiliary type-2 list, then a type-2 instance list, a base-point reference, a 16-byte identifier, and a u32 value. Its type-8 entity array lists its member entities and relations. A definition member is placed in a host sketch once per instance. A proxy is the host-sketch identity of one placed member: its geometry is the member geometry mapped by the instance transform. A placed member without a proxy has no record of its own in the host sketch.
+
+Sketch coordinates and radii use internal centimetres. Neutral planar coordinates and lengths multiply these values by 10 to obtain millimetres. The stored start and end points of a bounded entity define its direction. A complete circle or ellipse forms a closed profile by itself. Non-construction bounded entities join through their start and end points. After entities with a free end are removed, a connected component whose vertices all join two entities is one closed profile loop; a branched component contributes each bounded face of its planar graph as one loop.
 
 Type `184d8790d011f8d10008cabc0663dc09` stores a compressed 4-by-4 sketch transform after the content header. An optional u32 value `0x203` precedes two u16 masks. For matrix element bit `b`, a clear zero-mask bit and clear value-mask bit select one following f64. A clear zero-mask bit and set value-mask bit select positive one. A set zero-mask bit and clear value-mask bit select zero. Both bits set select negative one. Explicit values occur in row-major order. Translation values use internal centimetres.
 
 Type `40df52ced011d0d20008ccbc0663dc09` stores a sketch direction. It adds `entity_flags:u32`, `parameter:f64`, an optional u32 extension, and a three-f64 direction vector after the content header. The transform's first column is the sketch u-axis. Its third column and the direction vector are the same oriented plane normal. The last matrix row is `[0, 0, 0, 1]`.
 
-A planar constraint starts with the content header, `state:i32`, and a group reference. Segment major versions 15 and 16 store the parameter reference immediately after the group reference. Segment major versions 17 through 22 store two type-6 maps before the parameter reference. A type-6 map starts with u16 values `6, 0x3000` and a u32 count. A nonempty map then stores two u32 metadata values. The first map stores reference/f64 pairs. The second map stores reference/reference pairs.
+A planar constraint starts with the content header, `state:i32`, and a group reference. Segment major versions 15 and 16 store the parameter reference immediately after the group reference. Segment major versions 17 through 22 store two type-6 maps before the parameter reference. A type-6 map starts with u16 values `6, 0x3000` and a u32 count. A nonempty map then stores two u32 metadata values. The first map stores reference/f64 pairs: for each operand entity, the curve parameter of the related locus. A line parameter is normalized, with 0 at the start point and 1 at the end point. An arc parameter is an angle in radians. The second map stores reference/u32 pairs: for each operand entity, an endpoint selector with 0 for no endpoint, 1 for the start point, and 2 for the end point.
 
-Constraint types `944d8790`, `954d8790`, `964d8790`, `974d8790`, `984d8790`, and `994d8790` with the same remaining 12 identifier bytes as the planar-sketch type encode coincident, parallel, perpendicular, tangent, horizontal, and vertical relations. Coincident stores two entity references. Parallel and perpendicular store two entity references and a u16 orientation. Tangent stores two entity references and an optional u32 extension. Horizontal and vertical store one entity reference and a u8 state.
+The constraint types are listed below by their first four identifier bytes. Types `944d8790` through `994d8790` have the same remaining 12 identifier bytes as the planar-sketch type. Each type then stores the fields named.
 
-Types `00c0ac00d1115fe0800066b1e13554c7` and `40ff8336d1115fe0800066b1e13554c7` encode horizontal and vertical distance dimensions. Each stores two entity references, a replacement parameter reference, and four u32 values after the constraint header. Type `00b71b67d11168e0800066b1e13554c7` encodes a radius dimension and stores one u32 state, an entity reference, and four u32 values. Type `e096df74d11169e0800066b1e13554c7` encodes a diameter dimension and stores an auxiliary reference, an entity reference, and four u32 values. The constraint-header parameter drives radius and diameter. The replacement parameter drives horizontal and vertical distance.
+| Type | Relation | Fields after the constraint header |
+| --- | --- | --- |
+| `944d8790` | coincident | two entity references |
+| `954d8790` | parallel | two entity references, u16 orientation |
+| `964d8790` | perpendicular | two entity references, u16 orientation |
+| `974d8790` | tangent | two entity references, optional u32 extension |
+| `984d8790` | horizontal | entity reference, u8 state |
+| `994d8790` | vertical | entity reference, u8 state |
+| `bf70e821d011d0d20008ccbc0663dc09` | point at the midpoint of a bounded entity | curve reference, point reference |
+| `5052da64d1115ee0800066b1e13554c7` | two points share the u coordinate | two point references |
+| `c0a3558fd1115ee0800066b1e13554c7` | two points share the v coordinate | two point references |
+| `107cdd0dd1119ce680006fb1e13554c7` | symmetric about a line | two entity references, axis-line reference |
+| `b07b170fd11196e680006fb1e13554c7` | fixed entity | entity reference |
+| `e07b9a5ad1115de0800066b1e13554c7` | collinear lines | two line references, u16 orientation |
+| `e0c281c6d11110e680006eb1e13554c7` | equal line length | two line references |
+| `d07d2c44d11189e680006fb1e13554c7` | equal radius | two circular references |
+| `008c10e1d11102e680006db1e13554c7` | circular entity bound to its center point | circular reference, point reference |
+| `1f89dbfbd84778b6b0967285c7ec8bb9` | mirrored pair | result, source, and axis-line references, two mirror-node references, u32 value, mirror-data reference |
+| `9e146d7cd1115bd5000847b00524dc09` | spline helper point | spline reference, point reference |
+| `bc144b4ed211fea4600010b38932edb0` | offset curves | two source/result reference pairs |
+| `cf8d56f2324a27ddb666f1894a9d1617` | sketch-block instance relation | a type-2 list of the instance and its proxies; this record has no parameter reference |
 
-Type `008c10e1d11102e680006db1e13554c7` binds a circular entity to its center-point entity. Type `d07d2c44d11189e680006fb1e13554c7` gives two circular entities equal radii. Each stores its two ordered entity references after the constraint header.
+The dimensions drive the constraint-header parameter unless the table names a replacement parameter:
+
+| Type | Dimension | Fields after the constraint header |
+| --- | --- | --- |
+| `00c0ac00d1115fe0800066b1e13554c7` | horizontal distance | two entity references, replacement parameter reference, four u32 values |
+| `40ff8336d1115fe0800066b1e13554c7` | vertical distance | two entity references, replacement parameter reference, four u32 values |
+| `58850511d211e39560000cb38932edb0` | aligned distance between points or lines | u32 value, two entity references, six f64 values |
+| `00b71b67d11168e0800066b1e13554c7` | radius | u32 state, entity reference, four u32 values |
+| `e096df74d11169e0800066b1e13554c7` | diameter | auxiliary reference, entity reference, four u32 values |
+| `100a0d59d111cae680006fb1e13554c7` | angle between two lines | u32 value, two line references, two-f64 label position, u16 quadrant |
+| `845c3bbfd2112ae960004bb38932edb0` | angle about a center point | u32 value, center, first, and second point references, two-f64 label position, three u8 values |
+
+Projection links bind projected sketch geometry to the model. Each starts with the content header, `state:i32`, the projected entity reference, the sketch-transform reference, and a model reference. Type `77d9b0fed21100d16000b6b77359ebb0` links a point to the model origin point. Type `97664060d111c2090008fdb0d2dddc09` links a point to a model vertex reference. Type `f316de64d111a8f1000838b1d2dddc09` links a curve to a model edge item and adds a u16 value.
+
+A coincident relation between a point and a bounded entity binds the entity's start or end locus when the point is that entity's stored start or end point; otherwise it places the point on the entity. A tangent relation whose two endpoint selectors are nonzero is tangent at those endpoint loci.
 
 ## 13. Feature records
 

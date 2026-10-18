@@ -113,6 +113,7 @@ fn sketch(ordinal: u32) -> crate::sketch::PmDcSketch {
             direction: reference(0),
             values: [0; 2],
             auxiliary: None,
+            block: None,
         },
         RecordTypeId::try_from("114d8790d011f8d10008cabc0663dc09".to_owned()).expect("sketch type"),
         token(),
@@ -238,6 +239,7 @@ fn projection_orders_history_and_marks_suppression() {
         directions: Vec::new(),
         constraints: Vec::new(),
         issues: Vec::new(),
+        projections: Vec::new(),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())

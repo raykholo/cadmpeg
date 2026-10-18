@@ -48,6 +48,7 @@ fn sketch_record(transform: u32, direction: u32, entities: &[u32]) -> crate::ske
             direction: reference(direction),
             values: [0; 2],
             auxiliary: None,
+            block: None,
         },
         crate::record_identity::RecordTypeId::try_from(
             "114d8790d011f8d10008cabc0663dc09".to_owned(),

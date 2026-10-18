@@ -66,6 +66,7 @@ fn extent_extrusion(
             direction: reference(0),
             values: [0; 2],
             auxiliary: None,
+            block: None,
         },
         crate::record_identity::RecordTypeId::try_from(
             "114d8790d011f8d10008cabc0663dc09".to_owned(),

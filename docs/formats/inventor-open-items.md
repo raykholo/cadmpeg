@@ -194,13 +194,13 @@ The meaning of the eight export-entry state bytes, of the export padding byte, a
 
 **Need.** Compound or derived units and function calls require exact dimensional and textual semantics before neutral transfer.
 
-### DE-03. Additional sketch geometry and relations
+### DE-03. Remaining sketch records and semantics
 
-**Question.** What does the planar-sketch `count_value` count, what locus semantics do nonempty constraint maps encode, and which PmDc records define circular arcs, splines, offset curves, projected geometry, text, pattern relations, and branched profile regions?
+**Question.** What does the planar-sketch `count_value` count, what do entity-flag bits other than `0x00080000` and `0x00040000` mean, which field marks a driven (reference) dimension, what does the key of a selector-5 spline select, and which grammars define inserted sketch images and the remaining construct records?
 
-**Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, and ellipse entities form closed planar sketch graphs. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, radius, diameter, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands.
+**Known.** Points, lines with on-curve points, circles, counterclockwise arcs, complete ellipses, stored B-splines, sketch-block definitions, instances, and proxies, sketch mirror nodes, and the relations and dimensions of the planar-sketch tables have exact operands. Constraint maps store curve parameters and endpoint selectors. Bit `0x00000040` is set on projected entities and on most solved entities; it is clear on some entities that remain free. Bits `0x00200000` and `0x00008000` occur on lines. Selector-5 spline keys are consecutive within one projected chain. Record `08db93dcc149f26ff229ecb1804d9784` stores a sketch reference without entity flags, four f64 values, a u32 value, a compact 4-by-4 matrix, and a tail; records `0ead987ab9495ceefc186787a2a20643` and `5f33ec8f6c4fb6be9fcc71963ad1b9df` reference its four frame lines and points. Records `7f341025ae4a79961d9047869d5f4e48` and `013cbb1fd2114d68a0009e9a3c3aa076` occur in sketch entity arrays. Projection links name a model origin, vertex reference, or edge item; the vertex and edge references continue through records `107388c1d211b93e8000cdb1e13554c7`, `70efdbb8d211c33e8000cdb1e13554c7`, and `534d8790d011f8d10008cabc0663dc09`. Feature profile selections reference `21750fccd1112780e38619962259017a` region records.
 
-**Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps require exact locus semantics before neutral transfer. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
+**Need.** The count requires an exact referent before validation uses it. A dimension's driving state requires its flag before transfer of `driving`. A selector-5 spline needs its model-curve join before its geometry transfers. Each image and construct record requires its complete field grammar before its sketch closes. The model-reference chains of projection links and the region records require their model-topology joins before projected geometry binds a model edge or vertex and before feature region selection transfers.
 
 ### DE-04. Parameter tables without a model owner
 

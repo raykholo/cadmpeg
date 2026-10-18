@@ -21,8 +21,8 @@ use crate::feature::{
     PmDcPatternFeature, PmDcWorkPlane,
 };
 use crate::sketch::{
-    PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
-    PmDcSketchEntityKind, PmDcTransform, PointTail,
+    PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchEntity, PmDcSketchProjection,
+    PmDcTransform,
 };
 
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
@@ -36,7 +36,7 @@ use crate::native::{
     SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
     StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord,
 };
-use crate::pmdc::PmDcReferenceList;
+
 use crate::record_issue::RecordIssue;
 
 const ARENAS: &[&str] = &[
@@ -79,6 +79,7 @@ const ARENAS: &[&str] = &[
     "pm_dc_directions",
     "pm_dc_sketch_entities",
     "pm_dc_sketch_constraints",
+    "pm_dc_sketch_projections",
     "pm_dc_sketches",
     "pm_dc_transforms",
     "pm_dc_units",
@@ -657,49 +658,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             entity.header.context.index(),
             entity.sketch.index(),
         ];
-        let mut add_list = |list: &PmDcReferenceList| {
-            references.extend(list.references().iter().map(|reference| reference.index()));
-        };
-        match &entity.kind {
-            PmDcSketchEntityKind::Point {
-                endpoint_of,
-                center_of,
-                tail,
-                ..
-            } => {
-                add_list(endpoint_of);
-                add_list(center_of);
-                if let PointTail::Present { associations, .. } = tail {
-                    add_list(associations);
-                }
-            }
-            PmDcSketchEntityKind::Line {
-                points, auxiliary, ..
-            } => {
-                add_list(points);
-                for list in auxiliary {
-                    add_list(list);
-                }
-            }
-            PmDcSketchEntityKind::Circle {
-                points,
-                auxiliary,
-                center,
-                ..
-            }
-            | PmDcSketchEntityKind::Ellipse {
-                points,
-                auxiliary,
-                center,
-                ..
-            } => {
-                add_list(points);
-                for list in auxiliary {
-                    add_list(list);
-                }
-                references.push(center.index());
-            }
-        }
+        references.extend(
+            entity
+                .kind
+                .references()
+                .iter()
+                .map(|reference| reference.index()),
+        );
         if !record_is_exact(
             entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
@@ -743,45 +708,16 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         for (key, _) in header.scalar_map.entries() {
             references.push(key.index());
         }
-        for (key, value) in header.reference_map.entries() {
-            references.extend([key.index(), value.index()]);
+        for (key, _) in header.reference_map.entries() {
+            references.push(key.index());
         }
-        match constraint.kind {
-            PmDcSketchConstraintKind::Coincident { first, second }
-            | PmDcSketchConstraintKind::Parallel { first, second, .. }
-            | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
-            | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
-                references.extend([first.index(), second.index()]);
-            }
-            PmDcSketchConstraintKind::Horizontal { entity, .. }
-            | PmDcSketchConstraintKind::Vertical { entity, .. } => {
-                references.push(entity.index());
-            }
-            PmDcSketchConstraintKind::HorizontalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            }
-            | PmDcSketchConstraintKind::VerticalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            } => references.extend([first.index(), second.index(), parameter.index()]),
-            PmDcSketchConstraintKind::Radius { entity, .. } => {
-                references.push(entity.index());
-            }
-            PmDcSketchConstraintKind::Diameter {
-                reference, entity, ..
-            } => references.extend([reference.index(), entity.index()]),
-            PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-                references.extend([entity.index(), center.index()]);
-            }
-            PmDcSketchConstraintKind::EqualRadius { first, second } => {
-                references.extend([first.index(), second.index()]);
-            }
-        }
+        references.extend(
+            constraint
+                .kind
+                .references()
+                .iter()
+                .map(|reference| reference.index()),
+        );
         if !record_is_exact(
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
@@ -828,7 +764,34 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         .pm_dc_sketch_constraints
         .iter()
         .map(crate::record_identity::Located::id)
+        .chain(
+            data.pm_dc_sketch_projections
+                .iter()
+                .map(crate::record_identity::Located::id),
+        )
         .collect::<HashSet<_>>();
+    for link in &data.pm_dc_sketch_projections {
+        if !record_is_exact(
+            link.identity.segment_token.as_str(),
+            link.identity.record_ordinal,
+            link.identity.type_id.as_str(),
+        ) || !references_resolve(
+            link.identity.segment_token.as_str(),
+            &[
+                link.header.next.index(),
+                link.header.context.index(),
+                link.entity.index(),
+                link.transform.index(),
+                link.source.index(),
+            ],
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc sketch projection record or reference does not resolve".into(),
+                Some(link.id()),
+            ));
+        }
+    }
     for sketch in &ir.model.sketches {
         if sketch
             .native_ref
@@ -860,11 +823,11 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         }
     }
     for constraint in &ir.model.sketch_constraints {
-        if constraint
-            .native_ref
-            .as_deref()
-            .is_none_or(|reference| !native_constraints.contains(reference))
-        {
+        // A block instance or mirror node is a sketch-entity record that
+        // projects as a relation.
+        if constraint.native_ref.as_deref().is_none_or(|reference| {
+            !native_constraints.contains(reference) && !native_entities.contains(reference)
+        }) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch constraint does not resolve to its PmDc source record"
@@ -1712,6 +1675,7 @@ struct NativeData {
     pm_dc_sketches: Vec<PmDcSketch>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
     pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
+    pm_dc_sketch_projections: Vec<PmDcSketchProjection>,
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
     sketch_record_issues: Vec<RecordIssue>,
@@ -1786,6 +1750,8 @@ impl NativeData {
             pm_dc_sketch_entities: namespace.arena_as_for_decode(ctx, "pm_dc_sketch_entities")?,
             pm_dc_sketch_constraints: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sketch_constraints")?,
+            pm_dc_sketch_projections: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sketch_projections")?,
             pm_dc_transforms: namespace.arena_as_for_decode(ctx, "pm_dc_transforms")?,
             pm_dc_directions: namespace.arena_as_for_decode(ctx, "pm_dc_directions")?,
             sketch_record_issues: namespace.arena_as_for_decode(ctx, "sketch_record_issues")?,

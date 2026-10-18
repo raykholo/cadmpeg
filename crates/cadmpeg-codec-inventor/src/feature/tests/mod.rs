@@ -64,6 +64,7 @@ fn feature_projection_refuses_collection_limit_before_token_index() {
         directions: Vec::new(),
         constraints: Vec::new(),
         issues: Vec::new(),
+        projections: Vec::new(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -1154,6 +1155,7 @@ fn generated_extrusion(
             direction: reference(0),
             values: [0; 2],
             auxiliary: None,
+            block: None,
         },
         crate::record_identity::RecordTypeId::try_from(
             "114d8790d011f8d10008cabc0663dc09".to_owned(),
