@@ -6047,6 +6047,8 @@ pub struct SheetMetalFlangeTwoSidedWidth {
 pub enum SheetMetalThicknessSide {
     /// Thickness lies along the profile plane's positive normal.
     Forward,
+    /// Thickness lies along the profile plane's negative normal.
+    Reverse,
     /// Thickness is split equally across both sides of the profile plane.
     Symmetric,
 }

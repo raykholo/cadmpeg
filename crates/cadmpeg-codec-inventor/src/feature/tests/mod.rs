@@ -46,6 +46,7 @@ fn feature_projection_refuses_collection_limit_before_token_index() {
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
         origin_folders: Vec::new(),
+        sheet_metal_groups: Vec::new(),
         issues: Vec::new(),
     };
     let design = crate::design::DesignInventory {
@@ -681,6 +682,9 @@ fn test_projection_index<'a>(
         containing_labels: std::collections::HashMap::new(),
         sketch_entities: std::collections::HashMap::new(),
         sketch_entity_ids: std::collections::HashMap::new(),
+        features: std::collections::HashMap::new(),
+        owner_labels: std::collections::HashMap::new(),
+        sheet_metal_groups: std::collections::HashMap::new(),
     }
 }
 

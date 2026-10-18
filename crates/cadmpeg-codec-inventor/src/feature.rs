@@ -34,6 +34,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 mod history;
+pub(crate) mod sheet_metal;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
@@ -167,6 +168,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
     pub(crate) origin_folders: Vec<PmDcOriginFolder>,
+    pub(crate) sheet_metal_groups: Vec<sheet_metal::PmDcSheetMetalGroup>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -240,6 +242,11 @@ pub(crate) enum PmDcFeaturePropertyKind {
     Value {
         value: u32,
     },
+    SheetMetal {
+        family: sheet_metal::PmDcSheetMetalFamily,
+        references: Vec<crate::pmdc::PmDcReference>,
+        states: NativeBytes,
+    },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
         state: u8,
@@ -299,6 +306,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     BodyList,
     FaceCollection,
     TransformList,
+    CornerEdges,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -532,6 +540,7 @@ pub(crate) fn inventory(
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
         origin_folders: Vec::new(),
+        sheet_metal_groups: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -667,6 +676,21 @@ pub(crate) fn inventory(
                             "admit Inventor PmDc origin folder record",
                         )
                     })
+                }
+                sheet_metal::FACE_GROUP_TYPE | sheet_metal::FLANGE_GROUP_TYPE => {
+                    sheet_metal::parse_group(ctx, record.payload, version, record.type_id).and_then(
+                        |group| {
+                            push_record(
+                                ctx,
+                                &mut inventory.sheet_metal_groups,
+                                group,
+                                record.type_id,
+                                segment.pair.token.key(),
+                                record.ordinal,
+                                "admit Inventor PmDc sheet-metal group record",
+                            )
+                        },
+                    )
                 }
                 SURFACE_TYPE => parse_surface(record.payload, version).and_then(|surface| {
                     surface.map_or(Ok(()), |surface| {
@@ -902,8 +926,14 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         SPLIT_SIDE_TYPE => Some(parse_split_side),
         THICKEN_FORM_TYPE => Some(parse_thicken_form),
         SPLIT_FLAG_TYPE => Some(parse_boolean),
-        THICKEN_VALUE_TYPE => Some(parse_thicken_value),
+        THICKEN_VALUE_TYPE => Some(parse_value),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
+        sheet_metal::BEND_DEFINITION_TYPE => Some(sheet_metal::parse_bend_definition),
+        sheet_metal::BEND_RELIEF_TYPE => Some(sheet_metal::parse_bend_relief),
+        sheet_metal::BEND_SETTINGS_TYPE => Some(sheet_metal::parse_bend_settings),
+        sheet_metal::CORNER_DEFINITION_TYPE => Some(sheet_metal::parse_corner_definition),
+        sheet_metal::CORNER_EDGES_TYPE => Some(parse_corner_edges),
+        sheet_metal::CORNER_VALUE_TYPE => Some(parse_value),
         _ => None,
     }
 }
@@ -962,15 +992,15 @@ enum_parser!(parse_split_form, SplitForm);
 enum_parser!(parse_split_side, SplitSide);
 enum_parser!(parse_thicken_form, ThickenForm);
 
-fn parse_thicken_value(
+fn parse_value(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let value = cursor.u32("thicken value")?;
-    cursor.finish("thicken value")?;
+    let value = cursor.u32("value record value")?;
+    cursor.finish("value record")?;
     Ok(property(
         version,
         header,
@@ -1087,6 +1117,7 @@ reference_parser!(parse_hole_centers, HoleCenters);
 reference_parser!(parse_body_list, BodyList);
 reference_parser!(parse_face_collection, FaceCollection);
 reference_parser!(parse_transform_list, TransformList);
+reference_parser!(parse_corner_edges, CornerEdges);
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -1730,6 +1761,9 @@ struct ProjectionIndex<'a> {
     containing_labels: HashMap<(&'a str, u32), Option<&'a PmDcFeatureLabel>>,
     sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
     sketch_entity_ids: HashMap<&'a str, &'a cadmpeg_ir::sketches::SketchEntityId>,
+    features: HashMap<(&'a str, u32), Option<&'a PmDcFeature>>,
+    owner_labels: HashMap<(&'a str, Option<u32>), Option<&'a PmDcFeatureLabel>>,
+    sheet_metal_groups: HashMap<(&'a str, u32), Option<&'a sheet_metal::PmDcSheetMetalGroup>>,
 }
 
 pub(crate) fn project(
@@ -1937,6 +1971,66 @@ pub(crate) fn project(
         },
         "index Inventor feature transforms",
     )?;
+    // The label owner is a one-based reference. Keying on the optional record
+    // ordinal keeps the null reference out of the ordinal space, so a label
+    // with no owner never claims the feature at ordinal 0.
+    let (labels, _labels_storage) = ctx.unique_index(
+        inventory.labels.iter().map(|label| {
+            (
+                {
+                    (
+                        label.identity.segment_token.as_str(),
+                        label.header.owner.record_ordinal(),
+                    )
+                },
+                label,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor feature labels", 0, u64::MAX))
+        },
+        "index Inventor feature labels",
+    )?;
+    let (unique_features, _features_storage) = ctx.unique_index(
+        inventory.features.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor feature records", 0, u64::MAX)
+                })
+        },
+        "index Inventor feature records",
+    )?;
+    let (unique_groups, _groups_storage) = ctx.unique_index(
+        inventory.sheet_metal_groups.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record,
+            )
+        }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor sheet-metal groups", 0, u64::MAX)
+                })
+        },
+        "index Inventor sheet-metal groups",
+    )?;
     let index = ProjectionIndex {
         properties: unique_properties,
         parameters: unique_parameters,
@@ -2009,29 +2103,10 @@ pub(crate) fn project(
             }
             ids
         },
+        features: unique_features,
+        owner_labels: labels,
+        sheet_metal_groups: unique_groups,
     };
-    // The label owner is a one-based reference. Keying on the optional record
-    // ordinal keeps the null reference out of the ordinal space, so a label
-    // with no owner never claims the feature at ordinal 0.
-    let (labels, _labels_storage) = ctx.unique_index(
-        inventory.labels.iter().map(|label| {
-            (
-                {
-                    (
-                        label.identity.segment_token.as_str(),
-                        label.header.owner.record_ordinal(),
-                    )
-                },
-                label,
-            )
-        }),
-        |key| {
-            cadmpeg_core::decode::u64_from_index(key.0.len())
-                .checked_add(5)
-                .ok_or_else(|| ctx.refuse_codec_limit("index Inventor feature labels", 0, u64::MAX))
-        },
-        "index Inventor feature labels",
-    )?;
     let token = feature_tokens.iter().next().copied();
     let history = match token {
         Some(token) => history::build(ctx, token, inventory, &sketch.sketches)?,
@@ -2039,7 +2114,8 @@ pub(crate) fn project(
     };
     let label_of = |ordinal: u32| {
         token.and_then(|token| {
-            labels
+            index
+                .owner_labels
                 .get(&(token, Some(ordinal)))
                 .and_then(Option::as_ref)
                 .copied()
@@ -2058,7 +2134,9 @@ pub(crate) fn project(
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
                 FeatureFamily::CornerRound => project_corner_round(ctx, feature, label, &index),
-                FeatureFamily::SheetMetalPlate => project_plate(ctx, feature, label, &index),
+                FeatureFamily::SheetMetalPlate => {
+                    sheet_metal::project_plate(ctx, feature, label, &index)
+                }
                 FeatureFamily::Combine => project_combine(ctx, feature, label, &index),
                 FeatureFamily::Split => project_split(ctx, feature, label, &index),
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index),
@@ -2304,6 +2382,29 @@ fn apply_history(
             "index Inventor history pattern features",
         )?;
     }
+    let mut groups = HashMap::new();
+    for group in inventory
+        .sheet_metal_groups
+        .iter()
+        .filter(|group| Some(group.identity.segment_token.as_str()) == token)
+    {
+        let members = group
+            .members
+            .references()
+            .iter()
+            .filter_map(|reference| reference.record_ordinal())
+            .collect::<Vec<_>>();
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(members.len()),
+            "index Inventor sheet-metal group members",
+        )?;
+        ctx.insert_hash_map(
+            &mut groups,
+            group.identity.record_ordinal,
+            members,
+            "index Inventor sheet-metal groups",
+        )?;
+    }
     for item in projected.iter_mut() {
         let Some(placement) = history.placement(item.record) else {
             continue;
@@ -2361,6 +2462,10 @@ fn apply_history(
                         .references()
                         .iter()
                         .filter_map(|reference| reference.record_ordinal())
+                        .flat_map(|ordinal| match groups.get(&ordinal) {
+                            Some(members) => members.clone(),
+                            None => vec![ordinal],
+                        })
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -2853,116 +2958,6 @@ fn termination_target(
     Some(cadmpeg_ir::features::FaceSelection::Native(surface.id()))
 }
 
-/// Project the plate of a sheet-metal face: a planar profile from the face's
-/// sketch thickened along the sketch normal.
-fn project_plate(
-    ctx: &DecodeContext<'_>,
-    source: &PmDcFeature,
-    label: &PmDcFeatureLabel,
-    index: &ProjectionIndex<'_>,
-) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let token = source.identity.segment_token.as_str();
-    let references = source.properties.references();
-    if references.len() != 15
-        || [4, 5].into_iter().chain(9..15).any(|slot| {
-            references
-                .get(slot)
-                .is_none_or(|reference| reference.index() != 0)
-        })
-    {
-        return None;
-    }
-    let selection = slot_property(source, 0, index)?;
-    let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &selection.kind else {
-        return None;
-    };
-    if !index
-        .entity_style_links
-        .contains(&(token, entity_link.index().checked_sub(1)?))
-    {
-        return None;
-    }
-    if boolean(source, 2, index)? {
-        return None;
-    }
-    let thickness =
-        cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 3, index)?).ok()?;
-    let edges = slot_property(source, 7, index)?;
-    let PmDcFeaturePropertyKind::References {
-        family: PmDcFeatureReferenceFamily::EdgeCollection,
-        items,
-    } = &edges.kind
-    else {
-        return None;
-    };
-    if !items.references().is_empty() {
-        return None;
-    }
-    let wrapper = index
-        .containing_labels
-        .get(&(token, source.identity.record_ordinal))
-        .and_then(Option::as_ref)?;
-    let members = wrapper.participants.references();
-    let [first, second] = members else {
-        return None;
-    };
-    if second.record_ordinal() != Some(source.identity.record_ordinal) {
-        return None;
-    }
-    let sketch = index
-        .sketches
-        .get(&(token, first.record_ordinal()?))
-        .and_then(Option::as_ref)?;
-    if sketch.direction.index() == 0 || sketch.direction != *references.get(1)? {
-        return None;
-    }
-    let sketch_id = index.sketch_ids.get(sketch.id().as_str())?;
-    let sketch_id = match sketch_id.try_clone_for_decode(ctx, "retain Inventor plate sketch id") {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
-    };
-    if let Err(error) = ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(selection.id_len()?),
-        "retain Inventor plate selection id",
-    ) {
-        return Some(Err(error));
-    }
-    let profile = match PlanarProfileRef::sketch_selection(sketch_id, vec![selection.id()], ctx) {
-        Ok(Ok(profile)) => profile,
-        Ok(Err(_)) => return None,
-        Err(limit) => return Some(Err(limit.into())),
-    };
-    let (feature_id, result) = match body_result(ctx, source, 6, index)? {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
-    };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "sheet_metal_plate") {
-        return Some(Err(error));
-    }
-    Some(Ok((
-        Feature {
-            id: feature_id,
-            ordinal: u64::from(label.index),
-            name: label.name().map(str::to_owned),
-            suppressed: None,
-            dependencies: DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some("sheet_metal_plate".into()),
-            source_text: None,
-            source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-                    profile,
-                    thickness,
-                    side: cadmpeg_ir::features::SheetMetalThicknessSide::Forward,
-                }),
-            ),
-            native_ref: Some(source.id()),
-        },
-        result,
-    )))
-}
-
 /// The slots of `source` that must hold null references.
 fn null_slots(source: &PmDcFeature, slots: &[usize]) -> bool {
     slots.iter().all(|slot| {
@@ -3308,8 +3303,8 @@ fn project_move(
     )))
 }
 
-/// Project a feature mirror: seed features reflected across the resolved
-/// plane stored in slot 12.
+/// Project a mirror: the seed features, or the bodies of the slot-10 result
+/// collection, reflected across the resolved plane stored in slot 12.
 fn project_mirror(
     ctx: &DecodeContext<'_>,
     pattern: &PmDcPatternFeature,
@@ -3323,7 +3318,16 @@ fn project_mirror(
     }
     let token = pattern.identity.segment_token.as_str();
     let slots = &pattern.property_slots;
-    if slots.len() != 13 || [3, 8, 10].into_iter().any(|slot| slots[slot].index() != 0) {
+    // A feature mirror has seed participants and its result in slot 9; a
+    // body mirror has a true slot-6 Boolean, no participants, and its result
+    // in slot 10.
+    let body_mirror = pattern.participants.references().is_empty();
+    let (result_slot, null_slot) = if body_mirror { (10, 9) } else { (9, 10) };
+    if slots.len() != 13
+        || [3, 8, null_slot]
+            .into_iter()
+            .any(|slot| slots[slot].index() != 0)
+    {
         return None;
     }
     let transform = index
@@ -3333,21 +3337,58 @@ fn project_mirror(
     if transform.matrix.rows() != IDENTITY_ROWS {
         return None;
     }
-    for slot in [6, 7, 11] {
+    for (slot, expected) in [(6, body_mirror), (7, false), (11, false)] {
         if slot == 11 && slots[slot].index() == 0 {
             continue;
         }
         if !matches!(
             resolve_property(token, slots[slot].index(), index)?.kind,
-            PmDcFeaturePropertyKind::Boolean { value: false, .. }
+            PmDcFeaturePropertyKind::Boolean { value, .. } if value == expected
         ) {
             return None;
         }
     }
+    let collection = resolve_property(token, slots[result_slot].index(), index)?;
     let placement = history.placement(pattern.identity.record_ordinal)?;
     let mut seeds = Vec::new();
+    if body_mirror {
+        if let Err(error) = ctx.charge_collection_items(1, "collect Inventor mirror seed") {
+            return Some(Err(error));
+        }
+        if let Err(error) = ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(collection.id_len()?),
+            "retain Inventor mirror body selection id",
+        ) {
+            return Some(Err(error));
+        }
+        seeds.push(cadmpeg_ir::features::patterns::PatternSeed::Bodies(
+            cadmpeg_ir::features::BodySelection::Native(collection.id()),
+        ));
+    }
+    // A participant that is a sheet-metal group names the features of that
+    // group in their group order.
+    let mut participants = Vec::new();
     for participant in pattern.participants.references() {
         let ordinal = participant.record_ordinal()?;
+        match index
+            .sheet_metal_groups
+            .get(&(token, ordinal))
+            .and_then(Option::as_ref)
+        {
+            Some(group) => {
+                for member in group.members.references() {
+                    if let Err(error) =
+                        ctx.charge_collection_items(1, "expand Inventor mirror seed group")
+                    {
+                        return Some(Err(error));
+                    }
+                    participants.push(member.record_ordinal()?);
+                }
+            }
+            None => participants.push(ordinal),
+        }
+    }
+    for ordinal in participants {
         let seed = history.placement(ordinal)?;
         if seed.kind == history::HistoryNodeKind::Sketch || seed.ordinal >= placement.ordinal {
             return None;
@@ -3394,7 +3435,6 @@ fn project_mirror(
         },
     )
     .ok()?;
-    let collection = resolve_property(token, slots[9].index(), index)?;
     let (feature_id, result) = match collection_result(ctx, &pattern.identity, collection, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -4127,19 +4167,29 @@ fn collection_result(
     Some(Ok((feature_id, result)))
 }
 
+/// Every item of an edge collection is an edge item, at least one item has
+/// an edge reference, and an item without one carries content-header flag
+/// bit 2.
 fn closed_edge_items(token: &str, items: &PmDcReferenceList, index: &ProjectionIndex<'_>) -> bool {
+    let mut referenced = false;
     !items.references().is_empty()
         && items.references().iter().all(|reference| {
             resolve_property(token, reference.index(), index).is_some_and(|property| {
-                matches!(
-                    &property.kind,
-                    PmDcFeaturePropertyKind::EdgeItem {
-                        index_references,
-                        ..
-                    } if !index_references.values().is_empty()
-                )
+                let PmDcFeaturePropertyKind::EdgeItem {
+                    index_references, ..
+                } = &property.kind
+                else {
+                    return false;
+                };
+                if index_references.values().is_empty() {
+                    property.header.flags & history::SUPPRESSED_FLAG != 0
+                } else {
+                    referenced = true;
+                    true
+                }
             })
         })
+        && referenced
 }
 
 fn slot_property<'a>(

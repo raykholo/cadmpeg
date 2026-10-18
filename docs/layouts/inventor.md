@@ -129,6 +129,44 @@ Spec §13 · layout: byte offsets · size: 30 B
 | 22 | 4 | `type_value` | `u32` | little | spec | type_value:u32 |
 | 26 | 4 | `value` | `u32` | little | spec | value:u32 |
 
+## `pm_dc_sheet_metal_bend_definition`
+
+Spec §13 · layout: byte offsets · size: 69 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | store fixed reference tuples after the content header |
+| 22 | 40 | `references` | `u32[10]` | little | spec | ten references |
+| 62 | 3 | `states` | `bytes[3]` | little | spec | three u8 states |
+| 65 | 4 | `final_reference` | `u32` | little | spec | and one reference |
+
+## `pm_dc_sheet_metal_bend_relief`
+
+Spec §13 · layout: byte offsets · size: 46 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | store fixed reference tuples after the content header |
+| 22 | 24 | `references` | `u32[6]` | little | spec | six references |
+
+## `pm_dc_sheet_metal_bend_settings`
+
+Spec §13 · layout: byte offsets · size: 34 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | store fixed reference tuples after the content header |
+| 22 | 12 | `references` | `u32[3]` | little | spec | three references |
+
+## `pm_dc_sheet_metal_corner_definition`
+
+Spec §13 · layout: byte offsets · size: 58 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | store fixed reference tuples after the content header |
+| 22 | 36 | `references` | `u32[9]` | little | spec | nine references |
+
 ## `pm_dc_linked_element_header`
 
 Spec §13 · layout: byte offsets · size: 26 B

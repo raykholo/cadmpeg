@@ -457,7 +457,7 @@ entity_type u32
 
 The body reference selects a PmDc kernel-body record of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link.
 
-Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
+Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`. An edge item with an empty index-reference list has content-header flag bit 2 (`0x4`) set and references no edge. A fillet, corner-round, or chamfer edge collection selects the edges of its edge items that have an index reference.
 
 Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges.
 
@@ -481,7 +481,22 @@ A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, en
 
 A hole with a null slot-21 placement is located by sketch points. Slot 7 then holds a hole-center list of type `b1226593d2115359a00021803603c8c9`, which adds one type-2 reference list after the content header. The hole label has one participant, the consumed sketch. Slots 8 and 16 repeat the sketch's transform and direction references. Each listed center is a point entity of that sketch. The model position of a center is the sketch transform applied to its sketch coordinates, in internal centimetres. A sketch-point hole drills opposite the sketch direction from each center. Slots 13 and 15 are null in this branch.
 
-A sheet-metal plate has 15 property slots. Slot 0 is a region selection, slot 1 the plate direction, slot 2 a flip Boolean, slot 3 the thickness, slot 6 the result surface body, slot 7 an edge collection, and slot 8 the feature dimensions. The other slots are null. A sheet-metal face is a group whose label lists exactly its profile sketch and its plate. The plate direction of a face is the direction record of that sketch, which is the sketch normal. With a false flip Boolean the plate thickness lies along the sketch normal from the sketch plane.
+A sheet-metal plate has 15 property slots. Slot 0 is a region selection, slot 1 a direction, slot 2 a flip Boolean, slot 3 the thickness, slot 4 a bend definition, slot 6 the result surface body, slot 7 an edge collection, and slot 8 the feature dimensions. In a flange plate, slots 9 through 13 are a corner definition, a bend relief, bend settings, a corner-edge list, and a value record. Slot 4 is null in a face plate without a bend. Slots 9 through 13 are null outside a flange plate. Slots 5 and 14 are null.
+
+Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face group and type `08dcddc3d311d0976000a7a99dccefb0` is a sheet-metal flange group. After the content header, a group record stores `value:i32`, a type-2 member-reference list, and `terminal:u32`, and then ends. The group record owns a feature label. The label participants are the profile sketch followed by the group members in member order. The first member is the plate. A face group has the plate alone or the plate and a bend. A flange group has the plate, a bend, and a corner. Feature-label classes `f258f74cd3114f24600047a99dccefb0` and `7f588068b74378a0559515946f7a1c12` identify the bend and the corner.
+
+The bend repeats plate slots 4, 7, 3, and 6 in its slots 3, 0, 2, and 5. In a flange group, the bend also repeats plate slots 10 and 11 in its slots 4 and 7, and the corner repeats plate slots 9, 12, 0, and 6 in its slots 0, 3, 4, and 1.
+
+The plate thickness lies along the normal of the group sketch, which is the direction record of that sketch. With a false flip Boolean, the thickness lies along the sketch normal from the sketch plane. With a true flip Boolean, it lies opposite the sketch normal. In a face group, plate slot 1 is the sketch direction record. In a flange group, plate slot 1 is a different direction record.
+
+The sheet-metal property records store fixed reference tuples after the content header and then end:
+
+- `92596ba9d311efa86000b3a99dccefb0`: bend definition, ten references, three u8 states, and one reference;
+- `64880596d3119a76600081a99dccefb0`: bend relief, six references;
+- `e9345026d5114c081000e596c28b7ab5`: bend settings, three references;
+- `83ce7786a946cde11ebd99b4fe02afb2`: corner definition, nine references.
+
+Type `ce2d9b29ad43d8802f132c9a40c9ba90` is a corner-edge list and adds one type-2 reference list. Type `051772e5a74f641a01386e8f3cc02218` adds one `value:u32`.
 
 A corner round uses the constant-radius edge-fillet slots. Its edge sets can omit the continuity Boolean with a null reference.
 
@@ -501,7 +516,7 @@ Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` 
 
 For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. For segment major versions 21 and 22, it contains 26 more property references. The mirror suffix contains five more property references, six u32 extension values in segment major versions 21 and 22, and two final property references. The record ends after the applicable suffix.
 
-Feature-label class `a326c2b6d211263660002cab01f31bb0` identifies a mirror. A mirror's 13 property slots are the six leading slots, the five suffix slots, and the two final slots, in record order. Slot 0 is a transform, slots 6, 7, and 11 are Booleans, slot 9 or slot 10 is the result object collection, and slot 12 stores the resolved mirror plane with the work-plane grammar. The mirror plane passes through the stored origin, and its normal is the cross product of the stored u and v axes. A feature mirror has its seed features as participants, an identity transform, false Booleans in slots 6 and 7, a false or null slot-11 Boolean, null slots 3, 8, and 10, and its result in slot 9. A true slot-6 Boolean with no participants and a slot-10 result mirrors bodies.
+Feature-label class `a326c2b6d211263660002cab01f31bb0` identifies a mirror. A mirror's 13 property slots are the six leading slots, the five suffix slots, and the two final slots, in record order. Slot 0 is a transform, slots 6, 7, and 11 are Booleans, slot 9 or slot 10 is the result object collection, and slot 12 stores the resolved mirror plane with the work-plane grammar. The mirror plane passes through the stored origin, and its normal is the cross product of the stored u and v axes. A feature mirror has its seed features as participants, an identity transform, false Booleans in slots 6 and 7, a false or null slot-11 Boolean, null slots 3, 8, and 10, and its result in slot 9. A mirror participant that is a sheet-metal group record stands for the group members in member order. A body mirror has no participants, an identity transform, a true slot-6 Boolean, a false slot-7 Boolean, a false or null slot-11 Boolean, null slots 3, 8, and 9, and its result in slot 10. It mirrors the bodies of the slot-10 object collection, which is also the result.
 
 ### 13.1 Feature history
 

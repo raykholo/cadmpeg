@@ -342,6 +342,104 @@ source = "spec"
 anchor = "value:u32"
 
 [[record]]
+name = "pm_dc_sheet_metal_bend_definition"
+kind = "byte"
+section = "13"
+anchor = "bend definition, ten references, three u8 states, and one reference"
+size = 69
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "store fixed reference tuples after the content header"
+
+[[record.field]]
+name = "references"
+offset = 22
+type = "u32[10]"
+source = "spec"
+anchor = "ten references"
+
+[[record.field]]
+name = "states"
+offset = 62
+type = "bytes[3]"
+source = "spec"
+anchor = "three u8 states"
+
+[[record.field]]
+name = "final_reference"
+offset = 65
+type = "u32"
+source = "spec"
+anchor = "and one reference"
+
+[[record]]
+name = "pm_dc_sheet_metal_bend_relief"
+kind = "byte"
+section = "13"
+anchor = "bend relief, six references"
+size = 46
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "store fixed reference tuples after the content header"
+
+[[record.field]]
+name = "references"
+offset = 22
+type = "u32[6]"
+source = "spec"
+anchor = "six references"
+
+[[record]]
+name = "pm_dc_sheet_metal_bend_settings"
+kind = "byte"
+section = "13"
+anchor = "bend settings, three references"
+size = 34
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "store fixed reference tuples after the content header"
+
+[[record.field]]
+name = "references"
+offset = 22
+type = "u32[3]"
+source = "spec"
+anchor = "three references"
+
+[[record]]
+name = "pm_dc_sheet_metal_corner_definition"
+kind = "byte"
+section = "13"
+anchor = "corner definition, nine references"
+size = 58
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "store fixed reference tuples after the content header"
+
+[[record.field]]
+name = "references"
+offset = 22
+type = "u32[9]"
+source = "spec"
+anchor = "nine references"
+
+[[record]]
 name = "pm_dc_linked_element_header"
 kind = "byte"
 section = "13"

@@ -688,6 +688,11 @@ fn decode_container<'a>(
         "pm_dc_origin_folders",
         &feature_inventory.origin_folders,
     )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_sheet_metal_groups",
+        &feature_inventory.sheet_metal_groups,
+    )?;
     namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
