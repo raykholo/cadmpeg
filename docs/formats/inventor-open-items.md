@@ -226,6 +226,14 @@ The meaning of the eight export-entry state bytes, of the export padding byte, a
 
 **Need.** The bend and corner features stay native until their geometry has exact operands. A flange can transfer as one edge flange only when its height, angle, edge, height datum, bend position, and width are exact.
 
+### DE-07. Edge-item and region-selection model joins
+
+**Question.** What does the value of an edge item's index-reference list select, and how does a kernel-entity link's entity identifier join a region face to the loops of its sketch?
+
+**Known.** A referencing edge item has one index-reference value. The second list-metadata value is `0x10000000`. The value is not a record reference of the PmDc segment. The edges that a fillet, corner round, or chamfer selects are replaced by the operation, so the stored part body does not contain them. The body reference of a kernel-entity link selects a PmDc record of type `5c5945f6d5113313100060a6bba647b5`; its kernel bytes are an `ASM BinaryFile4` body with `NamingMatching` attributes and a history stream.
+
+**Need.** A neutral edge selection needs the edge in an input topology of the consuming feature. A region selection transfers as sketch regions only when the region face of the kernel body joins exact sketch loops.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions
