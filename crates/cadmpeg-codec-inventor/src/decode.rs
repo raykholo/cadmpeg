@@ -105,6 +105,7 @@ fn decode_container<'a>(
         &sketch_inventory,
         &ir.model.parameters,
         &ir.model.sketches,
+        &ir.model.sketch_entities,
     )?;
     let unresolved_features = feature_projection.unresolved_features;
     let unresolved_feature_states = feature_projection.unresolved_states;
@@ -644,6 +645,11 @@ fn decode_container<'a>(
         &sketch_inventory.constraints,
     )?;
     namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_feature_containers",
+        &feature_inventory.containers,
+    )?;
     namespace.set_arena(ctx, "pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena(
         ctx,
@@ -665,6 +671,17 @@ fn decode_container<'a>(
         ctx,
         "pm_dc_entity_style_links",
         &feature_inventory.entity_style_links,
+    )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_kernel_entity_links",
+        &feature_inventory.kernel_entity_links,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_work_planes", &feature_inventory.work_planes)?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_origin_folders",
+        &feature_inventory.origin_folders,
     )?;
     namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;

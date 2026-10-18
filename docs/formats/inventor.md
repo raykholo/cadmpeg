@@ -367,7 +367,7 @@ The part-operation, extent, hole-form, fillet-form, and chamfer-form records use
 
 Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
 
-Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
+Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Types `3b2477a4d1118f96000826bd0663dc09` and `473f20fcd11101cf000835bd0663dc09` add an entity-link reference and one u8 value. They are the profile selection and the region selection. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
 A feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
 
@@ -382,15 +382,37 @@ next_reference u32
 
 The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
 
-Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. A profile-selection record selects an entity-style link through its entity-link reference.
+Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. A profile-selection record selects an entity-style link or a kernel-entity link through its entity-link reference.
+
+Type `21750fccd1112780e38619962259017a` is a kernel-entity link. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+selection_source u32
+state u8
+body_reference u32
+entity_id u32
+entity_type u32
+```
+
+The body reference selects a PmDc kernel-body record of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link.
 
 Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
 
 Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges.
 
-Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively.
+Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, `1a7d751fd2119c54a00020803603c8c9`, `c65f5855d311730c60003aa99dccefb0`, and `b54dd6f6d311c4966000f2b21d6eefb0` identify extrusion, fillet, chamfer, hole, sheet-metal plate, and corner-round records respectively.
 
-An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 4, and 5 mean fixed dimension, through next, and through all. A fixed dimension uses the slot-4 length. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
+An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 2, 4, 5, 6, and 7 mean fixed dimension, symmetric fixed dimension, through next, through all, from-to, and to. A fixed dimension uses the slot-4 length. Extent 2 occurs only with a true symmetric-extent Boolean, and its length is the total travel split evenly around the profile plane. A true symmetric-extent Boolean with extent 5 extends through all material on both sides of the profile plane. Other extents with a true symmetric-extent Boolean are outside the supported branch.
+
+The extent-7 target is the work plane in slot 11, or the model face recorded by a termination flag in slot 13 and a surface in slot 18. The extent-6 extrusion starts at the target in slot 8, or the face in slots 10 and 17, and ends at the extent-7 target. A two-sided extrusion has an extent enumeration in slot 29. Slots 27, 28, and 29 hold the length, taper angle, and extent of the side opposite the extrusion direction.
+
+Type `fd24893dd211fa99000840ab0663dc09` is a termination flag. It adds one `value:u8` after the content header. A face target requires value 1.
+
+Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
+
+Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
 
 A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, slot 11 for the fillet form, and slot 15 for the result object collection. Fillet form value 0 is an edge fillet. Each edge set identifies its edge collection and length parameter. Selection type 4 with value 0 lists the exact edge items. The edge set also carries its continuity Boolean.
 
@@ -398,11 +420,61 @@ An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for i
 
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
 
+A hole with a null slot-21 placement is located by sketch points. Slot 7 then holds a hole-center list of type `b1226593d2115359a00021803603c8c9`, which adds one type-2 reference list after the content header. The hole label has one participant, the consumed sketch. Slots 8 and 16 repeat the sketch's transform and direction references. Each listed center is a point entity of that sketch. The model position of a center is the sketch transform applied to its sketch coordinates, in internal centimetres. A sketch-point hole drills opposite the sketch direction from each center. Slots 13 and 15 are null in this branch.
+
+A sheet-metal plate has 15 property slots. Slot 0 is a region selection, slot 1 the plate direction, slot 2 a flip Boolean, slot 3 the thickness, slot 6 the result surface body, slot 7 an edge collection, and slot 8 the feature dimensions. The other slots are null. A sheet-metal face is a group whose label lists exactly its profile sketch and its plate. The plate direction of a face is the direction record of that sketch, which is the sketch normal. With a false flip Boolean the plate thickness lies along the sketch normal from the sketch plane.
+
+A corner round uses the constant-radius edge-fillet slots. Its edge sets can omit the continuity Boolean with a null reference.
+
+Feature-label classes `336723c07e40eacb2eff669e9add87f8`, `baa87183d311347bc000e39545df724f`, `ecf481729c4d5f925f2192b4a83096ac`, and `dea6a68f4c4b529188ca31b5630198c8` identify combine, split, thicken, and move records respectively. The following property records add one type-2 reference list after the content header: `83aadad54f4375dacd1003b260a8a422` is a body list, `7a25f2efd11105af000847b00524dc09` is a face collection, and `29fe0008d511dd3510003697ab9f0ab5` is a transform list. Types `1990e1b8d311467bc000e39545df724f`, `1790e1b8d311467bc000e39545df724f`, and `4c40b0a3ac4b9504e719b28a70e0e818` are enumerations with type values 3, 4, and 3. They are the split form, the split side, and the thicken form. Type `9f8f2a40d21120e66000aaabc8433cb0` uses the Boolean grammar. Type `c11c7b63ea4d840b68b76e8c67bcbc48` adds one `value:u32`.
+
+A combine has four slots: slot 0 is the tool body list, slot 1 the object collection of the base body, which is also the result, slot 2 the part operation, and slot 3 the keep-tools Boolean. Part-operation values 2, 3, and 4 select cut, join, and intersection.
+
+A split has ten slots: slot 0 is the split form, slot 1 a Boolean, slot 3 the split side, slot 4 a boundary patch, slot 5 the tool work plane, slot 6 a Boolean, slot 7 the target body list, and slot 9 the result object collection. A split with form 3, side 2, false Booleans, an empty boundary patch, and null slots 2 and 8 partitions the target bodies at the work plane and keeps every side.
+
+A thicken has 18 slots: slot 0 is the face collection, slot 1 the part operation, slot 6 the thickness, slot 13 the thicken form, slot 14 the thicken value, and slot 15 the result object collection. Slots 2, 3, 4, 7, 10, 16, and 17 are Booleans. The supported branch joins material and has form 3, value 1, false Booleans in slots 3, 4, 7, 10, and 17, a true Boolean in slot 16, and null slots 5, 8, and 11.
+
+A move whose three slots are an object collection of bodies, a transform list with one transform, and the feature dimensions moves those bodies by that transform. The object collection is also the result. A move whose slot 0 is a face list and slot 8 a body list is a different move form.
+
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 
 Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` store rectangular-pattern and mirror feature records. Both start with the generic 30-byte feature prefix through `outline_value`, followed by a type-2 property-reference list, `value:u32`, a type-2 participant-reference list, six property references, and `control:u8`.
 
 For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. For segment major versions 21 and 22, it contains 26 more property references. The mirror suffix contains five more property references, six u32 extension values in segment major versions 21 and 22, and two final property references. The record ends after the applicable suffix.
+
+Feature-label class `a326c2b6d211263660002cab01f31bb0` identifies a mirror. A mirror's 13 property slots are the six leading slots, the five suffix slots, and the two final slots, in record order. Slot 0 is a transform, slots 6, 7, and 11 are Booleans, slot 9 or slot 10 is the result object collection, and slot 12 stores the resolved mirror plane with the work-plane grammar. The mirror plane passes through the stored origin, and its normal is the cross product of the stored u and v axes. A feature mirror has its seed features as participants, an identity transform, false Booleans in slots 6 and 7, a false or null slot-11 Boolean, null slots 3, 8, and 10, and its result in slot 9. A true slot-6 Boolean with no participants and a slot-10 result mirrors bodies.
+
+### 13.1 Feature history
+
+PmDc type `164d8790d011f8d10008cabc0663dc09` is a feature container. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+identifier bytes[16]
+name counted UTF-16LE
+items type-2 reference list
+values u32[15]
+segment counted UTF-16LE
+value f64
+terminal u32
+```
+
+The payload ends after `terminal`. The `segment` string names the B-rep segment that the container builds. `PmBRepSegment` identifies the part modeling history. `MbBrepSegment` identifies the flat-pattern history. The root label of a container is the feature label whose owner reference selects the container.
+
+The participant list of a root label is the ordered top level of the browser tree. Each participant is one tree member:
+
+- A feature, pattern-feature, planar-sketch, or work-plane record is a history node.
+- The end-of-features record is the end-of-part marker. Top-level members after the marker are below the end of part.
+- Another record that owns a feature label is a group. The participants of its label are its nested members, in order.
+
+The participants of a feature label that are planar-sketch records are the sketches that the feature consumes. History order is the post-order of the tree: the consumed sketches of a feature precede it, and the nested members of a group take the position of the group. A record has one position; a repeated reference does not move it. The model history precedes the flat-pattern history.
+
+The participants of a pattern-feature record are its seed features. PmDc type `0913242bd211cc7260007bb79b49ebb0` is the origin folder. Its payload is the content header. The work planes in its group are the origin planes.
+
+Content-header flag bit 2 (`0x4`) marks a suppressed feature, pattern-feature, or sketch record. Flag bit 19 (`0x80000`) marks a feature, pattern-feature, or sketch record below the end-of-part marker.
 
 ## 14. Document kind
 
