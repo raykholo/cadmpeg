@@ -2208,7 +2208,8 @@ pub(crate) fn project(
                 else {
                     continue;
                 };
-                if !frame.preserves_axes() && constraint.kind.depends_on_axes() {
+                let swap_axes = frame.swaps_axes();
+                if !frame.preserves_axes() && !swap_axes && constraint.kind.depends_on_axes() {
                     continue;
                 }
                 if let Some(result) = project_constraint(
@@ -2216,7 +2217,10 @@ pub(crate) fn project(
                     constraint,
                     &copies,
                     &parameter_index,
-                    Some(instance.identity.record_ordinal),
+                    Some(CopyScope {
+                        instance: instance.identity.record_ordinal,
+                        swap_axes,
+                    }),
                 )
                 .transpose()?
                 {
@@ -2317,7 +2321,7 @@ fn project_constraint(
     constraint: &PmDcSketchConstraint,
     entities: &HashMap<RecordKey<'_>, &SketchEntity>,
     parameters: &HashMap<String, ParameterId>,
-    scope: Option<u32>,
+    scope: Option<CopyScope>,
 ) -> Option<Result<SketchConstraint, CodecError>> {
     macro_rules! admit {
         ($result:expr) => {
@@ -2785,7 +2789,7 @@ fn project_constraint(
 fn finish_constraint(
     ctx: &DecodeContext<'_>,
     constraint: &PmDcSketchConstraint,
-    scope: Option<u32>,
+    scope: Option<CopyScope>,
     definition: SketchConstraintDefinitionInput,
     orientation: Option<u32>,
     members: &[&SketchEntity],
@@ -2827,7 +2831,12 @@ fn finish_constraint(
         "retain projected Inventor sketch constraint native reference",
     ));
     admit!(ctx.charge_entities(1, "project Inventor sketch constraint"));
-    let id_text = match scope {
+    let definition = if scope.is_some_and(|scope| scope.swap_axes) {
+        swap_axes(definition)?
+    } else {
+        definition
+    };
+    let id_text = match scope.map(|scope| scope.instance) {
         None => format!(
             "inventor:design:sketch-constraint#{}-{}",
             constraint.identity.segment_token, constraint.identity.record_ordinal
@@ -2854,6 +2863,62 @@ fn finish_constraint(
         metadata: None,
         native_ref: Some(constraint.id()),
     }))
+}
+
+/// The block instance whose copy a definition relation constrains.
+#[derive(Debug, Clone, Copy)]
+struct CopyScope {
+    instance: u32,
+    /// The instance turns the sketch axes by a quarter turn.
+    swap_axes: bool,
+}
+
+/// The relation after a quarter-turn placement exchanges the sketch axes.
+fn swap_axes(
+    definition: SketchConstraintDefinitionInput,
+) -> Option<SketchConstraintDefinitionInput> {
+    use cadmpeg_ir::sketches::SketchCoordinateAxis;
+    Some(match definition {
+        SketchConstraintDefinitionInput::Horizontal { entity } => {
+            SketchConstraintDefinitionInput::Vertical { entity }
+        }
+        SketchConstraintDefinitionInput::Vertical { entity } => {
+            SketchConstraintDefinitionInput::Horizontal { entity }
+        }
+        SketchConstraintDefinitionInput::HorizontalDistance {
+            first,
+            second,
+            parameter,
+        } => SketchConstraintDefinitionInput::VerticalDistance {
+            first,
+            second,
+            parameter,
+        },
+        SketchConstraintDefinitionInput::VerticalDistance {
+            first,
+            second,
+            parameter,
+        } => SketchConstraintDefinitionInput::HorizontalDistance {
+            first,
+            second,
+            parameter,
+        },
+        SketchConstraintDefinitionInput::SameCoordinate { relation } => {
+            let axis = match relation.axis() {
+                SketchCoordinateAxis::U => SketchCoordinateAxis::V,
+                SketchCoordinateAxis::V => SketchCoordinateAxis::U,
+            };
+            SketchConstraintDefinitionInput::SameCoordinate {
+                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                    relation.first().clone(),
+                    relation.second().clone(),
+                    axis,
+                )
+                .ok()?,
+            }
+        }
+        other => other,
+    })
 }
 
 /// A deferred endpoint locus: the selector names the stored start (1) or
@@ -3104,7 +3169,8 @@ struct Frame([[f64; 3]; 2]);
 impl Frame {
     const IDENTITY: Self = Self([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
 
-    /// Admits a rigid affine planar matrix with last row `[0, 0, 1]`.
+    /// Admits a proper rigid planar matrix with last row `[0, 0, 1]`. A
+    /// reflecting placement reverses arc sense and stays unsupported.
     fn from_matrix(rows: [[f64; 3]; 3]) -> Option<Self> {
         let [first, second, last] = rows;
         let [a, b, _] = first;
@@ -3114,7 +3180,8 @@ impl Frame {
             && ((last[2] - 1.0).abs() <= EPS_SKETCH_BLOCK_FRAME)
             && ((a.hypot(c) - 1.0).abs() <= EPS_SKETCH_BLOCK_FRAME)
             && ((b.hypot(d) - 1.0).abs() <= EPS_SKETCH_BLOCK_FRAME)
-            && (a.mul_add(b, c * d).abs() <= EPS_SKETCH_BLOCK_FRAME);
+            && (a.mul_add(b, c * d).abs() <= EPS_SKETCH_BLOCK_FRAME)
+            && a.mul_add(d, -(b * c)) > 0.0;
         rigid.then_some(Self([first, second]))
     }
 
@@ -3152,10 +3219,10 @@ impl Frame {
         ]
     }
 
-    /// Whether the frame reverses orientation.
-    fn reflects(self) -> bool {
-        let [[a, b, _], [c, d, _]] = self.0;
-        a.mul_add(d, -(b * c)) < 0.0
+    /// Whether the frame maps each sketch axis onto the other axis.
+    fn swaps_axes(self) -> bool {
+        let [[a, _, _], [_, d, _]] = self.0;
+        a.abs() <= EPS_SKETCH_BLOCK_FRAME && d.abs() <= EPS_SKETCH_BLOCK_FRAME
     }
 
     /// Whether the frame maps each sketch axis onto itself.
@@ -3331,13 +3398,7 @@ fn project_geometry(
                     };
                     let angle_of =
                         |point: Point2| (point.v - center_mm.v).atan2(point.u - center_mm.u);
-                    // A reflecting frame reverses the arc sense; the
-                    // counterclockwise neutral arc then runs end to start.
-                    let (from, to) = if frame.reflects() {
-                        (angle_of(mapped_end), angle_of(mapped_start))
-                    } else {
-                        (angle_of(mapped_start), angle_of(mapped_end))
-                    };
+                    let (from, to) = (angle_of(mapped_start), angle_of(mapped_end));
                     let (Some(from), Some(to)) = (Angle::new(from), Angle::new(to)) else {
                         return Ok(None);
                     };

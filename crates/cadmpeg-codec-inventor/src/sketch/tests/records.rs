@@ -735,3 +735,25 @@ fn projection_link_fixes_projected_origin_point() {
             if native_kind.as_str() == "projected_origin" && operands.len() == 2
     ));
 }
+
+#[test]
+fn quarter_turn_block_placement_exchanges_axis_relations() {
+    let frame =
+        super::super::Frame::from_matrix([[0.0, 1.0, 4.0], [-1.0, 0.0, 3.0], [0.0, 0.0, 1.0]])
+            .expect("quarter-turn frame");
+    assert!(frame.swaps_axes());
+    assert!(!frame.preserves_axes());
+    assert!(
+        super::super::Frame::from_matrix([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+            .is_none(),
+        "a reflecting placement is refused"
+    );
+    let entity =
+        cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1").expect("entity id");
+    assert!(matches!(
+        super::super::swap_axes(
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Horizontal { entity }
+        ),
+        Some(cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Vertical { .. })
+    ));
+}
