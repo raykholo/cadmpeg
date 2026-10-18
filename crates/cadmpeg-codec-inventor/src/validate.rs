@@ -16,7 +16,7 @@ use cadmpeg_ir::{
 
 use crate::design::{PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind};
 use crate::feature::{
-    PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
+    PmDcEntityStyleLink, PmDcFeature, PmDcFeatureContainer, PmDcFeatureLabel, PmDcFeatureProperty,
     PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcPatternFeature,
 };
 use crate::sketch::{
@@ -61,6 +61,7 @@ const ARENAS: &[&str] = &[
     "pm_app_default_styles",
     "pm_app_rendering_styles",
     "pm_dc_expressions",
+    "pm_dc_feature_containers",
     "pm_dc_feature_labels",
     "pm_dc_feature_properties",
     "pm_dc_feature_terminators",
@@ -939,6 +940,33 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
         }
     }
+    unique(
+        findings,
+        data.pm_dc_feature_containers.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmDc feature container",
+    );
+    for container in &data.pm_dc_feature_containers {
+        if raw.get(&(
+            container.identity.segment_token.as_str(),
+            container.identity.record_ordinal,
+        )) != Some(&container.identity.type_id.as_str())
+            || !resolves(
+                container.identity.segment_token.as_str(),
+                container.next.index(),
+            )
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc feature-container record or reference does not resolve".into(),
+                Some(container.id()),
+            ));
+        }
+    }
     for terminator in &data.pm_dc_feature_terminators {
         let references = [
             terminator.header.next.index(),
@@ -1001,12 +1029,21 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(|result| (&result.output_of, result))
         .collect::<HashMap<_, _>>();
+    let history_records = data
+        .pm_dc_pattern_features
+        .iter()
+        .map(PmDcPatternFeature::id)
+        .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
+        .collect::<std::collections::HashSet<_>>();
     for feature in &ir.model.features {
-        let Some(raw_feature) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| raw_features.get(native).copied())
-        else {
+        let native = feature.native_ref.as_deref();
+        let Some(raw_feature) = native.and_then(|native| raw_features.get(native).copied()) else {
+            if native.is_some_and(|native| history_records.contains(native))
+                && crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
+                    .is_none()
+            {
+                continue;
+            }
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature does not resolve to its PmDc source record".into(),
@@ -1423,6 +1460,7 @@ struct NativeData {
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
     sketch_record_issues: Vec<RecordIssue>,
+    pm_dc_feature_containers: Vec<PmDcFeatureContainer>,
     pm_dc_features: Vec<PmDcFeature>,
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
@@ -1488,6 +1526,8 @@ impl NativeData {
             pm_dc_transforms: namespace.arena_as_for_decode(ctx, "pm_dc_transforms")?,
             pm_dc_directions: namespace.arena_as_for_decode(ctx, "pm_dc_directions")?,
             sketch_record_issues: namespace.arena_as_for_decode(ctx, "sketch_record_issues")?,
+            pm_dc_feature_containers: namespace
+                .arena_as_for_decode(ctx, "pm_dc_feature_containers")?,
             pm_dc_features: namespace.arena_as_for_decode(ctx, "pm_dc_features")?,
             pm_dc_pattern_features: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_features")?,
             pm_dc_feature_terminators: namespace

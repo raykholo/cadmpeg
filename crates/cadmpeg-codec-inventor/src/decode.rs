@@ -593,6 +593,11 @@ fn decode_container<'a>(
         &sketch_inventory.constraints,
     )?;
     namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_feature_containers",
+        &feature_inventory.containers,
+    )?;
     namespace.set_arena(ctx, "pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena(
         ctx,
