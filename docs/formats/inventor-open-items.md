@@ -234,6 +234,22 @@ The meaning of the eight export-entry state bytes, of the export padding byte, a
 
 **Need.** A neutral edge selection needs the edge in an input topology of the consuming feature. A region selection transfers as sketch regions only when the region face of the kernel body joins exact sketch loops.
 
+### DE-08. Design records at other segment major versions
+
+**Question.** Which content-header extension, point tail, curve auxiliary-list, and record-tail forms apply at segment major version 24 and at versions after 25, and what do the content-header extension values and the version-25 point list encode?
+
+**Known.** Segment major versions 15 through 23 and 25 have exact design-record grammars. The extension values of version-23 and version-25 headers are -1, 0, or positive integers. The version-25 point list is empty in most records.
+
+**Need.** Each further version requires its header extension length and per-class header form before its design records parse.
+
+### DE-09. Version-25 spline points and spline auxiliary lists
+
+**Question.** What follows the center-of list of a version-25 point whose state is 2, and which gate or list follows the point list of a version-25 spline?
+
+**Known.** A state-2 point stores a type-2 preamble with count 2 followed by two f64 values, a second type-2 preamble with count 2, an empty type-2 list, a reference, an empty type-2 list, and a reference. The points occur with sketch splines. A version-25 spline stores `[0, 0]` where earlier versions store the auxiliary list.
+
+**Need.** The state-2 tail and the spline gate require exact field grammars before these records and their sketches close.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

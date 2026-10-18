@@ -673,6 +673,7 @@ fn corner_round_with_items(flags: u32, second_empty: bool, first_empty: bool) ->
                 save_version_major: 16,
                 header,
                 kind: plain.kind.clone(),
+                tail: None,
             },
             plain.identity.type_id.clone(),
             plain.identity.segment_token.clone(),

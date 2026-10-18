@@ -367,7 +367,7 @@ pub(crate) fn inventory(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if crate::pmdc::content_header_extension_len(version).is_none() {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -1236,12 +1236,7 @@ fn parse_parameter(
     version: u8,
 ) -> Result<PmDcParameterPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header_value = cursor.u32("parameter header value")?;
-    let header_id = cursor.u16("parameter header id")?;
-    let next = cursor.reference("parameter next reference")?;
-    let flags = cursor.u32("parameter flags")?;
-    let context = cursor.reference("parameter context reference")?;
-    let source_index = cursor.u32("parameter source index")?;
+    let header = crate::pmdc::content_header(&mut cursor, crate::pmdc::extended(version))?;
     let name = cursor.utf16(ctx, "parameter name")?;
     let name_value = cursor.u32("parameter name value")?;
     let unit = cursor.reference("parameter unit reference")?;
@@ -1253,14 +1248,7 @@ fn parse_parameter(
     cursor.finish("parameter")?;
     Ok(PmDcParameterPayload {
         save_version_major: version,
-        header: PmDcContentHeader {
-            header_value,
-            header_id,
-            next,
-            flags,
-            context,
-            source_index,
-        },
+        header,
         name,
         name_value,
         unit,
@@ -2007,6 +1995,66 @@ mod tests {
         assert_eq!(parameter.formula, reference(4, false));
     }
 
+    /// The parameter record of `parse_parameter_record` with `extension` after the source index.
+    fn parameter_bytes(extension: &[i32]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&42u16.to_le_bytes());
+        bytes.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+        bytes.extend_from_slice(&0x8003_4200u32.to_le_bytes());
+        bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+        bytes.extend_from_slice(&13u32.to_le_bytes());
+        for value in extension {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for unit in "d0".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&2.5f64.to_le_bytes());
+        bytes.extend_from_slice(&2.5f64.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&(-1i16).to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn parameter_headers_carry_one_extension_value_at_23_and_two_at_25() {
+        for (version, extension) in [(22, vec![]), (23, vec![-1]), (25, vec![0, -1])] {
+            let bytes = parameter_bytes(&extension);
+            let arena = DecodeArena::new();
+            let (ctx, source) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("fixture view");
+            let parameter =
+                parse_parameter(&ctx, source, version).expect("extended parameter parses");
+            assert_eq!(parameter.name, "d0", "version {version}");
+            assert_eq!(parameter.header.source_index, 13);
+            assert_eq!(parameter.header.extension, extension);
+            assert_eq!(parameter.model_value.get(), 2.5);
+        }
+        // A version-22 record read at version 23 is one value short.
+        let bytes = parameter_bytes(&[]);
+        let arena = DecodeArena::new();
+        let (ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                .expect("fixture view");
+        assert!(parse_parameter(&ctx, source, 23).is_err());
+    }
+
+    #[test]
+    fn design_records_are_admitted_at_the_implemented_versions_only() {
+        for version in [15, 22, 23, 25] {
+            assert!(crate::pmdc::content_header_extension_len(version).is_some());
+        }
+        for version in [14, 24, 26] {
+            assert!(crate::pmdc::content_header_extension_len(version).is_none());
+        }
+    }
+
     #[test]
     fn parses_generated_expression_grammar() {
         fn header(unit: u32) -> Vec<u8> {
@@ -2190,6 +2238,7 @@ mod tests {
                     flags: 0,
                     context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 0,
+                    extension: Vec::new(),
                 },
                 name: "width".into(),
                 name_value: 0,
@@ -2238,6 +2287,7 @@ mod tests {
                     flags: 0,
                     context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 1,
+                    extension: Vec::new(),
                 },
                 name: "height".into(),
                 name_value: 0,
@@ -2387,6 +2437,7 @@ mod tests {
                     flags: 0,
                     context: reference(DOCUMENT_TABLE_INDEX, true),
                     source_index: 0,
+                    extension: Vec::new(),
                 },
                 name: "ratio".into(),
                 name_value: 0,
@@ -2754,6 +2805,7 @@ mod tests {
                     flags: 0,
                     context: reference(0, false),
                     source_index: 0,
+                    extension: Vec::new(),
                 },
                 name: "x".into(),
                 name_value: 0,

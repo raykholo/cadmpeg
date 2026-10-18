@@ -119,3 +119,51 @@ fn parses_generated_container_link_plane_and_surface() {
     .expect("surface form")
     .is_none());
 }
+
+/// At segment major versions 23 and 25 the feature and terminator keep their content header,
+/// feature properties extend it by one and two values, and a fillet edge set ends with a u32.
+#[test]
+fn version_23_and_25_feature_records_follow_their_class_header() {
+    let mut feature = content(7);
+    feature.extend_from_slice(&(-1i32).to_le_bytes());
+    feature.extend_from_slice(&42u32.to_le_bytes());
+    feature.extend_from_slice(&references(&[]));
+    feature.extend_from_slice(&9u32.to_le_bytes());
+    for version in [22, 23, 25] {
+        let parsed = parse(&feature, |ctx, source| {
+            crate::feature::parse_feature(ctx, source, version).expect("feature")
+        });
+        assert!(parsed.header.extension.is_empty());
+        assert_eq!(parsed.value, 9);
+    }
+    let mut terminator = content(8);
+    terminator.extend_from_slice(&(-1i32).to_le_bytes());
+    for version in [23, 25] {
+        let parsed = parse(&terminator, |_, source| {
+            crate::feature::parse_terminator(source, version).expect("terminator")
+        });
+        assert_eq!(parsed.state, -1);
+    }
+
+    for (version, extension) in [(22, Vec::<i32>::new()), (23, vec![-1]), (25, vec![-1, 7])] {
+        let mut fillet_set = content(18);
+        for value in &extension {
+            fillet_set.extend_from_slice(&value.to_le_bytes());
+        }
+        for reference in 0x8000_0010u32..0x8000_0014 {
+            fillet_set.extend_from_slice(&reference.to_le_bytes());
+        }
+        if version >= 23 {
+            fillet_set.extend_from_slice(&0u32.to_le_bytes());
+        }
+        let parsed = parse(&fillet_set, |ctx, source| {
+            crate::feature::parse_fillet_edge_set(ctx, source, version).expect("fillet edge set")
+        });
+        assert_eq!(parsed.header.extension, extension);
+        assert_eq!(parsed.tail, (version >= 23).then_some(0));
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } if radius.index() == 17
+        ));
+    }
+}

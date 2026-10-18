@@ -184,6 +184,9 @@ pub(crate) struct PmDcFeaturePropertyPayload {
     save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) kind: PmDcFeaturePropertyKind,
+    /// The u32 that segment major versions 23 and later append to a fillet edge set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tail: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -550,7 +553,7 @@ pub(crate) fn inventory(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if crate::pmdc::content_header_extension_len(version).is_none() {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -758,7 +761,7 @@ fn parse_pattern_feature(
     family: PmDcPatternFamily,
 ) -> Result<PmDcPatternFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, 0)?;
     let state = cursor.u32("pattern-feature state")?.cast_signed();
     let outline_value = cursor.u32("pattern-feature outline value")?;
     let properties = reference_list(ctx, &mut cursor, 2, "pattern-feature properties")?;
@@ -829,7 +832,7 @@ fn parse_feature(
     version: u8,
 ) -> Result<PmDcFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, 0)?;
     let state = cursor.u32("feature state")?.cast_signed();
     let outline_value = cursor.u32("feature outline value")?;
     let properties = reference_list(ctx, &mut cursor, 2, "feature property list")?;
@@ -884,7 +887,7 @@ fn parse_terminator(
     version: u8,
 ) -> Result<PmDcFeatureTerminatorPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, 0)?;
     let state = cursor.u32("feature terminator state")?.cast_signed();
     cursor.finish("feature terminator")?;
     Ok(PmDcFeatureTerminatorPayload {
@@ -947,6 +950,7 @@ fn property(
         save_version_major: version,
         header,
         kind,
+        tail: None,
     }
 }
 
@@ -956,7 +960,7 @@ fn parse_enumeration(
     family: PmDcFeatureEnumFamily,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let type_value = cursor.i16("feature enumeration type value")?;
     let value = cursor.u16("feature enumeration value")?;
     cursor.finish("feature enumeration")?;
@@ -998,7 +1002,7 @@ fn parse_value(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let value = cursor.u32("value record value")?;
     cursor.finish("value record")?;
     Ok(property(
@@ -1014,7 +1018,7 @@ fn parse_chamfer(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let type_value = cursor.i16("chamfer enumeration type value")?;
     let value = cursor.u16("chamfer enumeration value")?;
     let terminal = cursor.u32("chamfer enumeration terminal")?;
@@ -1041,7 +1045,7 @@ fn parse_fillet_edge_selection(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let type_value = cursor.u32("fillet edge-selection type value")?;
     let value = cursor.u32("fillet edge-selection value")?;
     cursor.finish("fillet edge-selection enumeration")?;
@@ -1058,7 +1062,7 @@ fn parse_boolean(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let name = cursor.utf16(ctx, "feature Boolean name")?;
     let name_value = cursor.u32("feature Boolean name value")?;
     let raw = cursor.u8("feature Boolean raw value")?;
@@ -1086,7 +1090,7 @@ fn parse_references(
     family: PmDcFeatureReferenceFamily,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let items = reference_list(ctx, &mut cursor, 2, "feature-property references")?;
     cursor.finish("feature-property references")?;
     Ok(property(
@@ -1125,7 +1129,7 @@ fn parse_rdx_variable(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let name = cursor.utf16(ctx, "feature RDx variable name")?;
     let name_value = cursor.u32("feature RDx variable name value")?;
     let nominal_value = cursor.u32("feature RDx variable nominal value")?;
@@ -1149,7 +1153,7 @@ fn parse_surface_body(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let body = cursor.reference("feature surface body reference")?;
     cursor.finish("feature surface body")?;
     Ok(property(
@@ -1165,7 +1169,7 @@ fn parse_profile_selection(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let entity_link = cursor.reference("profile selection entity link")?;
     let value = cursor.u8("profile selection value")?;
     cursor.finish("profile selection")?;
@@ -1210,7 +1214,7 @@ fn f64_triple(
 
 fn parse_work_plane(source: View<'_>, version: u8) -> Result<PmDcWorkPlanePayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let entity_flags = cursor.u32("work plane entity flags")?;
     let mut values = vec![
         cursor.u32("work plane value")?,
@@ -1245,7 +1249,7 @@ fn parse_origin_folder(
     version: u8,
 ) -> Result<PmDcOriginFolderPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, 0)?;
     cursor.finish("origin folder")?;
     Ok(PmDcOriginFolderPayload {
         save_version_major: version,
@@ -1259,7 +1263,7 @@ fn parse_termination_flag(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let value = cursor.u8("termination flag value")?;
     cursor.finish("termination flag")?;
     Ok(property(
@@ -1276,7 +1280,7 @@ fn parse_surface(
     version: u8,
 ) -> Result<Option<PmDcFeaturePropertyPayload>, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let references = [
         cursor.reference("surface reference")?,
         cursor.reference("surface reference")?,
@@ -1332,7 +1336,7 @@ fn parse_placement(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let transform = cursor.reference("feature placement transform reference")?;
     let point = cursor.reference("feature placement point reference")?;
     let value = cursor.reference("feature placement value reference")?;
@@ -1348,19 +1352,27 @@ fn parse_placement(
     ))
 }
 
+/// First segment major version whose fillet edge sets end with a u32.
+const TAILED_FILLET_EDGE_SET_VERSION: u8 = 23;
+
 fn parse_fillet_edge_set(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let edges = cursor.reference("fillet edge-set edges reference")?;
     let radius = cursor.reference("fillet edge-set radius reference")?;
     let selection = cursor.reference("fillet edge-set selection reference")?;
     let continuity = cursor.reference("fillet edge-set continuity reference")?;
+    let tail = if version >= TAILED_FILLET_EDGE_SET_VERSION {
+        Some(cursor.u32("fillet edge-set tail")?)
+    } else {
+        None
+    };
     cursor.finish("fillet edge set")?;
-    Ok(property(
+    let mut payload = property(
         version,
         header,
         PmDcFeaturePropertyKind::FilletEdgeSet {
@@ -1369,7 +1381,9 @@ fn parse_fillet_edge_set(
             selection,
             continuity,
         },
-    ))
+    );
+    payload.tail = tail;
+    Ok(payload)
 }
 
 fn parse_edge_item(
@@ -1378,7 +1392,7 @@ fn parse_edge_item(
     version: u8,
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let index_references = u32_list(ctx, &mut cursor, 2, "edge-item index references")?;
     let index_reference_value = if index_references.values().is_empty() {
         -1
