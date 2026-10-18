@@ -396,13 +396,25 @@ impl PlateFixture {
 }
 
 fn assert_base_flange(plate: &Feature, group: &str) {
+    assert_plate_side(
+        plate,
+        group,
+        cadmpeg_ir::features::SheetMetalThicknessSide::Forward,
+    );
+}
+
+fn assert_plate_side(
+    plate: &Feature,
+    group: &str,
+    expected: cadmpeg_ir::features::SheetMetalThicknessSide,
+) {
     assert!(matches!(
         plate.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             thickness,
-            side: cadmpeg_ir::features::SheetMetalThicknessSide::Forward,
+            side,
             ..
-        }) if thickness.get() == 3.048
+        }) if thickness.get() == 3.048 && *side == expected
     ));
     assert_eq!(plate.source_tag.as_deref(), Some("sheet_metal_plate"));
     assert_eq!(
@@ -473,13 +485,18 @@ fn group_members_must_repeat_the_plate_properties() {
 }
 
 #[test]
-fn a_flipped_plate_stays_native() {
-    assert!(PlateFixture {
+fn a_flipped_plate_lies_opposite_the_sketch_normal() {
+    let plate = PlateFixture {
         flip: true,
-        ..PlateFixture::face()
+        ..PlateFixture::face_with_bend()
     }
     .project()
-    .is_none());
+    .expect("flipped plate");
+    assert_plate_side(
+        &plate,
+        "face",
+        cadmpeg_ir::features::SheetMetalThicknessSide::Reverse,
+    );
 }
 
 #[test]

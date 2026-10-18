@@ -487,7 +487,7 @@ Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face group and type `08
 
 The bend repeats plate slots 4, 7, 3, and 6 in its slots 3, 0, 2, and 5. In a flange group, the bend also repeats plate slots 10 and 11 in its slots 4 and 7, and the corner repeats plate slots 9, 12, 0, and 6 in its slots 0, 3, 4, and 1.
 
-The plate thickness lies along the normal of the group sketch, which is the direction record of that sketch. With a false flip Boolean, the thickness lies along the sketch normal from the sketch plane. In a face group, plate slot 1 is the sketch direction record. In a flange group, plate slot 1 is a different direction record.
+The plate thickness lies along the normal of the group sketch, which is the direction record of that sketch. With a false flip Boolean, the thickness lies along the sketch normal from the sketch plane. With a true flip Boolean, it lies opposite the sketch normal. In a face group, plate slot 1 is the sketch direction record. In a flange group, plate slot 1 is a different direction record.
 
 The sheet-metal property records store fixed reference tuples after the content header and then end:
 

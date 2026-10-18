@@ -404,7 +404,7 @@ pub(super) fn project_plate(
         return None;
     }
     let side = if flip {
-        return None;
+        cadmpeg_ir::features::SheetMetalThicknessSide::Reverse
     } else {
         cadmpeg_ir::features::SheetMetalThicknessSide::Forward
     };
