@@ -1870,6 +1870,7 @@ fn project_ufrx_state(
                     .copy_retained_text(&document.caption, "retain Inventor UFRx caption")?,
                 representation,
                 model_states,
+                levels_of_detail: project_ufrx_levels_of_detail(ctx, &document.levels_of_detail)?,
                 external_references: references,
                 embedded_references: embedded,
                 occurrences,
@@ -1884,6 +1885,54 @@ fn project_ufrx_state(
             }))
         }
     })
+}
+
+fn project_ufrx_levels_of_detail(
+    ctx: &DecodeContext<'_>,
+    levels: &[crate::external_reference::UfrxLevelOfDetail],
+) -> Result<Vec<crate::native::ufrx::UfrxLevelOfDetailRecord>, CodecError> {
+    use crate::external_reference::UfrxLevelOfDetailMemberKind;
+    use crate::native::ufrx::{UfrxLevelOfDetailMemberRecord, UfrxLevelOfDetailRecord};
+    let mut records = ctx.vector_storage(levels.len(), "copy Inventor UFRx levels of detail")?;
+    for level in levels {
+        let mut members = ctx.vector_storage(
+            level.members.len(),
+            "copy Inventor UFRx level-of-detail members",
+        )?;
+        for member in &level.members {
+            let (kind, nested_state, nested_level_of_detail) = match &member.kind {
+                UfrxLevelOfDetailMemberKind::Listed => (1, None, None),
+                UfrxLevelOfDetailMemberKind::Nested {
+                    state,
+                    level_of_detail,
+                } => (
+                    2,
+                    Some(*state),
+                    Some(ctx.copy_retained_text(
+                        level_of_detail,
+                        "retain Inventor UFRx nested level-of-detail name",
+                    )?),
+                ),
+            };
+            members.push(UfrxLevelOfDetailMemberRecord {
+                occurrence: ctx.copy_retained_text(
+                    &member.occurrence,
+                    "retain Inventor UFRx level-of-detail occurrence",
+                )?,
+                kind,
+                nested_state,
+                nested_level_of_detail,
+            });
+        }
+        records.push(UfrxLevelOfDetailRecord {
+            prefix: level.prefix,
+            name: ctx
+                .copy_retained_text(&level.name, "retain Inventor UFRx level-of-detail name")?,
+            state: level.state,
+            members,
+        });
+    }
+    Ok(records)
 }
 
 fn project_ufrx_model_state(
@@ -2091,8 +2140,8 @@ fn project_ufrx_occurrence(
         )?,
         ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx occurrence ordinal")?,
         end_string_flag: occurrence.end_string_flag,
-        file_reference_id: occurrence.file_reference_id,
         occurrence_id: occurrence.occurrence_id,
+        occurrence_key: occurrence.occurrence_key,
         header_value: occurrence.header_value,
         title: occurrence
             .title
@@ -2100,6 +2149,20 @@ fn project_ufrx_occurrence(
             .map(|title| ctx.copy_retained_text(title, "retain Inventor UFRx occurrence title"))
             .transpose()?,
         header_padding_words: occurrence.header_padding_words,
+        prototype_document_id: occurrence
+            .prototype_document_id
+            .map(|id| {
+                ctx.charge_retained(16, "retain Inventor UFRx occurrence prototype document id")
+                    .map(|()| cadmpeg_ir::native::bytes::NativeBytes::from(id))
+            })
+            .transpose()?,
+        component_name: occurrence
+            .component_name
+            .as_deref()
+            .map(|name| {
+                ctx.copy_retained_text(name, "retain Inventor UFRx occurrence component name")
+            })
+            .transpose()?,
         record_len: cadmpeg_core::decode::u64_from_index(occurrence.source.window().len()),
         record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
             ctx,

@@ -1200,11 +1200,13 @@ fn ufrx_occurrence_refuses_id_limit_before_creation() {
         .expect("source context");
     let occurrence = UfrxOccurrence {
         end_string_flag: 0,
-        file_reference_id: 0,
         occurrence_id: 0,
+        occurrence_key: 0,
         header_value: 0,
         title: None,
         header_padding_words: 0,
+        prototype_document_id: None,
+        component_name: None,
         source,
     };
     let mut policy = DecodePolicy::service();
@@ -1743,6 +1745,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
             parameters: vec![],
             suffix: source,
         }],
+        levels_of_detail: vec![],
         references: vec![InventorExternalReference {
             path: "part.ipt".into(),
             library_id: 0,
@@ -1773,11 +1776,13 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
         }],
         occurrences: vec![UfrxOccurrence {
             end_string_flag: 0,
-            file_reference_id: 7,
-            occurrence_id: 42,
+            occurrence_id: 7,
+            occurrence_key: 42,
             header_value: 0,
             title: None,
             header_padding_words: 0,
+            prototype_document_id: None,
+            component_name: None,
             source,
         }],
         unparsed_tail: root.child(0, 0).expect("empty tail"),
