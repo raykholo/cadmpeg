@@ -60,6 +60,8 @@ const ARENAS: &[&str] = &[
     "properties",
     "pm_app_default_styles",
     "pm_app_rendering_styles",
+    "pm_app_sheet_metal_rules",
+    "pm_app_unfold_rules",
     "pm_dc_expressions",
     "pm_dc_feature_labels",
     "pm_dc_feature_properties",
@@ -173,6 +175,7 @@ pub(crate) fn validate_native(
     validate_segments(&data, &mut findings);
     validate_active_carrier(&data, &mut findings);
     validate_design(&data, ir, &mut findings);
+    validate_sheet_metal_styles(&data, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ir, &data, &mut findings);
     unique(
@@ -377,6 +380,88 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 issue.segment_token, issue.record_ordinal
             )),
         ));
+    }
+}
+
+fn validate_sheet_metal_styles(data: &NativeData, findings: &mut Vec<Finding>) {
+    use crate::presentation::sheet_metal::{
+        MATERIAL_STYLE_TYPE, SHEET_METAL_RULE_TYPE, STYLE_CATEGORY_TYPE, UNFOLD_RULE_TYPE,
+    };
+    let raw = data
+        .records
+        .iter()
+        .map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let category = crate::pmdc::type_id_string(STYLE_CATEGORY_TYPE);
+    let material = crate::pmdc::type_id_string(MATERIAL_STYLE_TYPE);
+    let unfold = crate::pmdc::type_id_string(UNFOLD_RULE_TYPE);
+    let rule = crate::pmdc::type_id_string(SHEET_METAL_RULE_TYPE);
+    let selects = |token: &str, reference: crate::pmdc::PmDcReference, type_id: &str| {
+        reference
+            .record_ordinal()
+            .is_some_and(|ordinal| raw.get(&(token, ordinal)).copied() == Some(type_id))
+    };
+    let exact = |token: &str, ordinal: u32, record_type: &str, type_id: &str| {
+        record_type == type_id && raw.get(&(token, ordinal)).copied() == Some(type_id)
+    };
+    unique(
+        findings,
+        data.pm_app_sheet_metal_rules.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmApp sheet-metal rule",
+    );
+    unique(
+        findings,
+        data.pm_app_unfold_rules.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmApp unfold rule",
+    );
+    for record in &data.pm_app_sheet_metal_rules {
+        let token = record.identity.segment_token.as_str();
+        if !exact(
+            token,
+            record.identity.record_ordinal,
+            record.identity.type_id.as_str(),
+            &rule,
+        ) || !selects(token, record.header.category, &category)
+            || !selects(token, record.unfold_rule, &unfold)
+            || !selects(token, record.material_style, &material)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmApp sheet-metal rule record or reference does not resolve".into(),
+                Some(record.id()),
+            ));
+        }
+    }
+    for record in &data.pm_app_unfold_rules {
+        let token = record.identity.segment_token.as_str();
+        if !exact(
+            token,
+            record.identity.record_ordinal,
+            record.identity.type_id.as_str(),
+            &unfold,
+        ) || !selects(token, record.header.category, &category)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmApp unfold rule record or reference does not resolve".into(),
+                Some(record.id()),
+            ));
+        }
     }
 }
 
@@ -1500,6 +1585,10 @@ struct NativeData {
     assembly_record_issues: Vec<RecordIssue>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
+    pm_app_sheet_metal_rules:
+        Vec<crate::record_identity::Located<crate::presentation::sheet_metal::PmAppSheetMetalRule>>,
+    pm_app_unfold_rules:
+        Vec<crate::record_identity::Located<crate::presentation::sheet_metal::PmAppUnfoldRule>>,
     pm_graphics_faces: Vec<PmGraphicsFaceRecord>,
     pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
@@ -1563,6 +1652,9 @@ impl NativeData {
             pm_app_default_styles: namespace.arena_as_for_decode(ctx, "pm_app_default_styles")?,
             pm_app_rendering_styles: namespace
                 .arena_as_for_decode(ctx, "pm_app_rendering_styles")?,
+            pm_app_sheet_metal_rules: namespace
+                .arena_as_for_decode(ctx, "pm_app_sheet_metal_rules")?,
+            pm_app_unfold_rules: namespace.arena_as_for_decode(ctx, "pm_app_unfold_rules")?,
             pm_graphics_faces: namespace.arena_as_for_decode(ctx, "pm_graphics_faces")?,
             pm_graphics_style_collections: namespace
                 .arena_as_for_decode(ctx, "pm_graphics_style_collections")?,

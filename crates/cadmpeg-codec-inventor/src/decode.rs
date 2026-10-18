@@ -67,6 +67,15 @@ fn decode_container<'a>(
     let dialects = crate::dialect::layers(ctx, &matched, &container.rse.active_carrier)?;
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
+    let mut sheet_metal_inventory =
+        crate::presentation::sheet_metal::inventory(ctx, &container.rse)?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(sheet_metal_inventory.issues.len()),
+        "collect Inventor sheet-metal style issues",
+    )?;
+    presentation_inventory
+        .issues
+        .append(&mut sheet_metal_inventory.issues);
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
@@ -604,6 +613,16 @@ fn decode_container<'a>(
         ctx,
         "presentation_record_issues",
         &presentation_inventory.issues,
+    )?;
+    namespace.set_arena(
+        ctx,
+        "pm_app_sheet_metal_rules",
+        &sheet_metal_inventory.rules,
+    )?;
+    namespace.set_arena(
+        ctx,
+        "pm_app_unfold_rules",
+        &sheet_metal_inventory.unfold_rules,
     )?;
     namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
@@ -1194,6 +1213,14 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_APP_RENDERING_STYLES,
             pm_app_rendering_styles.len(),
+        ),
+        (
+            crate::coverage::PM_APP_SHEET_METAL_RULES,
+            sheet_metal_inventory.rules.len(),
+        ),
+        (
+            crate::coverage::PM_APP_UNFOLD_RULES,
+            sheet_metal_inventory.unfold_rules.len(),
         ),
         (crate::coverage::PM_GRAPHICS_FACES, pm_graphics_faces.len()),
         (

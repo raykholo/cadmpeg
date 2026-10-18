@@ -25,6 +25,9 @@ pub(crate) const APPEARANCE_BINDINGS_TRANSFERRED: CoverageKey =
     CoverageKey::new("appearance_bindings_transferred");
 pub(crate) const PM_APP_DEFAULT_STYLES: CoverageKey = CoverageKey::new("pm_app_default_styles");
 pub(crate) const PM_APP_RENDERING_STYLES: CoverageKey = CoverageKey::new("pm_app_rendering_styles");
+pub(crate) const PM_APP_SHEET_METAL_RULES: CoverageKey =
+    CoverageKey::new("pm_app_sheet_metal_rules");
+pub(crate) const PM_APP_UNFOLD_RULES: CoverageKey = CoverageKey::new("pm_app_unfold_rules");
 pub(crate) const PM_GRAPHICS_FACES: CoverageKey = CoverageKey::new("pm_graphics_faces");
 pub(crate) const PM_GRAPHICS_STYLE_COLLECTIONS: CoverageKey =
     CoverageKey::new("pm_graphics_style_collections");

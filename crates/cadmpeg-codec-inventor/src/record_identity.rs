@@ -46,9 +46,9 @@ pub(crate) struct RecordIdentity {
 }
 
 impl RecordIdentity {
-    fn id(&self, kind: &str) -> String {
+    fn id(&self, family: &str, kind: &str) -> String {
         format!(
-            "inventor:pmdc:{kind}#{}-{}",
+            "inventor:{family}:{kind}#{}-{}",
             self.segment_token, self.record_ordinal
         )
     }
@@ -64,6 +64,8 @@ impl RecordIdentity {
 }
 
 pub(crate) trait RecordPayload {
+    /// The segment family namespace of the record id.
+    const FAMILY: &'static str = "pmdc";
     const KIND: &'static str;
 }
 
@@ -116,7 +118,9 @@ pub(crate) fn push_record<T>(
 impl<T: RecordPayload> Located<T> {
     pub(crate) fn id_len(&self) -> Option<usize> {
         Some(
-            "inventor:pmdc:".len()
+            "inventor:".len()
+                + T::FAMILY.len()
+                + 1
                 + T::KIND.len()
                 + 1
                 + self.identity.segment_token.as_str().len()
@@ -127,7 +131,7 @@ impl<T: RecordPayload> Located<T> {
     }
 
     pub(crate) fn id(&self) -> String {
-        self.identity.id(T::KIND)
+        self.identity.id(T::FAMILY, T::KIND)
     }
 }
 
@@ -157,7 +161,8 @@ impl<T: RecordPayload> std::fmt::Display for LocatedId<'_, T> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "inventor:pmdc:{}#{}-{}",
+            "inventor:{}:{}#{}-{}",
+            T::FAMILY,
             T::KIND,
             self.identity.segment_token,
             self.identity.record_ordinal

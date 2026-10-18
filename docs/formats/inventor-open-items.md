@@ -160,6 +160,14 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Note.** The current projection supplies schema-independent values when mapping properties are absent: map channel 1, UVW source 0, zero offsets and rotation, unit scale, enabled repeat, zero real-world mapping values and bump depth, and unit normal scale. These values are not yet established as the omission semantics of each Protein schema.
 
+### MA-03. Sheet-metal rule and unfold-rule field roles
+
+**Question.** Which sheet-metal rule parameter does each rule text and value set, which unfold method does each `method` value select, and what do the unfold-rule secondary and tertiary factors, scalars, states, and lists encode?
+
+**Known.** The record grammar and the unfold-rule and material-style references are exact. The rule texts are unit-qualified expressions in terms of `#Thickness#` and `#BendRadius#`, and text 7 is the only literal length. The document sheet-metal parameters `Thickness`, `KFactor`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `SeamGap`, `MinimumRemnant`, `TransitionRadius`, `JacobiRadiusSize`, and `GapSize` are PmDc document parameters. The document property `Sheet Metal Rule` names the active rule.
+
+**Need.** Controlled saves that change one rule field at a time must assign each slot before the rule can transfer as neutral sheet-metal defaults or select the active rule from bytes alone.
+
 ### DE-01. Feature and history record graph
 
 **Question.** Which typed records define history order, feature operands, suppression, and result-body transitions?

@@ -200,6 +200,43 @@ terminal_state u8
 
 The four colors are RGBA vectors. The second vector is the diffuse color. A style collection supplies a face override when it contains exactly one reference to a primary-color style. The direct-color appearance binds the joined neutral face. A face binding has precedence over the document-default body binding for that face. A missing or ambiguous face, style collection, or primary-color reference does not produce a face binding.
 
+For segment major versions 17 through 23, `PmApp` sheet-metal rule records (type identifier `6bc0d61008462369c73c0faca268550f`) and unfold-rule records (type identifier `3e0b6bdaf5417a648da91fbd093fe213`) start with this style header:
+
+```text
+header_value u32
+header_id u16
+state u8
+flags u16
+values u16[2]
+default_state u32
+value u32
+category_reference u32
+name counted UTF-16LE
+long_name counted UTF-16LE
+style_state u16
+label counted UTF-16LE
+```
+
+The category reference selects the `PmApp` style-category record (type identifier `20d0a6fdd2118f936000a1b70b02ecb0`) that lists the style. A sheet-metal rule continues with five counted UTF-16LE texts, three u32 values, one text, one u32 value, one text, one u32 value, an unfold-rule reference, a material-style reference, two texts, and one u32 value. The record ends after the last value. The unfold-rule reference selects an unfold-rule record and the material-style reference selects a material-style record (type identifier `6ed85967d2113878600094b70b02ecb0`) in the same segment.
+
+An unfold rule continues with:
+
+```text
+method u32
+factor counted UTF-16LE
+secondary_factor counted UTF-16LE
+members type-2 reference list
+value_count u32
+scalars f64[3]
+first_state u8
+second_state u8
+mode u32
+references type-2 reference list
+tertiary_factor counted UTF-16LE
+```
+
+The record ends after `tertiary_factor`. The texts are unit-qualified expression strings. `#name#` in a text references the parameter `name`.
+
 ## 11. Part parameters
 
 For segment major versions 15 through 22, a `PmDc` record with type identifier `264d8790d011f8d10008cabc0663dc09` stores one numeric design parameter. Its payload contains:
