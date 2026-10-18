@@ -1787,5 +1787,6 @@ fn feature_label_native_writer_refuses_retained_limit_before_clone() {
 
 mod extents;
 mod holes;
+mod patterns;
 mod records;
 mod sheet_metal;

@@ -358,6 +358,8 @@ Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` 
 
 For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. For segment major versions 21 and 22, it contains 26 more property references. The mirror suffix contains five more property references, six u32 extension values in segment major versions 21 and 22, and two final property references. The record ends after the applicable suffix.
 
+Feature-label class `a326c2b6d211263660002cab01f31bb0` identifies a mirror. A mirror's 13 property slots are the six leading slots, the five suffix slots, and the two final slots, in record order. Slot 0 is a transform, slots 6, 7, and 11 are Booleans, slot 9 or slot 10 is the result object collection, and slot 12 stores the resolved mirror plane with the work-plane grammar. The mirror plane passes through the stored origin, and its normal is the cross product of the stored u and v axes. A feature mirror has its seed features as participants, an identity transform, false Booleans in slots 6 and 7, a false or null slot-11 Boolean, null slots 3, 8, and 10, and its result in slot 9. A true slot-6 Boolean with no participants and a slot-10 result mirrors bodies.
+
 ### 13.1 Feature history
 
 PmDc type `164d8790d011f8d10008cabc0663dc09` is a feature container. Its payload contains:

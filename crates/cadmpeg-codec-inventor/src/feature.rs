@@ -1320,6 +1320,9 @@ const CORNER_ROUND_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const SHEET_METAL_PLATE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xc6, 0x5f, 0x58, 0x55, 0xd3, 0x11, 0x73, 0x0c, 0x60, 0x00, 0x3a, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
 ]));
+const MIRROR_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xa3, 0x26, 0xc2, 0xb6, 0xd2, 0x11, 0x26, 0x36, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
+]));
 const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ]));
@@ -1975,13 +1978,24 @@ pub(crate) fn project(
         }
         let label = label_of(pattern.identity.record_ordinal);
         ctx.charge_collection_items(1, "project Inventor pattern feature")?;
+        let (feature, result) =
+            match project_mirror(ctx, pattern, label, &index, &history).transpose()? {
+                Some((feature, result)) => {
+                    neutral += 1;
+                    (feature, Some(result))
+                }
+                None => (
+                    native_feature(ctx, &pattern.identity, label, pattern.id())?,
+                    None,
+                ),
+            };
         projected.push(HistoryItem {
             record: pattern.identity.record_ordinal,
             kind: history::HistoryNodeKind::Pattern,
             flags: pattern.header.flags,
             label,
-            feature: native_feature(ctx, &pattern.identity, label, pattern.id())?,
-            result: None,
+            feature,
+            result,
         });
     }
     for record in &sketch.sketches {
@@ -2730,6 +2744,131 @@ fn project_plate(
     )))
 }
 
+/// Project a feature mirror: seed features reflected across the resolved
+/// plane stored in slot 12.
+fn project_mirror(
+    ctx: &DecodeContext<'_>,
+    pattern: &PmDcPatternFeature,
+    label: Option<&PmDcFeatureLabel>,
+    index: &ProjectionIndex<'_>,
+    history: &history::History,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let label = label?;
+    if pattern.family != PmDcPatternFamily::Mirror || label.class_id() != MIRROR_CLASS_ID {
+        return None;
+    }
+    let token = pattern.identity.segment_token.as_str();
+    let slots = &pattern.property_slots;
+    if slots.len() != 13 || [3, 8, 10].into_iter().any(|slot| slots[slot].index() != 0) {
+        return None;
+    }
+    let transform = index
+        .transforms
+        .get(&(token, slots[0].record_ordinal()?))
+        .and_then(Option::as_ref)?;
+    if transform.matrix.rows() != IDENTITY_ROWS {
+        return None;
+    }
+    for slot in [6, 7, 11] {
+        if slot == 11 && slots[slot].index() == 0 {
+            continue;
+        }
+        if !matches!(
+            resolve_property(token, slots[slot].index(), index)?.kind,
+            PmDcFeaturePropertyKind::Boolean { value: false, .. }
+        ) {
+            return None;
+        }
+    }
+    let placement = history.placement(pattern.identity.record_ordinal)?;
+    let mut seeds = Vec::new();
+    for participant in pattern.participants.references() {
+        let ordinal = participant.record_ordinal()?;
+        let seed = history.placement(ordinal)?;
+        if seed.kind == history::HistoryNodeKind::Sketch || seed.ordinal >= placement.ordinal {
+            return None;
+        }
+        if let Err(error) = ctx.charge_collection_items(1, "collect Inventor mirror seed") {
+            return Some(Err(error));
+        }
+        let key = match ctx.format_retained(
+            format_args!("{token}-{ordinal}"),
+            "retain Inventor mirror seed key",
+        ) {
+            Ok(key) => key,
+            Err(error) => return Some(Err(error)),
+        };
+        let key = cadmpeg_ir::ids::IdentityKey::try_new(key).ok()?;
+        seeds.push(cadmpeg_ir::features::patterns::PatternSeed::Feature(
+            FeatureId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+                key,
+            ),
+        ));
+    }
+    if seeds.is_empty() {
+        return None;
+    }
+    let plane = index
+        .work_planes
+        .get(&(token, slots[12].record_ordinal()?))
+        .and_then(Option::as_ref)?;
+    let [ux, uy, uz] = plane.u_axis.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let [vx, vy, vz] = plane.v_axis.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let normal = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+        uy * vz - uz * vy,
+        uz * vx - ux * vz,
+        ux * vy - uy * vx,
+    ))?;
+    let [ox, oy, oz] = plane.origin.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let origin =
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(ox * 10.0, oy * 10.0, oz * 10.0))?;
+    let mirror = cadmpeg_ir::features::patterns::PatternKind::new(
+        cadmpeg_ir::features::patterns::PatternTransform::Mirror {
+            plane_origin: origin,
+            plane_normal: cadmpeg_ir::features::FeatureDirection3::from(normal),
+        },
+    )
+    .ok()?;
+    let collection = resolve_property(token, slots[9].index(), index)?;
+    let (feature_id, result) = match collection_result(ctx, &pattern.identity, collection, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = admit_history_feature(ctx, Some(label), &pattern.id()) {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: label.name().map(str::to_owned),
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("mirror".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Pattern {
+                    seeds,
+                    pattern: mirror,
+                }),
+            ),
+            native_ref: Some(pattern.id()),
+        },
+        result,
+    )))
+}
+
+/// Exact identity matrix of a mirror record's transform slot.
+const IDENTITY_ROWS: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+
 /// Result topology of a feature whose output slot names one surface body.
 fn body_result(
     ctx: &DecodeContext<'_>,
@@ -3306,7 +3445,21 @@ fn feature_result(
     slot: usize,
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
-    let collection = slot_property(source, slot, index)?;
+    collection_result(
+        ctx,
+        &source.identity,
+        slot_property(source, slot, index)?,
+        index,
+    )
+}
+
+/// Result topology of a record whose output is one object collection.
+fn collection_result(
+    ctx: &DecodeContext<'_>,
+    source: &crate::record_identity::RecordIdentity,
+    collection: &PmDcFeatureProperty,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::ObjectCollection,
         items,
@@ -3316,11 +3469,7 @@ fn feature_result(
     };
     let mut bodies = Vec::new();
     for reference in items.references() {
-        let body = resolve_property(
-            source.identity.segment_token.as_str(),
-            reference.index(),
-            index,
-        )?;
+        let body = resolve_property(source.segment_token.as_str(), reference.index(), index)?;
         if !matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
             return None;
         }
@@ -3350,9 +3499,9 @@ fn feature_result(
         Ok(Err(_)) => return None,
         Err(limit) => return Some(Err(limit.into())),
     };
-    let key_len = source.identity.segment_token.as_str().len()
+    let key_len = source.segment_token.as_str().len()
         + 1
-        + match usize::try_from(source.identity.record_ordinal.max(1).ilog10()) {
+        + match usize::try_from(source.record_ordinal.max(1).ilog10()) {
             Ok(value) => value,
             Err(_) => {
                 return Some(Err(CodecError::Malformed(
@@ -3388,7 +3537,7 @@ fn feature_result(
     let feature_id = match copied_storage.with_storage(|| {
         Ok::<_, CodecError>(FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
-            source.identity.key(ctx)?,
+            source.key(ctx)?,
         ))
     }) {
         Ok(value) => value,
@@ -3398,7 +3547,7 @@ fn feature_result(
         match copied_storage.with_storage(|| {
             Ok::<_, CodecError>(FeatureResultTopologyId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-result"),
-                source.identity.key(ctx)?,
+                source.key(ctx)?,
             ))
         }) {
             Ok(value) => value,
