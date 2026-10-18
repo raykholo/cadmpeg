@@ -4,14 +4,14 @@ use super::{
     parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
     parse_label, parse_part_operation, parse_pattern_feature, parse_placement,
     parse_profile_selection, parse_rdx_variable, parse_surface_body, parse_terminator,
-    project_chamfer, project_extrusion, project_fillet, project_hole, ClassId,
-    PmDcEntityStyleLink, PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily,
-    PmDcFeatureLabel, PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload,
-    PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
-    PmDcFeatureReferenceFamily, PmDcLinkedHeader, PmDcPatternFamily, ProjectionIndex,
+    project_chamfer, project_extrusion, project_fillet, project_hole, ClassId, PmDcEntityStyleLink,
+    PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel,
+    PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload, PmDcFeatureProperty,
+    PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcFeatureReferenceFamily,
+    PmDcLinkedHeader, PmDcPatternFamily, PmDcWorkPlane, PmDcWorkPlanePayload, ProjectionIndex,
     BOOLEAN_TYPE, CHAMFER_CLASS_ID, END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE,
     EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE, FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID,
-    MIRROR_FEATURE_TYPE, RECTANGULAR_PATTERN_FEATURE_TYPE,
+    MIRROR_FEATURE_TYPE, PLANE_SURFACE_FORM, RECTANGULAR_PATTERN_FEATURE_TYPE, WORK_PLANE_TYPE,
 };
 use crate::container::InventorContainer;
 use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
@@ -43,6 +43,8 @@ fn feature_projection_refuses_collection_limit_before_token_index() {
         properties: Vec::new(),
         labels: Vec::new(),
         entity_style_links: Vec::new(),
+        kernel_entity_links: Vec::new(),
+        work_planes: Vec::new(),
         issues: Vec::new(),
     };
     let design = crate::design::DesignInventory {
@@ -378,8 +380,7 @@ fn utf16(value: &str) -> Vec<u8> {
 }
 
 pub(super) fn reference(index: u32) -> crate::pmdc::PmDcReference {
-    crate::pmdc::PmDcReference::new(index, index != 0)
-        .expect("test reference index fits 31 bits")
+    crate::pmdc::PmDcReference::new(index, index != 0).expect("test reference index fits 31 bits")
 }
 
 pub(super) fn reference_list(values: &[u32]) -> PmDcReferenceList {
@@ -424,11 +425,7 @@ fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProp
     )
 }
 
-pub(super) fn test_feature(
-    ordinal: u32,
-    slot_count: usize,
-    slots: &[(usize, u32)],
-) -> PmDcFeature {
+pub(super) fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
     let mut references = vec![reference(0); slot_count];
     for (slot, record_ordinal) in slots {
         references[*slot] = reference(record_ordinal + 1);
@@ -481,8 +478,7 @@ fn located_label_retains_empty_name_and_rejects_wrong_class_width() {
     }
     let mut unnamed = valid.clone();
     unnamed["name"] = serde_json::json!("");
-    let label: PmDcFeatureLabel =
-        serde_json::from_value(unnamed.clone()).expect("optional label");
+    let label: PmDcFeatureLabel = serde_json::from_value(unnamed.clone()).expect("optional label");
     assert!(label.name().is_none());
     assert_eq!(serde_json::to_value(label).expect("label JSON"), unnamed);
     let mut wire = valid;
@@ -559,10 +555,7 @@ fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
     )
 }
 
-fn neutral_parameter(
-    raw: &crate::design::PmDcParameter,
-    value: ParameterValue,
-) -> DesignParameter {
+fn neutral_parameter(raw: &crate::design::PmDcParameter, value: ParameterValue) -> DesignParameter {
     DesignParameter {
         id: ParameterId::mint(format!(
             "inventor:design:parameter#{}",
@@ -679,6 +672,7 @@ fn test_projection_index<'a>(
                 )
             })
             .collect(),
+        work_planes: std::collections::HashMap::new(),
     }
 }
 
@@ -762,9 +756,8 @@ fn feature_label_bytes() -> Vec<u8> {
 fn feature_label_class_id_refuses_retained_limit_before_hex_copy() {
     let bytes = feature_label_bytes();
     let arena = DecodeArena::new();
-    let (ctx, source) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("label view");
+    let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("label view");
     assert_eq!(
         parse_label(&ctx, source, 22)
             .expect("label is admitted")
@@ -893,8 +886,8 @@ fn pattern_feature_property_slots_refuse_collection_limit_before_allocation() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2 + slots - 1;
         let arena = DecodeArena::new();
-        let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("pattern feature view");
+        let (ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("pattern feature view");
         assert!(matches!(
             parse_pattern_feature(&ctx, source, version, family),
             Err(CodecError::ResourceLimit(limit))
@@ -920,9 +913,8 @@ fn pattern_feature_extension_values_refuse_collection_limit_before_allocation() 
                 && limit.operation == "admit Inventor pattern feature extension values"
                 && limit.used == 15
     ));
-    let (ctx, source) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("pattern feature view");
+    let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("pattern feature view");
     assert_eq!(
         parse_pattern_feature(&ctx, source, 21, PmDcPatternFamily::Mirror)
             .expect("pattern feature is admitted")
@@ -1789,3 +1781,6 @@ fn feature_label_native_writer_refuses_retained_limit_before_clone() {
     );
     crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
 }
+
+mod extents;
+mod records;
