@@ -352,6 +352,16 @@ A sheet-metal plate has 15 property slots. Slot 0 is a region selection, slot 1 
 
 A corner round uses the constant-radius edge-fillet slots. Its edge sets can omit the continuity Boolean with a null reference.
 
+Feature-label classes `336723c07e40eacb2eff669e9add87f8`, `baa87183d311347bc000e39545df724f`, `ecf481729c4d5f925f2192b4a83096ac`, and `dea6a68f4c4b529188ca31b5630198c8` identify combine, split, thicken, and move records respectively. The following property records add one type-2 reference list after the content header: `83aadad54f4375dacd1003b260a8a422` is a body list, `7a25f2efd11105af000847b00524dc09` is a face collection, and `29fe0008d511dd3510003697ab9f0ab5` is a transform list. Types `1990e1b8d311467bc000e39545df724f`, `1790e1b8d311467bc000e39545df724f`, and `4c40b0a3ac4b9504e719b28a70e0e818` are enumerations with type values 3, 4, and 3. They are the split form, the split side, and the thicken form. Type `9f8f2a40d21120e66000aaabc8433cb0` uses the Boolean grammar. Type `c11c7b63ea4d840b68b76e8c67bcbc48` adds one `value:u32`.
+
+A combine has four slots: slot 0 is the tool body list, slot 1 the object collection of the base body, which is also the result, slot 2 the part operation, and slot 3 the keep-tools Boolean. Part-operation values 2, 3, and 4 select cut, join, and intersection.
+
+A split has ten slots: slot 0 is the split form, slot 1 a Boolean, slot 3 the split side, slot 4 a boundary patch, slot 5 the tool work plane, slot 6 a Boolean, slot 7 the target body list, and slot 9 the result object collection. A split with form 3, side 2, false Booleans, an empty boundary patch, and null slots 2 and 8 partitions the target bodies at the work plane and keeps every side.
+
+A thicken has 18 slots: slot 0 is the face collection, slot 1 the part operation, slot 6 the thickness, slot 13 the thicken form, slot 14 the thicken value, and slot 15 the result object collection. Slots 2, 3, 4, 7, 10, 16, and 17 are Booleans. The supported branch joins material and has form 3, value 1, false Booleans in slots 3, 4, 7, 10, and 17, a true Boolean in slot 16, and null slots 5, 8, and 11.
+
+A move whose three slots are an object collection of bodies, a transform list with one transform, and the feature dimensions moves those bodies by that transform. The object collection is also the result. A move whose slot 0 is a face list and slot 8 a body list is a different move form.
+
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 
 Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` store rectangular-pattern and mirror feature records. Both start with the generic 30-byte feature prefix through `outline_value`, followed by a type-2 property-reference list, `value:u32`, a type-2 participant-reference list, six property references, and `control:u8`.

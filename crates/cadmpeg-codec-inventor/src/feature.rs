@@ -101,6 +101,30 @@ const MIRROR_FEATURE_TYPE: [u8; 16] = [
 const HOLE_CENTERS_TYPE: [u8; 16] = [
     0xb1, 0x22, 0x65, 0x93, 0xd2, 0x11, 0x53, 0x59, 0xa0, 0x00, 0x21, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ];
+const BODY_LIST_TYPE: [u8; 16] = [
+    0x83, 0xaa, 0xda, 0xd5, 0x4f, 0x43, 0x75, 0xda, 0xcd, 0x10, 0x03, 0xb2, 0x60, 0xa8, 0xa4, 0x22,
+];
+const FACE_COLLECTION_TYPE: [u8; 16] = [
+    0x7a, 0x25, 0xf2, 0xef, 0xd1, 0x11, 0x05, 0xaf, 0x00, 0x08, 0x47, 0xb0, 0x05, 0x24, 0xdc, 0x09,
+];
+const SPLIT_FORM_TYPE: [u8; 16] = [
+    0x19, 0x90, 0xe1, 0xb8, 0xd3, 0x11, 0x46, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf, 0x72, 0x4f,
+];
+const SPLIT_SIDE_TYPE: [u8; 16] = [
+    0x17, 0x90, 0xe1, 0xb8, 0xd3, 0x11, 0x46, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf, 0x72, 0x4f,
+];
+const SPLIT_FLAG_TYPE: [u8; 16] = [
+    0x9f, 0x8f, 0x2a, 0x40, 0xd2, 0x11, 0x20, 0xe6, 0x60, 0x00, 0xaa, 0xab, 0xc8, 0x43, 0x3c, 0xb0,
+];
+const THICKEN_FORM_TYPE: [u8; 16] = [
+    0x4c, 0x40, 0xb0, 0xa3, 0xac, 0x4b, 0x95, 0x04, 0xe7, 0x19, 0xb2, 0x8a, 0x70, 0xe0, 0xe8, 0x18,
+];
+const THICKEN_VALUE_TYPE: [u8; 16] = [
+    0xc1, 0x1c, 0x7b, 0x63, 0xea, 0x4d, 0x84, 0x0b, 0x68, 0xb7, 0x6e, 0x8c, 0x67, 0xbc, 0xbc, 0x48,
+];
+const TRANSFORM_LIST_TYPE: [u8; 16] = [
+    0x29, 0xfe, 0x00, 0x08, 0xd5, 0x11, 0xdd, 0x35, 0x10, 0x00, 0x36, 0x97, 0xab, 0x9f, 0x0a, 0xb5,
+];
 const REGION_SELECTION_TYPE: [u8; 16] = [
     0x47, 0x3f, 0x20, 0xfc, 0xd1, 0x11, 0x01, 0xcf, 0x00, 0x08, 0x35, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
@@ -209,6 +233,9 @@ pub(crate) enum PmDcFeaturePropertyKind {
     TerminationFlag {
         value: u8,
     },
+    Value {
+        value: u32,
+    },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
         state: u8,
@@ -229,6 +256,9 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Fillet,
     Chamfer,
     Auxiliary,
+    SplitForm,
+    SplitSide,
+    ThickenForm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -262,6 +292,9 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     FilletEdgeSets,
     EdgeCollection,
     HoleCenters,
+    BodyList,
+    FaceCollection,
+    TransformList,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -837,6 +870,14 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         EDGE_COLLECTION_TYPE => Some(parse_edge_collection),
         EDGE_ITEM_TYPE => Some(parse_edge_item),
         HOLE_CENTERS_TYPE => Some(parse_hole_centers),
+        BODY_LIST_TYPE => Some(parse_body_list),
+        FACE_COLLECTION_TYPE => Some(parse_face_collection),
+        TRANSFORM_LIST_TYPE => Some(parse_transform_list),
+        SPLIT_FORM_TYPE => Some(parse_split_form),
+        SPLIT_SIDE_TYPE => Some(parse_split_side),
+        THICKEN_FORM_TYPE => Some(parse_thicken_form),
+        SPLIT_FLAG_TYPE => Some(parse_boolean),
+        THICKEN_VALUE_TYPE => Some(parse_thicken_value),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         _ => None,
     }
@@ -892,6 +933,25 @@ enum_parser!(parse_extent, Extent);
 enum_parser!(parse_hole, Hole);
 enum_parser!(parse_fillet, Fillet);
 enum_parser!(parse_auxiliary_enum, Auxiliary);
+enum_parser!(parse_split_form, SplitForm);
+enum_parser!(parse_split_side, SplitSide);
+enum_parser!(parse_thicken_form, ThickenForm);
+
+fn parse_thicken_value(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let value = cursor.u32("thicken value")?;
+    cursor.finish("thicken value")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::Value { value },
+    ))
+}
 
 fn parse_chamfer(
     _: &DecodeContext<'_>,
@@ -999,6 +1059,9 @@ reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
 reference_parser!(parse_edge_collection, EdgeCollection);
 reference_parser!(parse_hole_centers, HoleCenters);
+reference_parser!(parse_body_list, BodyList);
+reference_parser!(parse_face_collection, FaceCollection);
+reference_parser!(parse_transform_list, TransformList);
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -1323,6 +1386,18 @@ const SHEET_METAL_PLATE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const MIRROR_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xa3, 0x26, 0xc2, 0xb6, 0xd2, 0x11, 0x26, 0x36, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
 ]));
+const COMBINE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x33, 0x67, 0x23, 0xc0, 0x7e, 0x40, 0xea, 0xcb, 0x2e, 0xff, 0x66, 0x9e, 0x9a, 0xdd, 0x87, 0xf8,
+]));
+const SPLIT_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xba, 0xa8, 0x71, 0x83, 0xd3, 0x11, 0x34, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf, 0x72, 0x4f,
+]));
+const THICKEN_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30, 0x96, 0xac,
+]));
+const MOVE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0xde, 0xa6, 0xa6, 0x8f, 0x4c, 0x4b, 0x52, 0x91, 0x88, 0xca, 0x31, 0xb5, 0x63, 0x01, 0x98, 0xc8,
+]));
 const HOLE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0x1a, 0x7d, 0x75, 0x1f, 0xd2, 0x11, 0x9c, 0x54, 0xa0, 0x00, 0x20, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ]));
@@ -1356,13 +1431,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0xdc, 0x09,
         ],
         "Base",
-    ),
-    (
-        [
-            0x33, 0x67, 0x23, 0xc0, 0x7e, 0x40, 0xea, 0xcb, 0x2e, 0xff, 0x66, 0x9e, 0x9a, 0xdd,
-            0x87, 0xf8,
-        ],
-        "Combine",
     ),
     (
         [
@@ -1436,13 +1504,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     ),
     (
         [
-            0xba, 0xa8, 0x71, 0x83, 0xd3, 0x11, 0x34, 0x7b, 0xc0, 0x00, 0xe3, 0x95, 0x45, 0xdf,
-            0x72, 0x4f,
-        ],
-        "Split",
-    ),
-    (
-        [
             0xda, 0x14, 0x19, 0xb4, 0xd2, 0x11, 0xda, 0xd0, 0x60, 0x00, 0x12, 0xa9, 0x9d, 0xcc,
             0xef, 0xb0,
         ],
@@ -1454,13 +1515,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0x1b, 0xb0,
         ],
         "RectangularPattern",
-    ),
-    (
-        [
-            0xde, 0xa6, 0xa6, 0x8f, 0x4c, 0x4b, 0x52, 0x91, 0x88, 0xca, 0x31, 0xb5, 0x63, 0x01,
-            0x98, 0xc8,
-        ],
-        "Move",
     ),
     (
         [
@@ -1492,13 +1546,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     ),
     (
         [
-            0xec, 0xf4, 0x81, 0x72, 0x9c, 0x4d, 0x5f, 0x92, 0x5f, 0x21, 0x92, 0xb4, 0xa8, 0x30,
-            0x96, 0xac,
-        ],
-        "Thicken",
-    ),
-    (
-        [
             0xf0, 0xa4, 0x97, 0xe5, 0xd4, 0x11, 0xd8, 0x84, 0x10, 0x00, 0xfa, 0xa5, 0xbb, 0xa6,
             0x47, 0xb5,
         ],
@@ -1521,6 +1568,10 @@ pub(crate) enum FeatureFamily {
     Hole,
     CornerRound,
     SheetMetalPlate,
+    Combine,
+    Split,
+    Thicken,
+    Move,
 }
 
 impl FeatureFamily {
@@ -1532,6 +1583,10 @@ impl FeatureFamily {
             Self::Hole => HOLE_CLASS_ID,
             Self::CornerRound => CORNER_ROUND_CLASS_ID,
             Self::SheetMetalPlate => SHEET_METAL_PLATE_CLASS_ID,
+            Self::Combine => COMBINE_CLASS_ID,
+            Self::Split => SPLIT_CLASS_ID,
+            Self::Thicken => THICKEN_CLASS_ID,
+            Self::Move => MOVE_CLASS_ID,
         }
     }
 
@@ -1543,6 +1598,10 @@ impl FeatureFamily {
             Self::Hole => 24,
             Self::CornerRound => 15,
             Self::SheetMetalPlate => 6,
+            Self::Combine => 1,
+            Self::Split => 9,
+            Self::Thicken => 15,
+            Self::Move => 0,
         }
     }
 
@@ -1554,6 +1613,10 @@ impl FeatureFamily {
             Self::Hole,
             Self::CornerRound,
             Self::SheetMetalPlate,
+            Self::Combine,
+            Self::Split,
+            Self::Thicken,
+            Self::Move,
         ]
         .into_iter()
         .find(|family| family.class_id() == class_id)
@@ -1582,6 +1645,18 @@ impl FeatureFamily {
             ) | (
                 Self::SheetMetalPlate,
                 FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. })
+            ) | (
+                Self::Combine,
+                FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+            ) | (
+                Self::Split,
+                FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
+            ) | (
+                Self::Thicken,
+                FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
+            ) | (
+                Self::Move,
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
             )
         )
     }
@@ -1595,6 +1670,10 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. }) => {
                 Some(Self::SheetMetalPlate)
             }
+            FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
+            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. }) => Some(Self::Split),
+            FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => Some(Self::Thicken),
+            FeatureDefinition::Operation(FeatureOperation::MoveBody { .. }) => Some(Self::Move),
             _ => None,
         }
     }
@@ -1942,6 +2021,10 @@ pub(crate) fn project(
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
                 FeatureFamily::CornerRound => project_corner_round(ctx, feature, label, &index),
                 FeatureFamily::SheetMetalPlate => project_plate(ctx, feature, label, &index),
+                FeatureFamily::Combine => project_combine(ctx, feature, label, &index),
+                FeatureFamily::Split => project_split(ctx, feature, label, &index),
+                FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index),
+                FeatureFamily::Move => project_move(ctx, feature, label, &index),
             }
             .transpose()?,
             None => None,
@@ -2345,6 +2428,10 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
             FeatureFamily::CornerRound => NativeFeatureKind::Other("CornerRound".into()),
             FeatureFamily::SheetMetalPlate => NativeFeatureKind::Other("SheetMetalPlate".into()),
+            FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
+            FeatureFamily::Split => NativeFeatureKind::Other("Split".into()),
+            FeatureFamily::Thicken => NativeFeatureKind::Other("Thicken".into()),
+            FeatureFamily::Move => NativeFeatureKind::Other("Move".into()),
         };
     }
     NATIVE_CLASSES
@@ -2740,6 +2827,351 @@ fn project_plate(
             ),
             native_ref: Some(source.id()),
         },
+        result,
+    )))
+}
+
+/// The slots of `source` that must hold null references.
+fn null_slots(source: &PmDcFeature, slots: &[usize]) -> bool {
+    slots.iter().all(|slot| {
+        source
+            .properties
+            .references()
+            .get(*slot)
+            .is_some_and(|reference| reference.index() == 0)
+    })
+}
+
+/// The Boolean in `slot` of `source` equals `expected`.
+fn boolean_is(
+    source: &PmDcFeature,
+    slot: usize,
+    expected: bool,
+    index: &ProjectionIndex<'_>,
+) -> bool {
+    boolean(source, slot, index) == Some(expected)
+}
+
+/// A native selection of the reference-list property in `slot`.
+fn native_list(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    slot: usize,
+    family: PmDcFeatureReferenceFamily,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<String, CodecError>> {
+    let property = slot_property(source, slot, index)?;
+    let PmDcFeaturePropertyKind::References {
+        family: actual,
+        items,
+    } = &property.kind
+    else {
+        return None;
+    };
+    if *actual != family || items.references().is_empty() {
+        return None;
+    }
+    Some(
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(property.id_len()?),
+            "retain Inventor native selection id",
+        )
+        .map(|()| property.id()),
+    )
+}
+
+fn neutral_feature(
+    feature_id: FeatureId,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    tag: &'static str,
+    source_properties: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    operation: FeatureOperation,
+) -> Feature {
+    Feature {
+        id: feature_id,
+        ordinal: u64::from(label.index),
+        name: label.name().map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties,
+        source_tag: Some(tag.into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(operation),
+        ),
+        native_ref: Some(source.id()),
+    }
+}
+
+/// Project a body combine: tool bodies joined, cut from, or intersected with
+/// the base body, which is also the result.
+fn project_combine(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    if source.properties.references().len() != 4 {
+        return None;
+    }
+    let op = match enum16(source, 2, PmDcFeatureEnumFamily::PartOperation, index)? {
+        2 => cadmpeg_ir::features::BooleanKind::Cut,
+        3 => cadmpeg_ir::features::BooleanKind::Join,
+        4 => cadmpeg_ir::features::BooleanKind::Intersect,
+        _ => return None,
+    };
+    let keep_tools = boolean(source, 3, index)?;
+    if references(
+        source,
+        1,
+        PmDcFeatureReferenceFamily::ObjectCollection,
+        index,
+    )?
+    .references()
+    .len()
+        != 1
+    {
+        return None;
+    }
+    let tools = match native_list(ctx, source, 0, PmDcFeatureReferenceFamily::BodyList, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let target = match native_list(
+        ctx,
+        source,
+        1,
+        PmDcFeatureReferenceFamily::ObjectCollection,
+        index,
+    )? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let operands = match cadmpeg_ir::features::CombineOperands::new(
+        cadmpeg_ir::features::BodySelection::Native(target),
+        cadmpeg_ir::features::BodySelection::Native(tools),
+        ctx,
+    ) {
+        Ok(Ok(operands)) => operands,
+        Ok(Err(_)) => return None,
+        Err(limit) => return Some(Err(limit.into())),
+    };
+    let (feature_id, result) = match feature_result(ctx, source, 1, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = admit_projected_feature(ctx, source, label, "combine") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        neutral_feature(
+            feature_id,
+            source,
+            label,
+            "combine",
+            BTreeMap::new(),
+            FeatureOperation::Combine {
+                operands,
+                op,
+                keep_tools,
+            },
+        ),
+        result,
+    )))
+}
+
+/// Project a solid split: target bodies partitioned by a work plane, every
+/// side retained.
+fn project_split(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    if source.properties.references().len() != 10
+        || enum16(source, 0, PmDcFeatureEnumFamily::SplitForm, index)? != 3
+        || enum16(source, 3, PmDcFeatureEnumFamily::SplitSide, index)? != 2
+        || !boolean_is(source, 1, false, index)
+        || !boolean_is(source, 6, false, index)
+        || !null_slots(source, &[2, 8])
+    {
+        return None;
+    }
+    let patch = references(source, 4, PmDcFeatureReferenceFamily::BoundaryPatch, index)?;
+    if !patch.references().is_empty() {
+        return None;
+    }
+    let plane = index
+        .work_planes
+        .get(&(
+            token,
+            source.properties.references().get(5)?.record_ordinal()?,
+        ))
+        .and_then(Option::as_ref)?;
+    let targets = match native_list(ctx, source, 7, PmDcFeatureReferenceFamily::BodyList, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let (feature_id, result) = match feature_result(ctx, source, 9, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = admit_projected_feature(ctx, source, label, "split") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        neutral_feature(
+            feature_id,
+            source,
+            label,
+            "split",
+            BTreeMap::new(),
+            FeatureOperation::SplitBody {
+                targets: cadmpeg_ir::features::BodySelection::Native(targets),
+                tools: cadmpeg_ir::features::FaceSelection::Native(plane.id()),
+            },
+        ),
+        result,
+    )))
+}
+
+/// Project a thicken that joins material to the selected faces. The side
+/// Boolean in slot 2 is retained as a source property; the side stays
+/// unresolved.
+fn project_thicken(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    if source.properties.references().len() != 18
+        || enum16(source, 1, PmDcFeatureEnumFamily::PartOperation, index)? != 3
+        || enum16(source, 13, PmDcFeatureEnumFamily::ThickenForm, index)? != 3
+        || !null_slots(source, &[5, 8, 11])
+        || [3, 4, 7, 10, 17]
+            .into_iter()
+            .any(|slot| !boolean_is(source, slot, false, index))
+        || !boolean_is(source, 16, true, index)
+        || !matches!(
+            resolve_property(
+                token,
+                source.properties.references().get(14)?.index(),
+                index
+            )?
+            .kind,
+            PmDcFeaturePropertyKind::Value { value: 1 }
+        )
+    {
+        return None;
+    }
+    boolean(source, 2, index)?;
+    let thickness =
+        cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 6, index)?).ok()?;
+    let faces = match native_list(
+        ctx,
+        source,
+        0,
+        PmDcFeatureReferenceFamily::FaceCollection,
+        index,
+    )? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let (feature_id, result) = match feature_result(ctx, source, 15, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let source_properties = match boolean_properties(ctx, source, &[2], index) {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = admit_projected_feature(ctx, source, label, "thicken") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        neutral_feature(
+            feature_id,
+            source,
+            label,
+            "thicken",
+            source_properties,
+            FeatureOperation::Thicken {
+                faces: cadmpeg_ir::features::FaceSelection::Native(faces),
+                thickness: Some(thickness),
+                side: None,
+            },
+        ),
+        result,
+    )))
+}
+
+/// Project a body move: the bodies of the slot-0 object collection
+/// translated by the sole transform of the slot-1 transform list. A move
+/// with a rotation stays native.
+fn project_move(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    if source.properties.references().len() != 3 {
+        return None;
+    }
+    let transforms = references(source, 1, PmDcFeatureReferenceFamily::TransformList, index)?;
+    let [transform] = transforms.references() else {
+        return None;
+    };
+    let transform = index
+        .transforms
+        .get(&(token, transform.record_ordinal()?))
+        .and_then(Option::as_ref)?;
+    let rows = transform.matrix.rows();
+    if (0..4).any(|row| (0..3).any(|column| rows[row][column] != IDENTITY_ROWS[row][column]))
+        || rows[3][3] != 1.0
+    {
+        return None;
+    }
+    let translation = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(
+        rows[0][3] * 10.0,
+        rows[1][3] * 10.0,
+        rows[2][3] * 10.0,
+    ))?;
+    let bodies = match native_list(
+        ctx,
+        source,
+        0,
+        PmDcFeatureReferenceFamily::ObjectCollection,
+        index,
+    )? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let (feature_id, result) = match feature_result(ctx, source, 0, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = admit_projected_feature(ctx, source, label, "move") {
+        return Some(Err(error));
+    }
+    Some(Ok((
+        neutral_feature(
+            feature_id,
+            source,
+            label,
+            "move",
+            BTreeMap::new(),
+            FeatureOperation::MoveBody {
+                bodies: cadmpeg_ir::features::BodySelection::Native(bodies),
+                translation,
+                rotation: None,
+                copies: 0,
+            },
+        ),
         result,
     )))
 }
@@ -3628,6 +4060,8 @@ fn enum16(
         PmDcFeatureEnumFamily::Extent => 11,
         PmDcFeatureEnumFamily::Hole => 3,
         PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => 2,
+        PmDcFeatureEnumFamily::SplitForm | PmDcFeatureEnumFamily::ThickenForm => 3,
+        PmDcFeatureEnumFamily::SplitSide => 4,
         PmDcFeatureEnumFamily::Auxiliary => return None,
     };
     match slot_property(source, slot, index)?.kind {

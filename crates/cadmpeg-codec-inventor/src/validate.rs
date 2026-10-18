@@ -877,7 +877,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             | PmDcFeaturePropertyKind::Boolean { .. }
             | PmDcFeaturePropertyKind::RdxVariable { .. }
             | PmDcFeaturePropertyKind::EdgeItem { .. }
-            | PmDcFeaturePropertyKind::TerminationFlag { .. } => {}
+            | PmDcFeaturePropertyKind::TerminationFlag { .. }
+            | PmDcFeaturePropertyKind::Value { .. } => {}
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
                 ..

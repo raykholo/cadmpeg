@@ -1785,6 +1785,7 @@ fn feature_label_native_writer_refuses_retained_limit_before_clone() {
     crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
 }
 
+mod bodies;
 mod extents;
 mod holes;
 mod patterns;
