@@ -147,6 +147,7 @@ fn project_generated_mirror(
                 kind,
                 below_end_of_part: false,
                 model_history: true,
+                origin: false,
             },
         );
     }

@@ -17,8 +17,8 @@ use cadmpeg_ir::{
 use crate::design::{PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind};
 use crate::feature::{
     PmDcEntityStyleLink, PmDcFeature, PmDcFeatureContainer, PmDcFeatureLabel, PmDcFeatureProperty,
-    PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcKernelEntityLink, PmDcPatternFeature,
-    PmDcWorkPlane,
+    PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcKernelEntityLink, PmDcOriginFolder,
+    PmDcPatternFeature, PmDcWorkPlane,
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
@@ -68,6 +68,7 @@ const ARENAS: &[&str] = &[
     "pm_dc_feature_terminators",
     "pm_dc_features",
     "pm_dc_kernel_entity_links",
+    "pm_dc_origin_folders",
     "pm_dc_pattern_features",
     "pm_dc_entity_style_links",
     "pm_dc_parameters",
@@ -975,6 +976,19 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
         }
     }
+    for folder in &data.pm_dc_origin_folders {
+        if raw.get(&(
+            folder.identity.segment_token.as_str(),
+            folder.identity.record_ordinal,
+        )) != Some(&folder.identity.type_id.as_str())
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc origin folder record does not resolve".into(),
+                Some(folder.id()),
+            ));
+        }
+    }
     for plane in &data.pm_dc_work_planes {
         let references = [plane.header.next.index(), plane.header.context.index()];
         if raw.get(&(
@@ -1076,6 +1090,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(PmDcPatternFeature::id)
         .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
+        .chain(data.pm_dc_work_planes.iter().map(PmDcWorkPlane::id))
         .collect::<std::collections::HashSet<_>>();
     for feature in &ir.model.features {
         let native = feature.native_ref.as_deref();
@@ -1526,6 +1541,7 @@ struct NativeData {
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pm_dc_work_planes: Vec<PmDcWorkPlane>,
+    pm_dc_origin_folders: Vec<PmDcOriginFolder>,
     feature_record_issues: Vec<RecordIssue>,
     active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
@@ -1599,6 +1615,7 @@ impl NativeData {
             pm_dc_kernel_entity_links: namespace
                 .arena_as_for_decode(ctx, "pm_dc_kernel_entity_links")?,
             pm_dc_work_planes: namespace.arena_as_for_decode(ctx, "pm_dc_work_planes")?,
+            pm_dc_origin_folders: namespace.arena_as_for_decode(ctx, "pm_dc_origin_folders")?,
             feature_record_issues: namespace.arena_as_for_decode(ctx, "feature_record_issues")?,
             active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as_for_decode(ctx, "unknowns")?,

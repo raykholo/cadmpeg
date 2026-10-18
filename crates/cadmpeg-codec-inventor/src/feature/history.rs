@@ -25,6 +25,7 @@ pub(super) enum HistoryNodeKind {
     Feature,
     Pattern,
     Sketch,
+    WorkPlane,
 }
 
 /// Position and state of one record in the browser history.
@@ -34,6 +35,7 @@ pub(super) struct HistoryPlacement {
     pub(super) kind: HistoryNodeKind,
     pub(super) below_end_of_part: bool,
     pub(super) model_history: bool,
+    pub(super) origin: bool,
 }
 
 /// Ordered history placements keyed by record ordinal in one segment.
@@ -54,6 +56,7 @@ struct Walk<'a, 'b> {
     ctx: &'b DecodeContext<'a>,
     labels: &'b HashMap<u32, &'b PmDcFeatureLabel>,
     kinds: &'b HashMap<u32, Kind>,
+    origin_groups: &'b HashSet<u32>,
     visited: HashSet<u32>,
     history: History,
 }
@@ -134,6 +137,28 @@ pub(super) fn build(
         )?;
     }
     for record in inventory
+        .work_planes
+        .iter()
+        .filter(|record| record.identity.segment_token.as_str() == token)
+    {
+        add_kind(
+            record.identity.record_ordinal,
+            Kind::Node(HistoryNodeKind::WorkPlane),
+        )?;
+    }
+    let mut origin_groups = HashSet::new();
+    for record in inventory
+        .origin_folders
+        .iter()
+        .filter(|record| record.identity.segment_token.as_str() == token)
+    {
+        ctx.insert_hash_set(
+            &mut origin_groups,
+            record.identity.record_ordinal,
+            "index Inventor origin folders",
+        )?;
+    }
+    for record in inventory
         .terminators
         .iter()
         .filter(|record| record.identity.segment_token.as_str() == token)
@@ -164,6 +189,7 @@ pub(super) fn build(
         ctx,
         labels: &labels,
         kinds: &kinds,
+        origin_groups: &origin_groups,
         visited: HashSet::new(),
         history: History {
             next_ordinal: 1,
@@ -181,7 +207,7 @@ pub(super) fn build(
             .iter()
             .filter_map(|reference| reference.record_ordinal())
             .collect::<Vec<_>>();
-        walk.members(&members, 0, model, &mut false)?;
+        walk.members(&members, 0, model, false, &mut false)?;
     }
     Ok(walk.history)
 }
@@ -192,6 +218,7 @@ impl Walk<'_, '_> {
         members: &[u32],
         depth: usize,
         model: bool,
+        origin: bool,
         below: &mut bool,
     ) -> Result<(), CodecError> {
         if depth > MAX_HISTORY_DEPTH {
@@ -217,7 +244,7 @@ impl Walk<'_, '_> {
                     }
                 }
                 Some(Kind::Node(kind)) => {
-                    if kind != HistoryNodeKind::Sketch {
+                    if matches!(kind, HistoryNodeKind::Feature | HistoryNodeKind::Pattern) {
                         let consumed = self
                             .labels
                             .get(&member)
@@ -235,9 +262,9 @@ impl Walk<'_, '_> {
                             })
                             .unwrap_or_default();
                         let mut nested_below = *below;
-                        self.members(&consumed, depth + 1, model, &mut nested_below)?;
+                        self.members(&consumed, depth + 1, model, origin, &mut nested_below)?;
                     }
-                    self.place(member, kind, *below, model)?;
+                    self.place(member, kind, *below, model, origin)?;
                 }
                 None => {
                     let Some(label) = self.labels.get(&member) else {
@@ -250,7 +277,8 @@ impl Walk<'_, '_> {
                         .filter_map(|reference| reference.record_ordinal())
                         .collect::<Vec<_>>();
                     let mut nested_below = *below;
-                    self.members(&nested, depth + 1, model, &mut nested_below)?;
+                    let nested_origin = origin || self.origin_groups.contains(&member);
+                    self.members(&nested, depth + 1, model, nested_origin, &mut nested_below)?;
                 }
             }
         }
@@ -263,6 +291,7 @@ impl Walk<'_, '_> {
         kind: HistoryNodeKind,
         below_end_of_part: bool,
         model_history: bool,
+        origin: bool,
     ) -> Result<(), CodecError> {
         let ordinal = self.history.next_ordinal;
         self.history.next_ordinal = ordinal
@@ -276,6 +305,7 @@ impl Walk<'_, '_> {
                 kind,
                 below_end_of_part,
                 model_history,
+                origin,
             },
             "place Inventor feature history node",
         )?;

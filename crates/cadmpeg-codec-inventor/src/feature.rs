@@ -135,6 +135,9 @@ const FEATURE_CONTAINER_TYPE: [u8; 16] = inventor_id(0x9087_4d16);
 const KERNEL_ENTITY_LINK_TYPE: [u8; 16] = [
     0x21, 0x75, 0x0f, 0xcc, 0xd1, 0x11, 0x27, 0x80, 0xe3, 0x86, 0x19, 0x96, 0x22, 0x59, 0x01, 0x7a,
 ];
+const ORIGIN_FOLDER_TYPE: [u8; 16] = [
+    0x09, 0x13, 0x24, 0x2b, 0xd2, 0x11, 0xcc, 0x72, 0x60, 0x00, 0x7b, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
+];
 const WORK_PLANE_TYPE: [u8; 16] = [
     0x42, 0xdf, 0x52, 0xce, 0xd0, 0x11, 0xd0, 0xd2, 0x00, 0x08, 0xcc, 0xbc, 0x06, 0x63, 0xdc, 0x09,
 ];
@@ -163,6 +166,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
+    pub(crate) origin_folders: Vec<PmDcOriginFolder>,
     pub(crate) issues: Vec<RecordIssue>,
 }
 
@@ -456,6 +460,13 @@ pub(crate) struct PmDcKernelEntityLinkPayload {
     entity_type: u32,
 }
 
+/// The browser group that holds the origin work features.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmDcOriginFolderPayload {
+    save_version_major: u8,
+    pub(crate) header: PmDcContentHeader,
+}
+
 /// A planar work feature with its resolved frame in internal centimetres.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcWorkPlanePayload {
@@ -520,6 +531,7 @@ pub(crate) fn inventory(
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
+        origin_folders: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -643,6 +655,19 @@ pub(crate) fn inventory(
                         "admit Inventor PmDc work plane record",
                     )
                 }),
+                ORIGIN_FOLDER_TYPE => {
+                    parse_origin_folder(record.payload, version).and_then(|folder| {
+                        push_record(
+                            ctx,
+                            &mut inventory.origin_folders,
+                            folder,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc origin folder record",
+                        )
+                    })
+                }
                 SURFACE_TYPE => parse_surface(record.payload, version).and_then(|surface| {
                     surface.map_or(Ok(()), |surface| {
                         push_record(
@@ -1181,6 +1206,19 @@ fn parse_work_plane(source: View<'_>, version: u8) -> Result<PmDcWorkPlanePayloa
         origin,
         u_axis,
         v_axis,
+    })
+}
+
+fn parse_origin_folder(
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcOriginFolderPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    cursor.finish("origin folder")?;
+    Ok(PmDcOriginFolderPayload {
+        save_version_major: version,
+        header,
     })
 }
 
@@ -2099,6 +2137,27 @@ pub(crate) fn project(
             result: None,
         });
     }
+    for record in &inventory.work_planes {
+        let Some(placement) = history.placement(record.identity.record_ordinal) else {
+            continue;
+        };
+        if placement.kind != history::HistoryNodeKind::WorkPlane {
+            continue;
+        }
+        let label = label_of(record.identity.record_ordinal);
+        ctx.charge_collection_items(1, "project Inventor work plane history node")?;
+        let Some(feature) = work_plane_feature(ctx, record, label, placement.origin)? else {
+            continue;
+        };
+        projected.push(HistoryItem {
+            record: record.identity.record_ordinal,
+            kind: history::HistoryNodeKind::WorkPlane,
+            flags: record.header.flags,
+            label,
+            feature,
+            result: None,
+        });
+    }
     apply_history(ctx, &mut projected, &history, inventory, token)?;
     let unresolved_states = projected
         .iter()
@@ -2219,6 +2278,19 @@ fn apply_history(
             "index Inventor history feature ids",
         )?;
     }
+    let mut features = HashMap::new();
+    for feature in inventory
+        .features
+        .iter()
+        .filter(|feature| Some(feature.identity.segment_token.as_str()) == token)
+    {
+        ctx.insert_hash_map(
+            &mut features,
+            feature.identity.record_ordinal,
+            feature,
+            "index Inventor history features",
+        )?;
+    }
     let mut patterns = HashMap::new();
     for pattern in inventory
         .pattern_features
@@ -2249,7 +2321,7 @@ fn apply_history(
             insert_history_property(ctx, &mut item.feature, "history", "flat_pattern")?;
         }
         let consumed: Vec<u32> = match item.kind {
-            history::HistoryNodeKind::Sketch => Vec::new(),
+            history::HistoryNodeKind::Sketch | history::HistoryNodeKind::WorkPlane => Vec::new(),
             history::HistoryNodeKind::Feature => item
                 .label
                 .map(|label| {
@@ -2258,9 +2330,29 @@ fn apply_history(
                         .references()
                         .iter()
                         .filter_map(|reference| reference.record_ordinal())
-                        .collect()
+                        .collect::<Vec<_>>()
                 })
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into_iter()
+                .chain(
+                    features
+                        .get(&item.record)
+                        .map(|feature| {
+                            feature
+                                .properties
+                                .references()
+                                .iter()
+                                .filter_map(|reference| reference.record_ordinal())
+                                .filter(|ordinal| {
+                                    history.placement(*ordinal).is_some_and(|placement| {
+                                        placement.kind == history::HistoryNodeKind::WorkPlane
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default(),
+                )
+                .collect(),
             history::HistoryNodeKind::Pattern => patterns
                 .get(&item.record)
                 .map(|pattern| {
@@ -2412,6 +2504,46 @@ fn sketch_feature(
         ),
         native_ref: Some(native_id),
     })
+}
+
+/// A work plane of the history as a datum plane with its resolved frame.
+fn work_plane_feature(
+    ctx: &DecodeContext<'_>,
+    record: &PmDcWorkPlane,
+    label: Option<&PmDcFeatureLabel>,
+    origin: bool,
+) -> Result<Option<Feature>, CodecError> {
+    let [ux, uy, uz] = record.u_axis.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let [vx, vy, vz] = record.v_axis.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let [ox, oy, oz] = record.origin.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        Point3::new(ox * 10.0, oy * 10.0, oz * 10.0),
+        Vector3::new(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx),
+        Vector3::new(ux, uy, uz),
+    ) else {
+        return Ok(None);
+    };
+    let native_id = record.id();
+    admit_history_feature(ctx, label, &native_id)?;
+    let mut feature = Feature {
+        id: history_feature_id(ctx, &record.identity)?,
+        ordinal: label.map_or(0, |label| u64::from(label.index)),
+        name: label.and_then(|label| label.name()).map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some("work_plane".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }),
+        ),
+        native_ref: Some(native_id),
+    };
+    if origin {
+        insert_history_property(ctx, &mut feature, "origin", "true")?;
+    }
+    Ok(Some(feature))
 }
 
 /// Native family of a feature-label class identifier.
@@ -4210,6 +4342,12 @@ pub(crate) type PmDcKernelEntityLink = Located<PmDcKernelEntityLinkPayload>;
 
 impl RecordPayload for PmDcKernelEntityLinkPayload {
     const KIND: &'static str = "kernel-entity-link";
+}
+
+pub(crate) type PmDcOriginFolder = Located<PmDcOriginFolderPayload>;
+
+impl RecordPayload for PmDcOriginFolderPayload {
+    const KIND: &'static str = "origin-folder";
 }
 
 pub(crate) type PmDcWorkPlane = Located<PmDcWorkPlanePayload>;

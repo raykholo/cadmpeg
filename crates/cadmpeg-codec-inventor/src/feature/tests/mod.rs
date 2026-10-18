@@ -45,6 +45,7 @@ fn feature_projection_refuses_collection_limit_before_token_index() {
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
+        origin_folders: Vec::new(),
         issues: Vec::new(),
     };
     let design = crate::design::DesignInventory {

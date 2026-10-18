@@ -392,13 +392,13 @@ The payload ends after `terminal`. The `segment` string names the B-rep segment 
 
 The participant list of a root label is the ordered top level of the browser tree. Each participant is one tree member:
 
-- A feature, pattern-feature, or planar-sketch record is a history node.
+- A feature, pattern-feature, planar-sketch, or work-plane record is a history node.
 - The end-of-features record is the end-of-part marker. Top-level members after the marker are below the end of part.
 - Another record that owns a feature label is a group. The participants of its label are its nested members, in order.
 
 The participants of a feature label that are planar-sketch records are the sketches that the feature consumes. History order is the post-order of the tree: the consumed sketches of a feature precede it, and the nested members of a group take the position of the group. A record has one position; a repeated reference does not move it. The model history precedes the flat-pattern history.
 
-The participants of a pattern-feature record are its seed features.
+The participants of a pattern-feature record are its seed features. PmDc type `0913242bd211cc7260007bb79b49ebb0` is the origin folder. Its payload is the content header. The work planes in its group are the origin planes.
 
 Content-header flag bit 2 (`0x4`) marks a suppressed feature, pattern-feature, or sketch record. Flag bit 19 (`0x80000`) marks a feature, pattern-feature, or sketch record below the end-of-part marker.
 

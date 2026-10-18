@@ -170,6 +170,7 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
+        origin_folders: Vec::new(),
         issues: Vec::new(),
     };
     (inventory, vec![sketch(7), sketch(10)])
@@ -303,4 +304,61 @@ fn projection_orders_history_and_marks_suppression() {
     );
     assert_eq!(projection.unresolved_features, 5);
     assert_eq!(projection.unresolved_states, 0);
+}
+
+fn work_plane(ordinal: u32) -> crate::feature::PmDcWorkPlane {
+    let real = |value: f64| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture");
+    Located::new(
+        crate::feature::PmDcWorkPlanePayload {
+            save_version_major: 19,
+            header: test_header(),
+            entity_flags: 0,
+            values: vec![0; 3],
+            marker: false,
+            origin: [real(0.0), real(0.0), real(1.0)],
+            u_axis: [real(1.0), real(0.0), real(0.0)],
+            v_axis: [real(0.0), real(1.0), real(0.0)],
+        },
+        RecordTypeId::from_bytes(crate::feature::WORK_PLANE_TYPE),
+        token(),
+        ordinal,
+    )
+}
+
+#[test]
+fn work_planes_take_history_positions_and_origin_membership() {
+    let (mut inventory, sketches) = inventory();
+    inventory.work_planes = vec![work_plane(30), work_plane(31)];
+    inventory.origin_folders = vec![Located::new(
+        crate::feature::PmDcOriginFolderPayload {
+            save_version_major: 19,
+            header: test_header(),
+        },
+        RecordTypeId::from_bytes(crate::feature::ORIGIN_FOLDER_TYPE),
+        token(),
+        1,
+    )];
+    inventory.labels.push(label(
+        108,
+        1,
+        "Origin",
+        ClassId::try_from("0".repeat(32)).expect("class"),
+        &[30],
+    ));
+    inventory.labels[0] = label(
+        100,
+        0,
+        "",
+        ClassId::try_from("0".repeat(32)).expect("class"),
+        &[1, 31, 2, 5],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("history context");
+    let history = build(&ctx, "generated", &inventory, &sketches).expect("history");
+    assert_eq!(history.order, vec![30, 31, 7, 2, 21]);
+    let origin = history.placement(30).expect("origin plane");
+    assert_eq!(origin.kind, HistoryNodeKind::WorkPlane);
+    assert!(origin.origin);
+    assert!(!history.placement(31).expect("work plane").origin);
 }
