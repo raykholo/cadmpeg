@@ -592,6 +592,11 @@ fn decode_container<'a>(
         "pm_dc_sketch_constraints",
         &sketch_inventory.constraints,
     )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_sketch_projections",
+        &sketch_inventory.projections,
+    )?;
     namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
     namespace.set_arena(ctx, "pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena(
@@ -1211,6 +1216,10 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_SKETCH_CONSTRAINTS,
             sketch_inventory.constraints.len(),
+        ),
+        (
+            crate::coverage::PM_DC_SKETCH_PROJECTIONS,
+            sketch_inventory.projections.len(),
         ),
         (
             crate::coverage::SKETCH_RECORD_ISSUES,

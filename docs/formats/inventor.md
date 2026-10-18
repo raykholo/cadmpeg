@@ -328,6 +328,8 @@ The dimensions drive the constraint-header parameter unless the table names a re
 | `100a0d59d111cae680006fb1e13554c7` | angle between two lines | u32 value, two line references, two-f64 label position, u16 quadrant |
 | `845c3bbfd2112ae960004bb38932edb0` | angle about a center point | u32 value, center, first, and second point references, two-f64 label position, three u8 values |
 
+Projection links bind projected sketch geometry to the model. Each starts with the content header, `state:i32`, the projected entity reference, the sketch-transform reference, and a model reference. Type `77d9b0fed21100d16000b6b77359ebb0` links a point to the model origin point. Type `97664060d111c2090008fdb0d2dddc09` links a point to a model vertex reference. Type `f316de64d111a8f1000838b1d2dddc09` links a curve to a model edge item and adds a u16 value.
+
 A coincident relation between a point and a bounded entity binds the entity's start or end locus when the point is that entity's stored start or end point; otherwise it places the point on the entity. A tangent relation whose two endpoint selectors are nonzero is tangent at those endpoint loci.
 
 ## 13. Feature records

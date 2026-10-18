@@ -20,7 +20,8 @@ use crate::feature::{
     PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcPatternFeature,
 };
 use crate::sketch::{
-    PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchEntity, PmDcTransform,
+    PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchEntity, PmDcSketchProjection,
+    PmDcTransform,
 };
 
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
@@ -70,6 +71,7 @@ const ARENAS: &[&str] = &[
     "pm_dc_directions",
     "pm_dc_sketch_entities",
     "pm_dc_sketch_constraints",
+    "pm_dc_sketch_projections",
     "pm_dc_sketches",
     "pm_dc_transforms",
     "pm_dc_units",
@@ -593,7 +595,34 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         .pm_dc_sketch_constraints
         .iter()
         .map(crate::record_identity::Located::id)
+        .chain(
+            data.pm_dc_sketch_projections
+                .iter()
+                .map(crate::record_identity::Located::id),
+        )
         .collect::<HashSet<_>>();
+    for link in &data.pm_dc_sketch_projections {
+        if !record_is_exact(
+            link.identity.segment_token.as_str(),
+            link.identity.record_ordinal,
+            link.identity.type_id.as_str(),
+        ) || !references_resolve(
+            link.identity.segment_token.as_str(),
+            &[
+                link.header.next.index(),
+                link.header.context.index(),
+                link.entity.index(),
+                link.transform.index(),
+                link.source.index(),
+            ],
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc sketch projection record or reference does not resolve".into(),
+                Some(link.id()),
+            ));
+        }
+    }
     for sketch in &ir.model.sketches {
         if sketch
             .native_ref
@@ -1354,6 +1383,7 @@ struct NativeData {
     pm_dc_sketches: Vec<PmDcSketch>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
     pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
+    pm_dc_sketch_projections: Vec<PmDcSketchProjection>,
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
     sketch_record_issues: Vec<RecordIssue>,
@@ -1419,6 +1449,8 @@ impl NativeData {
             pm_dc_sketch_entities: namespace.arena_as_for_decode(ctx, "pm_dc_sketch_entities")?,
             pm_dc_sketch_constraints: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sketch_constraints")?,
+            pm_dc_sketch_projections: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sketch_projections")?,
             pm_dc_transforms: namespace.arena_as_for_decode(ctx, "pm_dc_transforms")?,
             pm_dc_directions: namespace.arena_as_for_decode(ctx, "pm_dc_directions")?,
             sketch_record_issues: namespace.arena_as_for_decode(ctx, "sketch_record_issues")?,

@@ -81,6 +81,15 @@ const BLOCK_PROXY_TYPE: [u8; 16] = [
 const MIRROR_NODE_TYPE: [u8; 16] = [
     0x38, 0x48, 0x53, 0x52, 0x9f, 0x44, 0x52, 0x55, 0xe1, 0xe1, 0xda, 0xb4, 0x10, 0xeb, 0x06, 0xc4,
 ];
+const ORIGIN_PROJECTION_TYPE: [u8; 16] = [
+    0x77, 0xd9, 0xb0, 0xfe, 0xd2, 0x11, 0x00, 0xd1, 0x60, 0x00, 0xb6, 0xb7, 0x73, 0x59, 0xeb, 0xb0,
+];
+const VERTEX_PROJECTION_TYPE: [u8; 16] = [
+    0x97, 0x66, 0x40, 0x60, 0xd1, 0x11, 0xc2, 0x09, 0x00, 0x08, 0xfd, 0xb0, 0xd2, 0xdd, 0xdc, 0x09,
+];
+const EDGE_PROJECTION_TYPE: [u8; 16] = [
+    0xf3, 0x16, 0xde, 0x64, 0xd1, 0x11, 0xa8, 0xf1, 0x00, 0x08, 0x38, 0xb1, 0xd2, 0xdd, 0xdc, 0x09,
+];
 const BLOCK_DEFINITION_TYPE: [u8; 16] = [
     0xc4, 0xaa, 0xa4, 0x86, 0x5f, 0x4a, 0x91, 0x66, 0x25, 0xd4, 0xae, 0x83, 0xc3, 0x12, 0x2a, 0x26,
 ];
@@ -141,6 +150,39 @@ pub(crate) struct SketchInventory {
     pub(crate) directions: Vec<PmDcDirection>,
     pub(crate) constraints: Vec<PmDcSketchConstraint>,
     pub(crate) issues: Vec<RecordIssue>,
+    pub(crate) projections: Vec<PmDcSketchProjection>,
+}
+
+/// A link from a projected sketch point or curve to the model object it projects.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PmDcSketchProjectionPayload {
+    pub(crate) save_version_major: u8,
+    pub(crate) header: PmDcContentHeader,
+    pub(crate) state: i32,
+    pub(crate) entity: PmDcReference,
+    pub(crate) transform: PmDcReference,
+    pub(crate) source: PmDcReference,
+    /// Curve-link value; absent for point links.
+    pub(crate) value: Option<u16>,
+    pub(crate) form: PmDcProjectionForm,
+}
+
+/// The kind of model object a projection link names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PmDcProjectionForm {
+    /// The model origin point.
+    Origin,
+    /// A model vertex reference.
+    Vertex,
+    /// A model edge reference.
+    Edge,
+}
+
+pub(crate) type PmDcSketchProjection = Located<PmDcSketchProjectionPayload>;
+
+impl RecordPayload for PmDcSketchProjectionPayload {
+    const KIND: &'static str = "sketch-projection";
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -723,6 +765,7 @@ pub(crate) fn inventory(
         directions: Vec::new(),
         constraints: Vec::new(),
         issues: Vec::new(),
+        projections: Vec::new(),
     };
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
@@ -772,6 +815,19 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor PmDc sketch entity record",
+                        )
+                    })
+                }
+                SketchRecordTag::Projection(form) => {
+                    parse_projection(record.payload, version, form).and_then(|value| {
+                        push_record(
+                            ctx,
+                            &mut inventory.projections,
+                            value,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc sketch projection record",
                         )
                     })
                 }
@@ -991,6 +1047,7 @@ impl SketchConstraintTag {
 enum SketchRecordTag {
     Sketch,
     BlockDefinition,
+    Projection(PmDcProjectionForm),
     Transform,
     Direction,
     Entity(SketchEntityTag),
@@ -1002,6 +1059,9 @@ impl SketchRecordTag {
         match type_id {
             SKETCH_TYPE => Some(Self::Sketch),
             BLOCK_DEFINITION_TYPE => Some(Self::BlockDefinition),
+            ORIGIN_PROJECTION_TYPE => Some(Self::Projection(PmDcProjectionForm::Origin)),
+            VERTEX_PROJECTION_TYPE => Some(Self::Projection(PmDcProjectionForm::Vertex)),
+            EDGE_PROJECTION_TYPE => Some(Self::Projection(PmDcProjectionForm::Edge)),
             TRANSFORM_TYPE => Some(Self::Transform),
             DIRECTION_TYPE => Some(Self::Direction),
             _ => SketchEntityTag::from_type_id(type_id)
@@ -1338,6 +1398,33 @@ fn scalar_array(
         result.push(cursor.f64(field)?);
     }
     Ok((capacity, result))
+}
+
+fn parse_projection(
+    source: View<'_>,
+    version: u8,
+    form: PmDcProjectionForm,
+) -> Result<PmDcSketchProjectionPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let state = cursor.u32("sketch projection state")?.cast_signed();
+    let entity = cursor.reference("sketch projection entity reference")?;
+    let transform = cursor.reference("sketch projection transform reference")?;
+    let source = cursor.reference("sketch projection source reference")?;
+    let value = matches!(form, PmDcProjectionForm::Edge)
+        .then(|| cursor.u16("sketch projection value"))
+        .transpose()?;
+    cursor.finish("sketch projection")?;
+    Ok(PmDcSketchProjectionPayload {
+        save_version_major: version,
+        header,
+        state,
+        entity,
+        transform,
+        source,
+        value,
+        form,
+    })
 }
 
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
@@ -2042,6 +2129,12 @@ pub(crate) fn project(
                     ),
                     "index projected Inventor sketch constraint",
                 )?;
+                constraints.push(result);
+            }
+        }
+        for link in &inventory.projections {
+            if let Some(result) = project_link(ctx, link, &host_entities)? {
+                ctx.charge_collection_items(1, "project Inventor sketch constraint")?;
                 constraints.push(result);
             }
         }
@@ -4210,6 +4303,92 @@ fn project_helper(
     }))
 }
 
+/// A projection link as a source-native relation that fixes the projected
+/// entity and names its sketch transform and model reference.
+fn project_link(
+    ctx: &DecodeContext<'_>,
+    link: &PmDcSketchProjection,
+    host_entities: &HashMap<RecordKey<'_>, &SketchEntity>,
+) -> Result<Option<SketchConstraint>, CodecError> {
+    let token = link.identity.segment_token.as_str();
+    let Some(entity) = link
+        .entity
+        .record_ordinal()
+        .and_then(|ordinal| host_entities.get(&(token, ordinal)))
+        .copied()
+    else {
+        return Ok(None);
+    };
+    let kind = match link.form {
+        PmDcProjectionForm::Origin => "projected_origin",
+        PmDcProjectionForm::Vertex => "projected_vertex",
+        PmDcProjectionForm::Edge => "projected_edge",
+    };
+    let id_text = format!(
+        "inventor:design:sketch-constraint#{}-{}",
+        token, link.identity.record_ordinal
+    );
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id_text.len() + kind.len()),
+        "retain projected Inventor sketch constraint id",
+    )?;
+    ctx.charge_collection_items(3, "collect Inventor native sketch relation operands")?;
+    ctx.charge_entities(1, "project Inventor sketch constraint")?;
+    let mut properties = std::collections::BTreeMap::new();
+    if let Some(value) = link.value {
+        properties.insert("value".to_owned(), value.to_string());
+    }
+    let (Ok(id), Some(native_kind)) = (
+        SketchConstraintId::mint(id_text),
+        cadmpeg_core::text::NonBlankString::new(kind),
+    ) else {
+        return Ok(None);
+    };
+    let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+        SketchConstraintDefinitionInput::Native {
+            native_kind,
+            native_state: Some(u64::from(link.state.cast_unsigned())),
+            native_flags: Some(u64::from(link.header.flags)),
+            native_properties: properties,
+            entities: vec![entity
+                .id()
+                .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")?],
+            parameter: None,
+            operands: vec![
+                record_operand(
+                    token,
+                    cadmpeg_core::nonblank_literal!("transform"),
+                    link.transform,
+                ),
+                record_operand(
+                    token,
+                    cadmpeg_core::nonblank_literal!("source"),
+                    link.source,
+                ),
+            ],
+        },
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(SketchConstraint {
+        id,
+        sketch: entity
+            .sketch
+            .try_clone_for_decode(ctx, "retain Inventor sketch constraint owner id")?,
+        definition,
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: Some(link.id()),
+    }))
+}
+
 /// A native operand that names one record in the same segment.
 fn record_operand(
     token: &str,
@@ -4442,6 +4621,7 @@ mod tests {
             directions: Vec::new(),
             constraints: Vec::new(),
             issues: Vec::new(),
+            projections: Vec::new(),
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -4507,6 +4687,7 @@ mod tests {
             directions: Vec::new(),
             constraints: Vec::new(),
             issues: Vec::new(),
+            projections: Vec::new(),
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -4567,6 +4748,7 @@ mod tests {
             directions: Vec::new(),
             constraints: Vec::new(),
             issues: Vec::new(),
+            projections: Vec::new(),
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -4647,6 +4829,7 @@ mod tests {
             )],
             constraints: Vec::new(),
             issues: Vec::new(),
+            projections: Vec::new(),
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -5350,6 +5533,7 @@ mod tests {
             directions: vec![direction],
             constraints: Vec::new(),
             issues: Vec::new(),
+            projections: Vec::new(),
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())

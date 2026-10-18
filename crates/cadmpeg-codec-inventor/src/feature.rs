@@ -2279,6 +2279,7 @@ mod tests {
             directions: Vec::new(),
             constraints: Vec::new(),
             issues: Vec::new(),
+            projections: Vec::new(),
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

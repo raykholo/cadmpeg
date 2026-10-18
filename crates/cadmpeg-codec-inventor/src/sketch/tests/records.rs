@@ -2,11 +2,11 @@
 //! Sketch arcs, splines, blocks, relations, and profile faces.
 
 use super::super::{
-    parse_constraint, parse_direction, parse_entity, parse_sketch_layout, parse_transform, project,
-    PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcSplineCurve, SketchConstraintTag,
-    SketchEntityTag, SketchInventory, BLOCK_DEFINITION_TYPE, BLOCK_INSTANCE_TYPE, BLOCK_PROXY_TYPE,
-    CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE, SPLINE_TYPE,
-    TRANSFORM_TYPE,
+    parse_constraint, parse_direction, parse_entity, parse_projection, parse_sketch_layout,
+    parse_transform, project, PmDcProjectionForm, PmDcSketchConstraintKind, PmDcSketchEntityKind,
+    PmDcSplineCurve, SketchConstraintTag, SketchEntityTag, SketchInventory, BLOCK_DEFINITION_TYPE,
+    BLOCK_INSTANCE_TYPE, BLOCK_PROXY_TYPE, CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE, LINE_TYPE,
+    ORIGIN_PROJECTION_TYPE, POINT_TYPE, SKETCH_TYPE, SPLINE_TYPE, TRANSFORM_TYPE,
 };
 use super::{constraint_header, content, entity_prefix, list, point_bytes};
 use crate::record_identity::{Located, RecordPayload};
@@ -158,6 +158,7 @@ fn circle_point_list_selects_counterclockwise_arc_or_closed_circle() {
         directions: vec![direction],
         constraints: Vec::new(),
         issues: Vec::new(),
+        projections: Vec::new(),
     };
     let (arena, policy) = context();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -268,6 +269,7 @@ fn line_point_list_uses_first_two_points_and_point_on_line_relation() {
         directions: vec![direction],
         constraints,
         issues: Vec::new(),
+        projections: Vec::new(),
     };
     let (arena, policy) = context();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -347,6 +349,7 @@ fn branched_component_contributes_each_bounded_face() {
         directions: vec![direction],
         constraints: Vec::new(),
         issues: Vec::new(),
+        projections: Vec::new(),
     };
     let (arena, policy) = context();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -622,6 +625,7 @@ fn block_instance_places_definition_members_and_proxies_in_host() {
         directions: vec![direction],
         constraints: Vec::new(),
         issues: Vec::new(),
+        projections: Vec::new(),
     };
     let (arena, policy) = context();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -671,5 +675,63 @@ fn block_instance_places_definition_members_and_proxies_in_host() {
         block.definition.kind(),
         cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, entities, .. }
             if native_kind.as_str() == "block_instance" && entities.len() == 3
+    ));
+}
+
+#[test]
+fn projection_link_fixes_projected_origin_point() {
+    let sketch = parse(&sketch_bytes(2, &[4]), |ctx, source| {
+        parse_sketch_layout(ctx, source, 19, false).expect("sketch")
+    });
+    let mut link = content(4);
+    link.extend_from_slice(&u32::MAX.to_le_bytes());
+    for reference in [0x8000_0004u32, 0x8000_0001, 0x8000_0006] {
+        link.extend_from_slice(&reference.to_le_bytes());
+    }
+    let link = parse(&link, |_, source| {
+        parse_projection(source, 19, PmDcProjectionForm::Origin).expect("projection link")
+    });
+    assert_eq!(link.entity.index(), 4);
+    assert_eq!(link.value, None);
+    let mut edge = content(4);
+    edge.extend_from_slice(&u32::MAX.to_le_bytes());
+    for reference in [4u32, 1, 6] {
+        edge.extend_from_slice(&reference.to_le_bytes());
+    }
+    edge.extend_from_slice(&0x17u16.to_le_bytes());
+    let edge = parse(&edge, |_, source| {
+        parse_projection(source, 19, PmDcProjectionForm::Edge).expect("edge link")
+    });
+    assert_eq!(edge.value, Some(0x17));
+    let (transform, direction) = placement();
+    let mut inventory = SketchInventory {
+        sketches: vec![located(sketch, SKETCH_TYPE, 2)],
+        entities: vec![entity(
+            &point_bytes(3, 3, [0.0, 0.0]),
+            SketchEntityTag::Point,
+            POINT_TYPE,
+            3,
+        )],
+        transforms: vec![transform],
+        directions: vec![direction],
+        constraints: Vec::new(),
+        issues: Vec::new(),
+        projections: Vec::new(),
+    };
+    inventory
+        .projections
+        .push(located(link, ORIGIN_PROJECTION_TYPE, 5));
+    let (arena, policy) = context();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let projected = project(&ctx, &inventory, &[]).expect("projection");
+    let relation = projected
+        .constraints
+        .iter()
+        .find(|constraint| constraint.id.as_str().ends_with("#segment-5"))
+        .expect("projection relation");
+    assert!(matches!(
+        relation.definition.kind(),
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, operands, .. }
+            if native_kind.as_str() == "projected_origin" && operands.len() == 2
     ));
 }
