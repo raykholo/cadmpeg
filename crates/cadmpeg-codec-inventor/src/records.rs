@@ -20,7 +20,7 @@ pub(crate) struct BlockDescriptor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TypeDescriptor {
-    pub(crate) index: u8,
+    pub(crate) index: u32,
     pub(crate) id: [u8; 16],
     pub(crate) fields: [(u16, u32); 2],
 }
@@ -235,13 +235,11 @@ pub(crate) fn parse_meta_tables<'a>(
     };
     let (type_count, section_4_payload, section_4_footer) =
         counted_section(&mut view, type_desc::LEN, "type table")?;
-    if type_count > 256 {
-        return Err(CodecError::Malformed(
-            "RSe type table has more than 256 entries".into(),
-        ));
-    }
-    // The test above bounds `type_count` at 256 and `SECTION_COUNT` is 11, so
-    // the charge is at most 267 and `u64` holds it exactly.
+    // Section 4 is a counted frame like sections 1 through 3, and its count is
+    // not bounded by the selector width: a record selector's low byte reaches
+    // only the first 256 descriptors, and later descriptors are retained
+    // without a record that selects them. `counted_section` bounds the count
+    // at 1000000 and `SECTION_COUNT` is 11, so `u64` holds the charge exactly.
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(type_count)
             + cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
@@ -257,7 +255,7 @@ pub(crate) fn parse_meta_tables<'a>(
         )?;
         let mut entry = crate::pmdc::Cursor::new(entry);
         types.push(TypeDescriptor {
-            index: u8::try_from(index).map_err(|_| {
+            index: u32::try_from(index).map_err(|_| {
                 CodecError::Malformed("Inventor numeric value exceeds target range".into())
             })?,
             id: entry.take_array("type descriptor id")?,
@@ -611,6 +609,12 @@ use crate::test_support::test_fixtures::push_u32;
 
 #[cfg(test)]
 pub(crate) fn synthetic_meta_table_body() -> Vec<u8> {
+    synthetic_meta_table_body_with_types(1)
+}
+
+/// The synthetic metadata body with `type_count` identical type descriptors.
+#[cfg(test)]
+pub(crate) fn synthetic_meta_table_body_with_types(type_count: u32) -> Vec<u8> {
     let mut body = Vec::new();
     for value in [3_u16, 0, 2, 1, 0, 4, 0] {
         body.extend_from_slice(&value.to_le_bytes());
@@ -618,13 +622,15 @@ pub(crate) fn synthetic_meta_table_body() -> Vec<u8> {
     test_counted(&mut body, &[0x8000_0003, 0x8000_0005], 4);
     test_counted(&mut body, &[], 10);
     test_counted(&mut body, &[], 28);
-    push_u32(&mut body, 1);
-    body.extend_from_slice(&[0x55; 16]);
-    body.extend_from_slice(&1_u16.to_le_bytes());
-    push_u32(&mut body, 2);
-    body.extend_from_slice(&3_u16.to_le_bytes());
-    push_u32(&mut body, 4);
-    push_u32(&mut body, 32);
+    push_u32(&mut body, type_count);
+    for _ in 0..type_count {
+        body.extend_from_slice(&[0x55; 16]);
+        body.extend_from_slice(&1_u16.to_le_bytes());
+        push_u32(&mut body, 2);
+        body.extend_from_slice(&3_u16.to_le_bytes());
+        push_u32(&mut body, 4);
+    }
+    push_u32(&mut body, 4 + type_count * 28);
 
     let payloads = [0_usize, 0, 0, 0, 0, 0, SECTION_11_PAYLOAD_LEN];
     let counts = [u32::MAX, 0, 0, 0, 0, 0, 18];
@@ -766,6 +772,17 @@ mod tests {
             assert_eq!(tables.types[0].fields, [(1, 2), (3, 4)]);
             assert_eq!(tables.sections.len(), 11);
             assert_eq!(tables.sections[10].payload.window().len(), 0x48);
+        });
+    }
+
+    #[test]
+    fn type_table_count_is_not_bounded_by_the_selector_byte() {
+        let body = super::synthetic_meta_table_body_with_types(300);
+        with_view(&body, |ctx, view| {
+            let tables = parse_meta_tables(ctx, view).expect("300 type descriptors frame");
+            assert_eq!(tables.types.len(), 300);
+            assert_eq!(tables.types[299].index, 299);
+            assert_eq!(tables.types[299].fields, [(1, 2), (3, 4)]);
         });
     }
 
