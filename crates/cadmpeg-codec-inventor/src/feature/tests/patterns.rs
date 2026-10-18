@@ -101,10 +101,28 @@ fn project_generated_mirror(
     translation: f64,
     slot_8: u32,
 ) -> Option<Feature> {
-    let record = mirror_record(participants, [61, 0, 0, 0, 0, 0, 3, 4, slot_8, 6, 0, 5, 41]);
+    project_mirror_fixture(
+        participants,
+        [61, 0, 0, 0, 0, 0, 3, 4, slot_8, 6, 0, 5, 41],
+        [first_boolean, false],
+        translation,
+        &[],
+    )
+}
+
+/// Booleans #2 and #3 hold `booleans`; #4 is false. #5 is the object
+/// collection of body #7. `groups` adds sheet-metal group records.
+fn project_mirror_fixture(
+    participants: &[u32],
+    slots: [u32; 13],
+    booleans: [bool; 2],
+    translation: f64,
+    groups: &[crate::feature::sheet_metal::PmDcSheetMetalGroup],
+) -> Option<Feature> {
+    let record = mirror_record(participants, slots);
     let properties = vec![
-        boolean_property(2, first_boolean),
-        boolean_property(3, false),
+        boolean_property(2, booleans[0]),
+        boolean_property(3, booleans[1]),
         boolean_property(4, false),
         test_property(
             5,
@@ -133,11 +151,17 @@ fn project_generated_mirror(
         &[],
     );
     index.work_planes.insert(("generated", 40), Some(&plane));
+    for group in groups {
+        index
+            .sheet_metal_groups
+            .insert(("generated", group.identity.record_ordinal), Some(group));
+    }
     let label = test_label(120, 8, crate::feature::MIRROR_CLASS_ID, &[]);
     let mut history = crate::feature::history::History::default();
     for (ordinal, kind) in [
         (10, crate::feature::history::HistoryNodeKind::Feature),
         (11, crate::feature::history::HistoryNodeKind::Sketch),
+        (13, crate::feature::history::HistoryNodeKind::Feature),
         (120, crate::feature::history::HistoryNodeKind::Pattern),
     ] {
         history.placements.insert(
@@ -190,4 +214,88 @@ fn mirror_outside_the_feature_branch_stays_native() {
     assert!(project_generated_mirror(&[11], true, 0.0, 0).is_none());
     assert!(project_generated_mirror(&[11], false, 0.5, 0).is_none());
     assert!(project_generated_mirror(&[11], false, 0.0, 3).is_none());
+}
+
+#[test]
+fn body_mirror_reflects_the_result_bodies() {
+    let mirror = project_mirror_fixture(
+        &[],
+        [61, 0, 0, 0, 0, 0, 3, 4, 0, 0, 6, 5, 41],
+        [true, false],
+        0.0,
+        &[],
+    )
+    .expect("body mirror");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+        mirror.evaluation.definition()
+    else {
+        panic!("not a pattern");
+    };
+    assert!(matches!(
+        seeds.as_slice(),
+        [cadmpeg_ir::features::patterns::PatternSeed::Bodies(
+            cadmpeg_ir::features::BodySelection::Native(native)
+        )] if native == "inventor:pmdc:feature-property#generated-5"
+    ));
+    assert!(matches!(
+        pattern.definition(),
+        cadmpeg_ir::features::patterns::PatternTransform::Mirror { plane_normal, .. }
+            if plane_normal.get() == Vector3::new(1.0, 0.0, 0.0)
+    ));
+}
+
+#[test]
+fn body_mirror_outside_the_supported_branch_stays_native() {
+    for (slots, booleans) in [
+        // A false slot-6 Boolean with no participants.
+        ([61, 0, 0, 0, 0, 0, 3, 4, 0, 0, 6, 5, 41], [false, false]),
+        // A true slot-7 Boolean.
+        ([61, 0, 0, 0, 0, 0, 3, 4, 0, 0, 6, 5, 41], [true, true]),
+        // The result in slot 9.
+        ([61, 0, 0, 0, 0, 0, 3, 4, 0, 6, 0, 5, 41], [true, false]),
+    ] {
+        assert!(project_mirror_fixture(&[], slots, booleans, 0.0, &[]).is_none());
+    }
+}
+
+#[test]
+fn mirror_of_a_sheet_metal_group_seeds_its_member_features() {
+    let group = super::sheet_metal::group_fixture(14, &[11, 14]);
+    let mirror = project_mirror_fixture(
+        &[15],
+        [61, 0, 0, 0, 0, 0, 3, 4, 0, 6, 0, 5, 41],
+        [false, false],
+        0.0,
+        std::slice::from_ref(&group),
+    )
+    .expect("group mirror");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+        mirror.evaluation.definition()
+    else {
+        panic!("not a pattern");
+    };
+    let ids = seeds
+        .iter()
+        .map(|seed| match seed {
+            cadmpeg_ir::features::patterns::PatternSeed::Feature(id) => id.as_str(),
+            _ => panic!("not a feature seed"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        [
+            "inventor:design:feature#generated-10",
+            "inventor:design:feature#generated-13"
+        ]
+    );
+    // A group member that is not an earlier history node keeps the mirror native.
+    let group = super::sheet_metal::group_fixture(14, &[11, 12]);
+    assert!(project_mirror_fixture(
+        &[15],
+        [61, 0, 0, 0, 0, 0, 3, 4, 0, 6, 0, 5, 41],
+        [false, false],
+        0.0,
+        std::slice::from_ref(&group),
+    )
+    .is_none());
 }

@@ -172,6 +172,7 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
         origin_folders: Vec::new(),
+        sheet_metal_groups: Vec::new(),
         issues: Vec::new(),
     };
     (inventory, vec![sketch(7), sketch(10)])

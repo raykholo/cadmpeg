@@ -79,6 +79,7 @@ const ARENAS: &[&str] = &[
     "pm_dc_directions",
     "pm_dc_sketch_entities",
     "pm_dc_sketch_constraints",
+    "pm_dc_sheet_metal_groups",
     "pm_dc_sketch_projections",
     "pm_dc_sketches",
     "pm_dc_transforms",
@@ -1007,6 +1008,11 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             | PmDcFeaturePropertyKind::EdgeItem { .. }
             | PmDcFeaturePropertyKind::TerminationFlag { .. }
             | PmDcFeaturePropertyKind::Value { .. } => {}
+            PmDcFeaturePropertyKind::SheetMetal {
+                references: items, ..
+            } => {
+                references.extend(items.iter().map(|reference| reference.index()));
+            }
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
                 ..
@@ -1113,6 +1119,30 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 Check::NativeLinks,
                 "Inventor PmDc origin folder record does not resolve".into(),
                 Some(folder.id()),
+            ));
+        }
+    }
+    for group in &data.pm_dc_sheet_metal_groups {
+        let references = [group.header.next.index(), group.header.context.index()];
+        if raw.get(&(
+            group.identity.segment_token.as_str(),
+            group.identity.record_ordinal,
+        )) != Some(&group.identity.type_id.as_str())
+            || references
+                .into_iter()
+                .chain(
+                    group
+                        .members
+                        .references()
+                        .iter()
+                        .map(|reference| reference.index()),
+                )
+                .any(|reference| !resolves(group.identity.segment_token.as_str(), reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc sheet-metal group record or reference does not resolve".into(),
+                Some(group.id()),
             ));
         }
     }
@@ -1689,6 +1719,7 @@ struct NativeData {
     pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pm_dc_work_planes: Vec<PmDcWorkPlane>,
     pm_dc_origin_folders: Vec<PmDcOriginFolder>,
+    pm_dc_sheet_metal_groups: Vec<crate::feature::sheet_metal::PmDcSheetMetalGroup>,
     feature_record_issues: Vec<RecordIssue>,
     active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
@@ -1770,6 +1801,8 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_dc_kernel_entity_links")?,
             pm_dc_work_planes: namespace.arena_as_for_decode(ctx, "pm_dc_work_planes")?,
             pm_dc_origin_folders: namespace.arena_as_for_decode(ctx, "pm_dc_origin_folders")?,
+            pm_dc_sheet_metal_groups: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sheet_metal_groups")?,
             feature_record_issues: namespace.arena_as_for_decode(ctx, "feature_record_issues")?,
             active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as_for_decode(ctx, "unknowns")?,

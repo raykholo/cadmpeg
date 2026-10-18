@@ -99,6 +99,7 @@
         "pm_dc_parameter_tables": [],
         "pm_dc_parameters": [],
         "pm_dc_pattern_features": [],
+        "pm_dc_sheet_metal_groups": [],
         "pm_dc_sketch_constraints": [],
         "pm_dc_sketch_entities": [],
         "pm_dc_sketch_projections": [],
