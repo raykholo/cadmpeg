@@ -104,6 +104,8 @@ Pre-schema-15 level-of-detail records are framed, but their member semantics are
 
 The weldment templates of the analyst corpus (`Weldment*.iam`, 40 saves) and three other saves store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records.
 
+One analyst assembly save stores a `UFRxDoc` occurrence whose `occurrence_id` has no `AmDc` record while one `AmDc` record has no `UFRxDoc` occurrence, and whose `occurrence_key` repeats another occurrence's key. Its prototype resolves, but its placement stays unresolved; whether such a record is the replaced-component form of the other `AmDc` record is unproven.
+
 The meaning of the eight export-entry state bytes, of the export padding byte, and of first-section tag `0x1e` (a second name that usually equals the component name) is unknown.
 
 **Need.** Each additional schema or tag requires exact field widths, repeated-tag rules, identity joins, and loss behavior before semantic transfer.
