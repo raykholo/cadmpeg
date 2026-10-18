@@ -4167,19 +4167,29 @@ fn collection_result(
     Some(Ok((feature_id, result)))
 }
 
+/// Every item of an edge collection is an edge item, at least one item has
+/// an edge reference, and an item without one carries content-header flag
+/// bit 2.
 fn closed_edge_items(token: &str, items: &PmDcReferenceList, index: &ProjectionIndex<'_>) -> bool {
+    let mut referenced = false;
     !items.references().is_empty()
         && items.references().iter().all(|reference| {
             resolve_property(token, reference.index(), index).is_some_and(|property| {
-                matches!(
-                    &property.kind,
-                    PmDcFeaturePropertyKind::EdgeItem {
-                        index_references,
-                        ..
-                    } if !index_references.values().is_empty()
-                )
+                let PmDcFeaturePropertyKind::EdgeItem {
+                    index_references, ..
+                } = &property.kind
+                else {
+                    return false;
+                };
+                if index_references.values().is_empty() {
+                    property.header.flags & history::SUPPRESSED_FLAG != 0
+                } else {
+                    referenced = true;
+                    true
+                }
             })
         })
+        && referenced
 }
 
 fn slot_property<'a>(

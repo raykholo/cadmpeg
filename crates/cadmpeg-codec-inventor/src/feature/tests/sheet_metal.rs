@@ -640,3 +640,127 @@ fn inventory_admits_sheet_metal_groups_and_property_records() {
     assert!(inventory.sheet_metal_groups.is_empty());
     assert_eq!(inventory.issues.len(), 1);
 }
+
+/// A corner round over edge items #7 and #12. Item #12 has `flags` and an
+/// empty or nonempty index-reference list; `first_empty` empties item #7
+/// and sets its flag bit 2.
+fn corner_round_with_items(flags: u32, second_empty: bool, first_empty: bool) -> Option<Feature> {
+    let raw_radius = raw_parameter(20);
+    let neutral_radius = neutral_parameter(
+        &raw_radius,
+        ParameterValue::Length(Length::new(1.5).expect("finite length fixture")),
+    );
+    let item = |empty: bool| PmDcFeaturePropertyKind::EdgeItem {
+        index_references: if empty {
+            PmDcU32List::new(2, None, Vec::new()).expect("empty test list")
+        } else {
+            PmDcU32List::new(
+                2,
+                Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                vec![42],
+            )
+            .expect("test list metadata matches length")
+        },
+        index_reference_value: if empty { -1 } else { 0 },
+        value: 0,
+    };
+    let with_flags = |ordinal: u32, kind: PmDcFeaturePropertyKind, flags: u32| {
+        let plain = test_property(ordinal, kind);
+        let mut header = test_header();
+        header.flags = flags;
+        Located::new(
+            PmDcFeaturePropertyPayload {
+                save_version_major: 16,
+                header,
+                kind: plain.kind.clone(),
+            },
+            plain.identity.type_id.clone(),
+            plain.identity.segment_token.clone(),
+            ordinal,
+        )
+    };
+    let properties = vec![
+        test_property(
+            1,
+            PmDcFeaturePropertyKind::Enumeration {
+                family: PmDcFeatureEnumFamily::Fillet,
+                type_value: 2,
+                value: 0,
+            },
+        ),
+        test_property(
+            2,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::FilletEdgeSets,
+                items: reference_list(&[4]),
+            },
+        ),
+        test_property(
+            3,
+            PmDcFeaturePropertyKind::FilletEdgeSet {
+                edges: reference(5),
+                radius: reference(21),
+                selection: reference(6),
+                continuity: reference(0),
+            },
+        ),
+        test_property(
+            4,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::EdgeCollection,
+                items: reference_list(&[8, 13]),
+            },
+        ),
+        test_property(
+            5,
+            PmDcFeaturePropertyKind::WideEnumeration {
+                type_value: 4,
+                value: 0,
+            },
+        ),
+        with_flags(7, item(first_empty), if first_empty { 0x4 } else { 0 }),
+        test_property(
+            8,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::ObjectCollection,
+                items: reference_list(&[10]),
+            },
+        ),
+        test_property(
+            9,
+            PmDcFeaturePropertyKind::SurfaceBody {
+                body: reference(30),
+            },
+        ),
+        with_flags(12, item(second_empty), flags),
+    ];
+    let round = test_feature(100, 17, &[(0, 2), (11, 1), (15, 8)]);
+    let label = test_label(100, 7, crate::feature::CORNER_ROUND_CLASS_ID, &[]);
+    let index = test_projection_index(
+        &properties,
+        std::slice::from_ref(&raw_radius),
+        std::slice::from_ref(&neutral_radius),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("projection context");
+    crate::feature::project_corner_round(&ctx, &round, &label, &index)
+        .map(|projected| projected.expect("corner round projection").0)
+}
+
+#[test]
+fn an_edge_item_without_an_edge_reference_carries_flag_bit_2() {
+    assert!(corner_round_with_items(0, false, false).is_some());
+    assert!(corner_round_with_items(0x4, true, false).is_some());
+    assert!(corner_round_with_items(0x804, true, false).is_some());
+    // An empty item without flag bit 2 is outside the grammar.
+    assert!(corner_round_with_items(0, true, false).is_none());
+    // At least one item references an edge.
+    assert!(corner_round_with_items(0x4, true, true).is_none());
+    assert!(corner_round_with_items(0, false, true).is_some());
+}
