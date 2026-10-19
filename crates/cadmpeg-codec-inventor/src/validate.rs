@@ -474,6 +474,33 @@ fn validate_sheet_metal_styles(data: &NativeData, findings: &mut Vec<Finding>) {
     }
 }
 
+/// The segments that hold an `AmDc` assembly root.
+fn assembly_segments<'a>(raw: &HashMap<(&'a str, u32), &str>) -> HashSet<&'a str> {
+    let assembly_root_type = crate::pmdc::type_id_string(crate::design::scope::ASSEMBLY_ROOT_TYPE);
+    raw.iter()
+        .filter(|(_, type_id)| **type_id == assembly_root_type)
+        .map(|((token, _), _)| *token)
+        .collect()
+}
+
+/// Whether a parameter table's one-based context reference resolves. A part
+/// table's context is null or a model root. A table in an `AmDc` segment can
+/// belong to the assembly root or to another owner, whose parameters have
+/// no established scope.
+fn table_context_resolves(
+    raw: &HashMap<(&str, u32), &str>,
+    assembly_segments: &HashSet<&str>,
+    token: &str,
+    context: u32,
+) -> bool {
+    let Some(ordinal) = context.checked_sub(1) else {
+        return true;
+    };
+    let root_type = crate::pmdc::type_id_string(crate::design::scope::MODEL_ROOT_TYPE);
+    raw.get(&(token, ordinal))
+        .is_some_and(|raw_type| *raw_type == root_type || assembly_segments.contains(token))
+}
+
 fn validate_parameter_scopes(
     data: &NativeData,
     raw: &HashMap<(&str, u32), &str>,
@@ -487,7 +514,7 @@ fn validate_parameter_scopes(
     };
     let table_type = crate::pmdc::type_id_string(crate::design::scope::PARAMETER_TABLE_TYPE);
     let root_type = crate::pmdc::type_id_string(crate::design::scope::MODEL_ROOT_TYPE);
-    let assembly_root_type = crate::pmdc::type_id_string(crate::design::scope::ASSEMBLY_ROOT_TYPE);
+    let assembly_segments = assembly_segments(raw);
     unique(
         findings,
         data.pm_dc_parameter_tables.iter().map(|record| {
@@ -514,8 +541,7 @@ fn validate_parameter_scopes(
             == Some(table.identity.type_id.as_str())
             && table.identity.type_id.as_str() == table_type;
         let references_resolve = resolves(token, table.next.index(), None)
-            && (resolves(token, table.context.index(), Some(&root_type))
-                || resolves(token, table.context.index(), Some(&assembly_root_type)))
+            && table_context_resolves(raw, &assembly_segments, token, table.context.index())
             && table
                 .members
                 .references()
@@ -2561,5 +2587,32 @@ fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
         severity: Severity::Error,
         message,
         entity,
+    }
+}
+
+#[cfg(test)]
+mod parameter_table_context_tests {
+    use std::collections::HashMap;
+
+    use super::{assembly_segments, table_context_resolves};
+
+    #[test]
+    fn an_assembly_table_may_belong_to_another_owner() {
+        let model_root = crate::pmdc::type_id_string(crate::design::scope::MODEL_ROOT_TYPE);
+        let assembly_root = crate::pmdc::type_id_string(crate::design::scope::ASSEMBLY_ROOT_TYPE);
+        let other = "d005d758d211e2b16000a6b7b035c3b0".to_owned();
+        let raw: HashMap<(&str, u32), &str> = HashMap::from([
+            (("part", 0), model_root.as_str()),
+            (("part", 4), other.as_str()),
+            (("assembly", 0), assembly_root.as_str()),
+            (("assembly", 47), other.as_str()),
+        ]);
+        let segments = assembly_segments(&raw);
+        assert!(table_context_resolves(&raw, &segments, "part", 0));
+        assert!(table_context_resolves(&raw, &segments, "part", 1));
+        assert!(!table_context_resolves(&raw, &segments, "part", 5));
+        assert!(table_context_resolves(&raw, &segments, "assembly", 1));
+        assert!(table_context_resolves(&raw, &segments, "assembly", 48));
+        assert!(!table_context_resolves(&raw, &segments, "assembly", 30));
     }
 }
