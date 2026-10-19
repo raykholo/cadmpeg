@@ -28,6 +28,12 @@ pub(super) fn check_products(
         }
         Ok(())
     })?;
+    let parameters = BorrowedIdentities::build(ctx, |add| {
+        for parameter in &ir.model.parameters {
+            add(parameter.id.as_str(), ())?;
+        }
+        Ok(())
+    })?;
     let bodies = BorrowedIdentities::build(ctx, |add| {
         for body in &ir.model.bodies {
             add(body.id.as_str(), ())?;
@@ -128,9 +134,21 @@ pub(super) fn check_products(
     }
     for joint in &ir.model.assembly_joints {
         ctx.charge_work(1, "assembly joint row")?;
+        if let Some(parameter) = &joint.driving_parameter {
+            if !parameters.contains(ctx, parameter.as_str())? {
+                record_finding(
+                    ctx,
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    Some(joint.id.as_str()),
+                    format_args!("invalid assembly joint driving parameter"),
+                )?;
+            }
+        }
         for connector in joint.connectors() {
             ctx.charge_work(1, "assembly joint connector")?;
-            if let OperandContainer::Occurrence { occurrence } = &connector.operand.container {
+            if let OperandContainer::Occurrence { occurrence, .. } = &connector.operand.container {
                 if !occurrences.contains(ctx, occurrence.as_str())? {
                     record_finding(
                         ctx,
@@ -222,5 +240,43 @@ mod tests {
             "resolution": "unresolved"
         });
         assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
+    }
+
+    #[test]
+    fn a_joint_driving_parameter_must_name_a_design_parameter() {
+        let mut ir = CadIr::empty();
+        let mut joint = AssemblyJoint::paired(
+            JointId::mint("test:model:joint#driven").expect("identity grammar"),
+            PairedJointKind::AxisCoincidence {},
+            [
+                JointConnector {
+                    operand: root_operand("root:first"),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+                JointConnector {
+                    operand: root_operand("root:second"),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+            ],
+            None,
+        );
+        joint.driving_parameter = Some(
+            crate::features::ParameterId::mint("test:model:parameter#absent")
+                .expect("identity grammar"),
+        );
+        ir.model.assembly_joints.push(joint);
+        let mut findings = Vec::new();
+        check_products(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &mut findings,
+        )
+        .unwrap();
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0]
+            .message
+            .contains("invalid assembly joint driving parameter"));
     }
 }

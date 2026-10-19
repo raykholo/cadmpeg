@@ -978,6 +978,11 @@ pub enum OperandContainer {
     Occurrence {
         /// Placed local occurrence that owns the object.
         occurrence: OccurrenceId,
+        /// Native keys of the nested occurrences, outermost first, that lead
+        /// from the prototype of `occurrence` to the document that owns the
+        /// object. Empty when the prototype of `occurrence` owns the object.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        occurrence_path: Vec<String>,
     },
     /// Object in an external document.
     External {
@@ -1016,8 +1021,23 @@ impl JointOperand {
         object: impl Into<String>,
         subelements: Vec<String>,
     ) -> Self {
+        Self::nested_occurrence(occurrence, Vec::new(), object, subelements)
+    }
+
+    /// Constructs an operand owned by a document nested below a local
+    /// occurrence. `occurrence_path` lists the native keys of the nested
+    /// occurrences, outermost first.
+    pub fn nested_occurrence(
+        occurrence: OccurrenceId,
+        occurrence_path: Vec<String>,
+        object: impl Into<String>,
+        subelements: Vec<String>,
+    ) -> Self {
         Self {
-            container: OperandContainer::Occurrence { occurrence },
+            container: OperandContainer::Occurrence {
+                occurrence,
+                occurrence_path,
+            },
             object: object.into(),
             subelements,
         }
@@ -1230,6 +1250,17 @@ pub enum JointOperands {
     },
 }
 
+/// Relative direction of the two plane normals of a plane coincidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PlaneSense {
+    /// The normals point toward each other: `z₁ = −z₀`.
+    Opposed,
+    /// The normals point the same way: `z₁ = z₀`.
+    Aligned,
+}
+
 /// Assembly-joint families that connect two operands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1425,6 +1456,34 @@ pub enum PairedJointKind {
         )]
         distance2: Option<FiniteReal>,
     },
+    /// Coincident connector planes. The z axis of each connector frame is
+    /// the outward normal of its plane, and the frame origin lies on the plane.
+    PlaneCoincidence {
+        /// Relative direction of the two plane normals.
+        sense: PlaneSense,
+        /// Signed separation `(origin₁ − origin₀) · z₀` in document length units.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_offset"
+        )]
+        offset: Option<FiniteReal>,
+    },
+    /// Coincident connector axes. The z axis of each connector frame is the
+    /// axis direction, and the frame origin lies on the axis. The two
+    /// directions are parallel in either sense.
+    AxisCoincidence {},
+    /// The origin of the first connector frame lies at `distance` from the
+    /// axis that the z axis of the second connector frame spans.
+    PointOnAxis {
+        /// Point-to-axis distance in document length units.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_distance"
+        )]
+        distance: Option<FiniteReal>,
+    },
     /// Future application-defined family retained without relabeling.
     Native {
         /// Application-defined family name.
@@ -1485,6 +1544,13 @@ pub struct AssemblyJoint {
     operands: JointOperands,
     /// Whether solving this joint is suppressed.
     pub suppressed: bool,
+    /// Design parameter whose value drives the offset, distance, or angle of the joint.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_driving_parameter"
+    )]
+    pub driving_parameter: Option<crate::features::ParameterId>,
     /// Format-native joint record supplying this constraint.
     #[serde(
         default,
@@ -1532,6 +1598,7 @@ impl AssemblyJoint {
             id,
             operands,
             suppressed: false,
+            driving_parameter: None,
             native_ref: None,
         }
     }
@@ -1587,6 +1654,12 @@ cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "an
 cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
+cadmpeg_core::named_optional_field!(deserialize_offset, FiniteReal, "offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_driving_parameter,
+    crate::features::ParameterId,
+    "driving_parameter"
+);
 
 mod identity_rewrite;
 

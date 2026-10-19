@@ -11,9 +11,11 @@ use crate::records::RseRecordFrame;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 mod geometry;
+mod joint;
 mod selection;
 
 pub(crate) use geometry::OperandGeometryRecord;
+pub(crate) use joint::project_joints;
 
 use selection::SelectionKey;
 pub(crate) use selection::{OperandSelection, ProjectionHint};

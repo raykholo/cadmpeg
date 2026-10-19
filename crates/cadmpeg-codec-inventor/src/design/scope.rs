@@ -5,7 +5,9 @@
 //! A parameter table's context reference selects the model root that owns the
 //! table. A model root names the B-rep segment that carries its body: the
 //! document model names the `PmBrepSegmentType` segment and the flat-pattern
-//! model names the `MbBrepSegmentType` segment.
+//! model names the `MbBrepSegmentType` segment. In an `AmDc` segment the
+//! table's context reference selects the assembly root, which owns the
+//! assembly document parameters.
 
 use std::collections::HashMap;
 
@@ -24,6 +26,15 @@ use crate::record_identity::{Located, RecordPayload};
 pub(crate) const MODEL_ROOT_TYPE: [u8; 16] = inventor_id(0x9087_4d16);
 /// Type identifier of a `PmDc` parameter table.
 pub(crate) const PARAMETER_TABLE_TYPE: [u8; 16] = inventor_id(0x9087_4d63);
+/// Type identifier of the `AmDc` assembly root.
+pub(crate) const ASSEMBLY_ROOT_TYPE: [u8; 16] = inventor_id(0x9087_4d46);
+
+/// The location of one `AmDc` assembly root record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AssemblyRoot {
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+}
 
 /// Number of u32 values between a model root's member list and its segment name.
 const MODEL_ROOT_VALUE_COUNT: usize = 15;
@@ -354,9 +365,18 @@ pub(crate) fn model_feature_id(
 pub(crate) fn resolve_scopes(
     ctx: &DecodeContext<'_>,
     roots: &[PmDcModelRoot],
+    assembly_roots: &[AssemblyRoot],
     tables: &[PmDcParameterTable],
     segments: &[BrepSegmentName],
 ) -> Result<ParameterScopes, CodecError> {
+    let mut assembly_by_token = HashMap::<&str, (u32, usize)>::new();
+    for root in assembly_roots {
+        ctx.charge_work(1, "resolve Inventor assembly roots")?;
+        let entry = assembly_by_token
+            .entry(root.segment_token.as_str())
+            .or_insert((root.record_ordinal, 0));
+        entry.1 += 1;
+    }
     let mut by_root = HashMap::new();
     let mut document_roots = HashMap::<&str, usize>::new();
     for root in roots {
@@ -379,12 +399,24 @@ pub(crate) fn resolve_scopes(
     for table in tables {
         ctx.charge_work(1, "resolve Inventor parameter tables")?;
         let token = table.identity.segment_token.as_str();
-        if document_roots.get(token) != Some(&1) {
-            continue;
-        }
         let Some(root_ordinal) = table.context.record_ordinal() else {
             continue;
         };
+        if let Some(&(assembly_root, count)) = assembly_by_token.get(token) {
+            if count == 1 && assembly_root == root_ordinal {
+                scopes.insert(
+                    ctx,
+                    token,
+                    table.identity.record_ordinal,
+                    ParameterScope::Document,
+                    &table.names,
+                )?;
+            }
+            continue;
+        }
+        if document_roots.get(token) != Some(&1) {
+            continue;
+        }
         let Some((role, root)) = by_root.get(&(token, root_ordinal)) else {
             continue;
         };

@@ -94,6 +94,8 @@ pub(crate) enum InventorLossCode {
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
     AssemblyPlacementNotTransferred,
+    /// Assembly constraints have no neutral joint family or state.
+    AssemblyConstraintNotTransferred,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The active kernel carrier used an unverified Spatial ACIS grammar band.
@@ -142,6 +144,7 @@ impl InventorLossCode {
         Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
+        Self::AssemblyConstraintNotTransferred,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -187,6 +190,7 @@ impl InventorLossCode {
             Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
+            Self::AssemblyConstraintNotTransferred => "assembly.constraint-not-transferred",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -246,6 +250,7 @@ impl InventorLossCode {
                 LossTaxonomy::AssemblyComponentsExternal
             }
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::AssemblyConstraintNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
@@ -321,6 +326,7 @@ mod tests {
                 "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
+                "assembly.constraint-not-transferred",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
