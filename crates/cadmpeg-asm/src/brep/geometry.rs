@@ -1136,8 +1136,20 @@ pub(super) fn classify_body_kinds(
             ctx.insert_hash_map(&mut coedge_bodies, coedge, body, "ASM coedge bodies")?;
         }
     }
+    // An edge with no curve whose two vertex references are identical collapses to a point (a
+    // cone apex or sphere pole, `asm.md` `degenerate_curve`). Only the face that closes there
+    // uses it, so it does not open the shell and takes no part in the two-use count.
+    let mut point_edges = HashSet::new();
+    for edge in &out.edges {
+        if edge.curve().is_none() && edge.start == edge.end {
+            ctx.insert_hash_set(&mut point_edges, &edge.id, "ASM point edges")?;
+        }
+    }
     let mut edge_use_counts = HashMap::<_, HashMap<&EdgeId, usize>>::new();
     for coedge in &out.coedges {
+        if point_edges.contains(&coedge.edge) {
+            continue;
+        }
         if let Some(body) = coedge_bodies.get(&coedge.id).copied() {
             ctx.admit_hash_map_entry(&mut edge_use_counts, &body, "ASM body edge use counts")?;
             let counts = edge_use_counts.entry(body).or_default();
