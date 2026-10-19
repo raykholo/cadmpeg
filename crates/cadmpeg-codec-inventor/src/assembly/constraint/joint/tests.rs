@@ -89,6 +89,7 @@ fn face_operand(
             frame_marker: false,
             shape,
         }),
+        context_key: None,
         geometry_issue: None,
         occurrence_id: Some(occurrence),
         projection_hint: None,
@@ -395,4 +396,116 @@ fn assembly_geometry_operands_belong_to_the_root() {
     assert_eq!(first.operand.container, OperandContainer::Root {});
     assert_eq!(first.operand.object, "AmDcSegment::segment");
     assert_eq!(first.operand.subelements, ["assembly_geometry:2"]);
+}
+
+fn unkeyed_direction(
+    occurrence: u32,
+    context_key: Option<&str>,
+    vector: [f64; 3],
+) -> ConstraintOperandRecord {
+    let mut operand = face_operand(occurrence, "", GeometryShape::Direction { vector });
+    operand.selection = None;
+    operand.context_key = context_key.map(str::to_owned);
+    operand
+}
+
+fn half_turn() -> ParameterValue {
+    ParameterValue::Angle(Angle::from_assigned_real(
+        FiniteReal::new(std::f64::consts::PI).unwrap(),
+    ))
+}
+
+#[test]
+fn an_unkeyed_operand_takes_its_path_from_the_occurrence_context() {
+    let angle = constraint(
+        ConstraintKind::Angle,
+        4,
+        vec![
+            unkeyed_direction(1, Some("1"), [0.0, 1.0, 0.0]),
+            unkeyed_direction(4, Some("4:2"), [0.0, -1.0, 0.0]),
+        ],
+    );
+    let projection = project_joints(
+        &context(),
+        &[angle],
+        &occurrences(),
+        &[parameter(half_turn())],
+    )
+    .unwrap();
+    let [joint] = projection.joints.as_slice() else {
+        panic!("one joint: {projection:?}");
+    };
+    let second = joint.connectors().nth(1).unwrap();
+    let OperandContainer::Occurrence {
+        occurrence,
+        occurrence_path,
+    } = &second.operand.container
+    else {
+        panic!("occurrence container");
+    };
+    assert_eq!(occurrence.as_str(), "inventor:assembly:instance#4");
+    assert_eq!(occurrence_path, &["2".to_owned()]);
+    assert_eq!(second.operand.object, "AmDcSegment::segment");
+    assert_eq!(second.operand.subelements, ["stored_geometry:55"]);
+}
+
+#[test]
+fn an_operand_path_must_be_known_and_agree() {
+    let without_context = constraint(
+        ConstraintKind::Angle,
+        4,
+        vec![
+            unkeyed_direction(1, None, [0.0, 1.0, 0.0]),
+            unkeyed_direction(4, Some("4"), [0.0, -1.0, 0.0]),
+        ],
+    );
+    let wrong_context = constraint(
+        ConstraintKind::Angle,
+        4,
+        vec![
+            unkeyed_direction(1, Some("3"), [0.0, 1.0, 0.0]),
+            unkeyed_direction(4, Some("4"), [0.0, -1.0, 0.0]),
+        ],
+    );
+    let mut negative = constraint(
+        ConstraintKind::Angle,
+        4,
+        vec![
+            unkeyed_direction(1, Some("1"), [0.0, 1.0, 0.0]),
+            unkeyed_direction(4, Some("4"), [0.0, -1.0, 0.0]),
+        ],
+    );
+    negative.record_ordinal = 33;
+    let negative_projection = project_joints(
+        &context(),
+        &[negative],
+        &occurrences(),
+        &[parameter(ParameterValue::Angle(Angle::from_assigned_real(
+            FiniteReal::new(-0.5).unwrap(),
+        )))],
+    )
+    .unwrap();
+    assert!(negative_projection.joints.is_empty());
+    let mut disagreeing = mate();
+    disagreeing.operands[1].context_key = Some("4:2:8".into());
+    let projection = project_joints(
+        &context(),
+        &[without_context, wrong_context, disagreeing],
+        &occurrences(),
+        &[parameter(half_turn())],
+    )
+    .unwrap();
+    assert!(projection.joints.is_empty(), "{:?}", projection.joints);
+    assert_eq!(projection.native, 3);
+
+    let mut agreeing = mate();
+    agreeing.operands[1].context_key = Some("4:2:9".into());
+    let projection = project_joints(
+        &context(),
+        &[agreeing],
+        &occurrences(),
+        &[parameter(length(1.0))],
+    )
+    .unwrap();
+    assert_eq!(projection.joints.len(), 1);
 }

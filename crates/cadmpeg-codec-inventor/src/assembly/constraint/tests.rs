@@ -911,3 +911,45 @@ fn an_undecoded_operand_geometry_keeps_its_constraint() {
         .as_deref()
         .is_some_and(|detail| detail.contains("not established")));
 }
+
+fn occurrence_context_bytes(label: &str, key: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 0x39);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 0x0400);
+    push_u32(&mut bytes, 0);
+    push_text(&mut bytes, label);
+    push_text(&mut bytes, key);
+    push_u16(&mut bytes, 1);
+    push_u32(&mut bytes, 0x77);
+    push_u32(&mut bytes, QUALIFIED | 0xa);
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 2);
+    push_u16(&mut bytes, 0x3000);
+    push_u32(&mut bytes, 0);
+    bytes.push(1);
+    bytes
+}
+
+#[test]
+fn occurrence_context_records_name_the_occurrence_path() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let key = |label: &str, key: &str| {
+        let bytes = occurrence_context_bytes(label, key);
+        super::selection::occurrence_context_key(&ctx, View::over_retained(&bytes))
+            .expect("occurrence context prefix")
+    };
+    assert_eq!(key("DCx", "1").as_deref(), Some("1"));
+    assert_eq!(key("DCx", "97:11:2").as_deref(), Some("97:11:2"));
+    assert_eq!(key("DCy", "1"), None);
+    assert_eq!(key("DCx", "1::2"), None);
+    assert_eq!(key("DCx", ""), None);
+    assert_eq!(
+        super::selection::occurrence_context_key(&ctx, View::over_retained(&[0; 6]))
+            .expect("short occurrence context"),
+        None
+    );
+}

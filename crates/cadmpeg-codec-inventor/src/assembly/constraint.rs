@@ -136,6 +136,10 @@ pub(crate) struct ConstraintOperandRecord {
     pub(crate) geometry: Option<OperandGeometry>,
     /// The stored plane, line, point, or direction (section 9.3).
     pub(crate) stored_geometry: Option<OperandGeometryRecord>,
+    /// The occurrence key of the occurrence-context record that the stored
+    /// geometry's `document_reference` selects (section 9.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) context_key: Option<String>,
     /// Why a geometry record of a known class did not decode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) geometry_issue: Option<String>,
@@ -542,6 +546,7 @@ fn resolve_operand(
         geometry_type: None,
         geometry: None,
         stored_geometry: None,
+        context_key: None,
         geometry_issue: None,
         occurrence_id: None,
         projection_hint: None,
@@ -579,7 +584,15 @@ fn resolve_operand(
         operand.geometry = OperandGeometry::from_type(geometry.type_id);
         if let (Some(class), Some((major, extension))) = (operand.geometry, version) {
             match geometry::parse(geometry.payload, class, major, extension) {
-                Ok(stored) => operand.stored_geometry = Some(stored),
+                Ok(stored) => {
+                    if let Some(context) = target(records, stored.document_reference)
+                        .filter(|record| record.type_id == selection::OCCURRENCE_CONTEXT_TYPE)
+                    {
+                        operand.context_key =
+                            selection::occurrence_context_key(ctx, context.payload)?;
+                    }
+                    operand.stored_geometry = Some(stored);
+                }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     ctx.charge_formatted_retained(
