@@ -61,6 +61,45 @@ Kernel bytes beginning with `ASM BinaryFile4` or `ASM BinaryFile8` use the ASM h
 
 Root streams that contain an OLE Property Set self-identify through their byte-order marker, section directory, and FMTID. Section offsets bound each property. Code-page properties select LPSTR decoding. LPWSTR values contain UTF-16LE code units. Scalar, vector, FILETIME, BLOB, and clipboard values retain their type code. A clipboard preview is emitted only when its payload has a recognized image signature.
 
+### 6.1 Document metadata identity
+
+A section FMTID and a property ID together identify a document property. A property name, from a dictionary or from a built-in name table, does not select a neutral metadata key. Two public OLE sets and four Inventor sets supply neutral keys:
+
+| Set | FMTID |
+|---|---|
+| `SummaryInformation` (public) | `F29F85E0-4FF9-1068-AB91-08002B27B3D9` |
+| `DocumentSummaryInformation` (public) | `D5CDD502-2E9C-101B-9397-08002B2CF9AE` |
+| Inventor Summary Information | `3D38DE39-0588-4C14-BB37-18F4D5DD31C7` |
+| Inventor Document Summary Information | `8CF58000-DA66-4AE6-8FF0-7B58406FB049` |
+| Design Tracking Properties | `32853F0F-3444-11D1-9E93-0060B03C1CA6` |
+| Design Tracking Control | `D861FB30-3136-11D1-9E92-0060B03C1CA6` |
+
+Each Inventor set also stores its set name as a string in property 255. The Inventor Summary and Inventor Document Summary sets use the property IDs of the public sets: property 4 is the author string, property 17 is a `VT_CF` thumbnail, property 2 is the title, property 6 is the comments, property 9 is the revision, and Inventor Document Summary property 15 is the company. Dictionaries that occur in Design Tracking Properties sections name property 4 `Date Created`, 5 `Part Number`, 7 `Project`, 17 `User Status`, 20 `Material`, 29 `Description`, and 41 `Designer`. In successive saves of one document, Design Tracking Control property 17 is a FILETIME that increases with the current-version string in property 14 and is less than one second from the creation FILETIME of the `RSeDb` band that the save writes; Design Tracking Properties property 4 does not change.
+
+A neutral key admits only the identities in its row. The first identity in the row has the highest precedence. A text key admits only a `VT_LPSTR` or `VT_LPWSTR` value. A time key admits only a nonzero `VT_FILETIME` value. An empty string or a zero FILETIME supplies no value.
+
+| Key | Form | Identities, highest precedence first |
+|---|---|---|
+| `title` | text | Inventor Summary 2; `SummaryInformation` 2 |
+| `subject` | text | `SummaryInformation` 3 |
+| `author` | text | Inventor Summary 4; `SummaryInformation` 4 |
+| `keywords` | text | `SummaryInformation` 5 |
+| `comments` | text | Inventor Summary 6; `SummaryInformation` 6 |
+| `description` | text | Design Tracking Properties 29 |
+| `company` | text | Inventor Document Summary 15; `DocumentSummaryInformation` 15 |
+| `project` | text | Design Tracking Properties 7 |
+| `revision` | text | Inventor Summary 9; `SummaryInformation` 9 |
+| `designer` | text | Design Tracking Properties 41 |
+| `material` | text | Design Tracking Properties 20 |
+| `status` | text | Design Tracking Properties 17 |
+| `part_number` | text | Design Tracking Properties 5 |
+| `created_at` | time | Design Tracking Properties 4; `SummaryInformation` 12 |
+| `saved_at` | time | Design Tracking Control 17; `SummaryInformation` 13 |
+
+When two admitted values for one key differ, the value with the higher-precedence identity is selected. When two values have the same identity, the value in the first property-set stream in directory order is selected. A value that is not selected and differs from the selected value is kept as a BOM property of the root product, keyed by its native property-value identifier. A FILETIME counts 100-nanosecond intervals from 1601-01-01T00:00:00Z. A time key writes it as an RFC 3339 UTC timestamp, with the fractional second only when it is nonzero and without trailing zeros. A FILETIME after year 9999 supplies no value.
+
+The root product label and source name are the `title` value. The root product description is the `description` value, or the `comments` value when no `description` value is selected. The root product part number is the `part_number` value.
+
 ## 7. Protein package
 
 The root `Protein` stream starts with a u32 payload length. Zero length is the complete four-byte empty form. A nonzero length equals the exact remaining byte count, and the remaining bytes are one ZIP archive. ZIP entry names are unique and do not contain absolute, parent, current-directory, empty, NUL, or backslash path components.
