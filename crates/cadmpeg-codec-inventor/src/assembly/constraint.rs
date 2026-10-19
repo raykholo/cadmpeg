@@ -10,7 +10,10 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::records::RseRecordFrame;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+mod geometry;
 mod selection;
+
+pub(crate) use geometry::OperandGeometryRecord;
 
 use selection::SelectionKey;
 pub(crate) use selection::{OperandSelection, ProjectionHint};
@@ -98,7 +101,7 @@ impl OperandGeometry {
 }
 
 /// One operand of a constraint, resolved through its operand record when it has one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct ConstraintOperandRecord {
     pub(crate) reference: PmDcReference,
     /// Present when the reference selects an operand record.
@@ -106,6 +109,8 @@ pub(crate) struct ConstraintOperandRecord {
     pub(crate) geometry_reference: Option<PmDcReference>,
     pub(crate) geometry_type: Option<String>,
     pub(crate) geometry: Option<OperandGeometry>,
+    /// The stored plane, line, point, or direction (section 9.3).
+    pub(crate) stored_geometry: Option<OperandGeometryRecord>,
     /// `occurrence_id` of the occurrence that owns the operand geometry.
     pub(crate) occurrence_id: Option<u32>,
     /// What the operand's selection key names (section 9.2).
@@ -122,7 +127,7 @@ pub(crate) struct ConstraintParameterRecord {
 }
 
 /// Native `AmDc` assembly constraint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AssemblyConstraintRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -183,6 +188,10 @@ pub(crate) fn inventory(
             continue;
         };
         let token = segment.pair.token.as_str();
+        let version = segment.registry.and_then(|registry| {
+            crate::pmdc::content_header_extension_len(registry.version_major)
+                .map(|extension| (registry.version_major, extension))
+        });
         let mut keys = Vec::new();
         for record in &table.records {
             let result = match record.type_id {
@@ -213,12 +222,15 @@ pub(crate) fn inventory(
             let result = parse(ctx, record.payload).and_then(|payload| {
                 resolve(
                     ctx,
-                    token,
+                    SegmentRecords {
+                        token,
+                        records: &table.records,
+                        occurrences,
+                        keys: &keys,
+                        version,
+                    },
                     record.ordinal,
                     &payload,
-                    &table.records,
-                    occurrences,
-                    &keys,
                 )
             });
             match result {
@@ -401,28 +413,30 @@ fn target<'r, 'a>(
     (record.ordinal == ordinal).then_some(record)
 }
 
+/// The records of one `AmDc` segment that constraint resolution reads.
+#[derive(Clone, Copy)]
+struct SegmentRecords<'s, 'a> {
+    token: &'s str,
+    records: &'s [RseRecordFrame<'a>],
+    occurrences: &'s [super::AssemblyOccurrence],
+    keys: &'s [SelectionKey],
+    /// Segment major version and its content-header extension length.
+    version: Option<(u8, usize)>,
+}
+
 fn resolve(
     ctx: &DecodeContext<'_>,
-    token: &str,
+    segment: SegmentRecords<'_, '_>,
     record_ordinal: u32,
     payload: &ConstraintPayload,
-    records: &[RseRecordFrame<'_>],
-    occurrences: &[super::AssemblyOccurrence],
-    keys: &[SelectionKey],
 ) -> Result<AssemblyConstraintRecord, CodecError> {
+    let SegmentRecords { token, records, .. } = segment;
     let mut operands = ctx.vector_storage(
         payload.operands.len(),
         "admit Inventor assembly constraint operands",
     )?;
     for reference in &payload.operands {
-        operands.push(resolve_operand(
-            ctx,
-            token,
-            *reference,
-            records,
-            occurrences,
-            keys,
-        )?);
+        operands.push(resolve_operand(ctx, segment, *reference)?);
     }
     let mut parameters = ctx.vector_storage(
         payload.parameters.len(),
@@ -462,18 +476,23 @@ fn resolve(
 
 fn resolve_operand(
     ctx: &DecodeContext<'_>,
-    token: &str,
+    segment: SegmentRecords<'_, '_>,
     reference: PmDcReference,
-    records: &[RseRecordFrame<'_>],
-    occurrences: &[super::AssemblyOccurrence],
-    keys: &[SelectionKey],
 ) -> Result<ConstraintOperandRecord, CodecError> {
+    let SegmentRecords {
+        token,
+        records,
+        occurrences,
+        keys,
+        version,
+    } = segment;
     let mut operand = ConstraintOperandRecord {
         reference,
         occurrence_reference: None,
         geometry_reference: None,
         geometry_type: None,
         geometry: None,
+        stored_geometry: None,
         occurrence_id: None,
         projection_hint: None,
         selection: None,
@@ -508,6 +527,10 @@ fn resolve_operand(
             "retain Inventor constraint geometry type",
         )?);
         operand.geometry = OperandGeometry::from_type(geometry.type_id);
+        if let (Some(class), Some((major, extension))) = (operand.geometry, version) {
+            operand.stored_geometry =
+                Some(geometry::parse(geometry.payload, class, major, extension)?);
+        }
     }
     let instance = target(records, occurrence_reference)
         .filter(|instance| instance.type_id == OCCURRENCE_INSTANCE_TYPE)

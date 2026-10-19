@@ -3,11 +3,14 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_core::CodecError;
 
+use super::geometry::{self, GeometryShape};
+use super::selection::SelectionKey;
 use super::selection::{
     imported_face_name, name_map_lookup, parse_face_key, parse_work_feature_key, KeySegmentKind,
     FACE_AXIS_KEY_TYPE, FACE_KEY_TYPE, IMPORTED_FACE_NAME_TYPE, NAME_MAP_TYPE,
     WORK_FEATURE_KEY_TYPE,
 };
+use super::SegmentRecords;
 use super::{
     name_face_key, parse, resolve, ConstraintKind, OperandGeometry, OperandSelection,
     ProjectionHint, CONSTRAINT_TYPE, LINE_TYPE, OCCURRENCE_INSTANCE_TYPE, OPERAND_TYPE,
@@ -72,6 +75,21 @@ fn parameter_role_bytes(role: u16, parameter: u32) -> Vec<u8> {
     push_u32(&mut bytes, parameter);
     push_u32(&mut bytes, 0);
     bytes
+}
+
+fn segment<'s, 'a>(
+    records: &'s [crate::records::RseRecordFrame<'a>],
+    occurrences: &'s [AssemblyOccurrence],
+    keys: &'s [SelectionKey],
+    version: Option<(u8, usize)>,
+) -> SegmentRecords<'s, 'a> {
+    SegmentRecords {
+        token: "segment",
+        records,
+        occurrences,
+        keys,
+        version,
+    }
 }
 
 fn context(arena: &DecodeArena) -> DecodeContext<'_> {
@@ -206,8 +224,13 @@ fn resolves_operands_parameters_and_the_occurrence() {
         occurrence_id: 77,
     }];
     let payload = parse(&ctx, records[0].payload).expect("mate record");
-    let record = resolve(&ctx, "segment", 0, &payload, &records, &occurrences, &[])
-        .expect("resolved constraint");
+    let record = resolve(
+        &ctx,
+        segment(&records, &occurrences, &[], None),
+        0,
+        &payload,
+    )
+    .expect("resolved constraint");
     assert_eq!(record.id, "inventor:assembly:constraint#segment-0");
     let [assembly, part] = record.operands.as_slice() else {
         panic!("two operands");
@@ -244,7 +267,7 @@ fn operands_without_an_operand_record_stay_unresolved() {
         test_frame(1, [1; 16], View::over_retained(&other)),
     ];
     let payload = parse(&ctx, records[0].payload).expect("tangent record");
-    let record = resolve(&ctx, "segment", 0, &payload, &records, &[], &[]).expect("resolved");
+    let record = resolve(&ctx, segment(&records, &[], &[], None), 0, &payload).expect("resolved");
     assert!(record
         .operands
         .iter()
@@ -256,9 +279,13 @@ fn operands_without_an_operand_record_stay_unresolved() {
         test_frame(1, OPERAND_TYPE, View::over_retained(&short[..17])),
     ];
     let payload = parse(&ctx, records[0].payload).expect("tangent record");
-    assert!(
-        displayed(resolve(&ctx, "segment", 0, &payload, &records, &[], &[])).contains("17 bytes")
-    );
+    assert!(displayed(resolve(
+        &ctx,
+        segment(&records, &[], &[], None),
+        0,
+        &payload
+    ))
+    .contains("17 bytes"));
 }
 
 fn push_text(bytes: &mut Vec<u8>, text: &str) {
@@ -547,7 +574,8 @@ fn operands_take_the_selection_key_of_their_geometry() {
     ];
     let key = parse_work_feature_key(&ctx, &records[3]).expect("assembly geometry");
     let payload = parse(&ctx, records[0].payload).expect("mate record");
-    let record = resolve(&ctx, "segment", 0, &payload, &records, &[], &[key]).expect("resolved");
+    let record =
+        resolve(&ctx, segment(&records, &[], &[key], None), 0, &payload).expect("resolved");
     let [operand] = record.operands.as_slice() else {
         panic!("one operand");
     };
@@ -559,4 +587,192 @@ fn operands_take_the_selection_key_of_their_geometry() {
         operand.selection,
         Some(OperandSelection::AssemblyGeometry { .. })
     ));
+}
+
+fn push_f64s(bytes: &mut Vec<u8>, values: &[f64]) {
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn geometry_prefix(extension_len: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 0x140);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0x0002_0200);
+    push_u32(&mut bytes, QUALIFIED | 3);
+    push_u32(&mut bytes, 0x50);
+    for _ in 0..extension_len {
+        push_u32(&mut bytes, u32::MAX);
+    }
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, QUALIFIED | 0x30);
+    push_u32(&mut bytes, 0);
+    bytes
+}
+
+fn plane_bytes(version: u8, extension_len: usize, marker: bool) -> Vec<u8> {
+    let mut bytes = geometry_prefix(extension_len);
+    if version >= 22 {
+        push_u32(&mut bytes, 0);
+    }
+    if marker {
+        push_u32(&mut bytes, 0x203);
+    }
+    push_u32(&mut bytes, 0);
+    push_f64s(&mut bytes, &[1.5, -2.0, 3.25, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+    bytes
+}
+
+#[test]
+fn operand_geometry_records_store_planes_lines_points_and_directions() {
+    for (version, extension_len, marker, length) in [
+        (23, 1, false, 118),
+        (25, 2, false, 122),
+        (23, 1, true, 122),
+        (21, 0, false, 110),
+    ] {
+        let bytes = plane_bytes(version, extension_len, marker);
+        assert_eq!(bytes.len(), length);
+        let record = geometry::parse(
+            View::over_retained(&bytes),
+            OperandGeometry::Plane,
+            version,
+            extension_len,
+        )
+        .expect("plane");
+        assert_eq!(record.frame_marker, marker);
+        assert_eq!(record.document_reference.record_ordinal(), Some(0x2f));
+        assert_eq!(
+            record.shape,
+            GeometryShape::Plane {
+                origin: [1.5, -2.0, 3.25],
+                u_axis: [1.0, 0.0, 0.0],
+                v_axis: [0.0, 1.0, 0.0],
+            }
+        );
+    }
+
+    let mut line = geometry_prefix(2);
+    push_u32(&mut line, 0);
+    push_list(&mut line, &[]);
+    push_f64s(&mut line, &[0.5, 0.25, 0.0, 0.0, 0.0, -1.0]);
+    line.push(0);
+    assert_eq!(line.len(), 103);
+    let record =
+        geometry::parse(View::over_retained(&line), OperandGeometry::Line, 25, 2).expect("line");
+    assert_eq!(
+        record.shape,
+        GeometryShape::Line {
+            origin: [0.5, 0.25, 0.0],
+            direction: [0.0, 0.0, -1.0],
+        }
+    );
+
+    let mut point = geometry_prefix(1);
+    push_u32(&mut point, 0);
+    push_f64s(&mut point, &[0.0, 0.0, -0.25]);
+    push_list(&mut point, &[]);
+    push_list(&mut point, &[]);
+    let record =
+        geometry::parse(View::over_retained(&point), OperandGeometry::Point, 23, 1).expect("point");
+    assert_eq!(
+        record.shape,
+        GeometryShape::Point {
+            position: [0.0, 0.0, -0.25]
+        }
+    );
+
+    let mut direction = geometry_prefix(2);
+    push_u32(&mut direction, 0);
+    push_f64s(&mut direction, &[0.0, -1.0, 0.0]);
+    assert_eq!(direction.len(), 70);
+    let record = geometry::parse(
+        View::over_retained(&direction),
+        OperandGeometry::Direction,
+        25,
+        2,
+    )
+    .expect("direction");
+    assert_eq!(
+        record.shape,
+        GeometryShape::Direction {
+            vector: [0.0, -1.0, 0.0]
+        }
+    );
+}
+
+#[test]
+fn operand_geometry_records_refuse_broken_grammar() {
+    let mut trailing = plane_bytes(25, 2, false);
+    trailing.push(0);
+    assert!(displayed(geometry::parse(
+        View::over_retained(&trailing),
+        OperandGeometry::Plane,
+        25,
+        2
+    ))
+    .contains("trailing bytes"));
+
+    let mut infinite = plane_bytes(25, 2, false);
+    let origin = infinite.len() - 72;
+    infinite[origin..origin + 8].copy_from_slice(&f64::INFINITY.to_le_bytes());
+    assert!(displayed(geometry::parse(
+        View::over_retained(&infinite),
+        OperandGeometry::Plane,
+        25,
+        2
+    ))
+    .contains("not finite"));
+
+    let mut line = geometry_prefix(1);
+    push_u32(&mut line, 0);
+    push_list(&mut line, &[QUALIFIED | 4]);
+    push_f64s(&mut line, &[0.0; 6]);
+    line.push(0);
+    assert!(displayed(geometry::parse(
+        View::over_retained(&line),
+        OperandGeometry::Line,
+        23,
+        1
+    ))
+    .contains("empty reference list"));
+}
+
+#[test]
+fn operands_store_their_geometry_at_a_supported_version() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let constraint = constraint_bytes(1, &[QUALIFIED | 2], &[], 0);
+    let operand = operand_bytes(0, QUALIFIED | 3);
+    let plane = plane_bytes(25, 2, false);
+    let records = [
+        test_frame(0, CONSTRAINT_TYPE, View::over_retained(&constraint)),
+        test_frame(1, OPERAND_TYPE, View::over_retained(&operand)),
+        test_frame(2, PLANE_TYPE, View::over_retained(&plane)),
+    ];
+    let payload = parse(&ctx, records[0].payload).expect("mate record");
+    let record = resolve(
+        &ctx,
+        segment(&records, &[], &[], Some((25, 2))),
+        0,
+        &payload,
+    )
+    .expect("resolved");
+    let [operand] = record.operands.as_slice() else {
+        panic!("one operand");
+    };
+    assert!(matches!(
+        operand
+            .stored_geometry
+            .as_ref()
+            .map(|geometry| &geometry.shape),
+        Some(GeometryShape::Plane { .. })
+    ));
+    let record = resolve(&ctx, segment(&records, &[], &[], None), 0, &payload).expect("resolved");
+    assert!(record
+        .operands
+        .iter()
+        .all(|operand| operand.stored_geometry.is_none()));
 }

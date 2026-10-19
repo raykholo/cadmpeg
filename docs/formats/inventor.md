@@ -220,7 +220,32 @@ terminator u32 = 0
 
 A record with type identifier `61b8480cd2110541600093b7b035c3b0` selects a work feature. After the prefix it contains `geometry_reference:u32`, `local:u8`, and `tag:u8 = 5`. When `local` is 1, `target_reference:u32` selects a geometry record of the current assembly, `target_source_index:u32` equals that record's `source_index`, and u32 zero ends the record. When `local` is 0, the record continues with u32 zero, a key string, an occurrence key, u16 1, `source_index:u32`, and u32 zero, which ends the record. The key's `<kind>` is `PmDC` for a part work feature and `AmDc` for a subassembly work feature, and `source_index` equals the `source_index` of the work-feature record in that design segment.
 
-An operand geometry record stores the selected geometry in the coordinates of the referenced document, in centimetres. A plane record ends with nine f64 values: origin, then the first and second in-plane directions; their cross product is the outward normal of the selected face. A line record stores its origin and direction as six f64 values at payload offset 50, followed by one byte.
+
+### 9.3 Constraint operand geometry
+
+An operand geometry record stores the selected plane, line, point, or direction in the coordinates of the referenced document, in internal centimetres. Geometry of the assembly itself uses assembly coordinates. The record starts with the extended content header of section 12 at the `AmDc` segment major version, followed by:
+
+```text
+entity_flags u32
+document_reference u32
+reserved u32 = 0
+```
+
+`document_reference` selects the `e5ae5e37d111e6f46000e5b1f1bc87b0` occurrence-context record of the referenced document, and is null for assembly geometry. The class-specific fields follow:
+
+```text
+plane (42df52ce):     value u32 = 0 for segment major versions above 21,
+                      optional frame marker u32 = 0x203,
+                      value u32 = 0,
+                      origin f64[3], u_axis f64[3], v_axis f64[3]
+line (896cf08e):      value u32 = 0, empty reference list (u16 2, u16 0x3000, u32 0),
+                      origin f64[3], direction f64[3], state u8 = 0
+point (3edf52ce):     value u32 = 0, position f64[3],
+                      two empty reference lists
+direction (40df52ce): value u32 = 0, vector f64[3]
+```
+
+Each record ends after its last field, and every stored f64 is finite. For an operand that selects a part face, the plane origin lies on the face's plane and `u_axis × v_axis` is the face's outward normal: the surface normal, reversed when the face is reversed. For an operand that selects a face axis, the line lies on the axis of the face's cylinder and its direction is parallel to that axis. For a part work-feature operand, the plane equals the work plane's origin and axes. A line operand that is an assembly origin axis stores a direction of length 2.
 
 ## 10. Part appearance assignments
 
