@@ -40,6 +40,16 @@ fn extent_extrusion(
     slots: &[(usize, u32)],
     extra: Vec<PmDcFeatureProperty>,
 ) -> Option<Feature> {
+    typed_extent_extrusion(extent, 11, symmetric, slots, extra)
+}
+
+fn typed_extent_extrusion(
+    extent: u16,
+    type_value: i16,
+    symmetric: bool,
+    slots: &[(usize, u32)],
+    extra: Vec<PmDcFeatureProperty>,
+) -> Option<Feature> {
     let raw_parameters = vec![raw_parameter(70), raw_parameter(71), raw_parameter(72)];
     let neutral_parameters = vec![
         neutral_parameter(
@@ -155,7 +165,7 @@ fn extent_extrusion(
             5,
             PmDcFeaturePropertyKind::Enumeration {
                 family: PmDcFeatureEnumFamily::Extent,
-                type_value: 11,
+                type_value,
                 value: extent,
             },
         ),
@@ -250,6 +260,7 @@ fn plane_surface(ordinal: u32) -> PmDcFeatureProperty {
         ordinal,
         PmDcFeaturePropertyKind::PlaneSurface {
             references: [reference(0); 3],
+            fourth_reference: None,
             state: 1,
             surface_form: PLANE_SURFACE_FORM,
             value: 0,
@@ -376,4 +387,18 @@ fn extrusion_extent_branches_project_exactly() {
         vec![enum_property(22, PmDcFeatureEnumFamily::Extent, 1)],
     )
     .is_none());
+}
+
+/// Later saves store extent records with type value 12; their extent values mean the same.
+#[test]
+fn extent_type_value_12_projects_like_11() {
+    for type_value in [11, 12] {
+        let feature =
+            typed_extent_extrusion(2, type_value, true, &[], Vec::new()).expect("symmetric");
+        assert!(matches!(
+            extrude_definition(&feature).0,
+            ExtrudeExtent::Symmetric { .. }
+        ));
+    }
+    assert!(typed_extent_extrusion(2, 13, true, &[], Vec::new()).is_none());
 }

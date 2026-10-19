@@ -418,7 +418,7 @@ For segment major versions 15 through 23 and 25, PmDc type `914d8790d011f8d10008
 
 PmDc type `24fd418fd211ac6e00082aab32a3dc09` stores an end-of-features record. Its 26-byte payload contains the 22-byte content header followed by `state:i32`.
 
-Feature property records use the same 22-byte content header. The following enumeration records add `type_value:i16` and `value:u16` and then end:
+Feature property records use the extended content header. The following enumeration records add `type_value:i16` and `value:u16` and then end:
 
 - `28be9a72d111440900084eba32a3dc09`: part operation;
 - `297d6392d1113cb9000831bd0663dc09`: extent;
@@ -428,7 +428,7 @@ Feature property records use the same 22-byte content header. The following enum
 
 Type `3200aa7dd2112b836000f3a89dccefb0` stores the chamfer form. It adds the same `type_value:i16` and `value:u16` fields, followed by a zero u32 terminal value.
 
-The part-operation, extent, hole-form, fillet-form, and chamfer-form records use type values 5, 11, 3, 2, and 2 respectively.
+The part-operation, extent, hole-form, fillet-form, and chamfer-form records use type values 5, 11, 3, 2, and 2 respectively. An extent record can also use type value 12; its extent values have the same meanings.
 
 Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
 
@@ -475,7 +475,7 @@ The extent-7 target is the work plane in slot 11, or the model face recorded by 
 
 Type `fd24893dd211fa99000840ab0663dc09` is a termination flag. It adds one `value:u8` after the content header. A face target requires value 1.
 
-Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
+Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references (four in segment major versions 23 and 25), `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
 
 Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
 

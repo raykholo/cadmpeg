@@ -167,3 +167,31 @@ fn version_23_and_25_feature_records_follow_their_class_header() {
         ));
     }
 }
+
+/// Segment major versions 23 and later store a fourth reference before the surface state.
+#[test]
+fn version_23_surfaces_store_four_references() {
+    let frame = [1.5, 1.2, 0.3, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+    for (version, extension, references) in [(22, 0, 3), (23, 1, 4), (25, 2, 4)] {
+        let mut plane = content(12);
+        for _ in 0..extension {
+            plane.extend_from_slice(&(-1i32).to_le_bytes());
+        }
+        for _ in 0..references {
+            plane.extend_from_slice(&0u32.to_le_bytes());
+        }
+        plane.push(1);
+        plane.extend_from_slice(&crate::feature::PLANE_SURFACE_FORM.to_le_bytes());
+        plane.extend_from_slice(&0u32.to_le_bytes());
+        push_f64s(&mut plane, &frame);
+        let parsed = parse(&plane, |_, source| {
+            crate::feature::parse_surface(source, version).expect("surface")
+        })
+        .expect("plane surface");
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::PlaneSurface { state: 1, surface_form: 25, fourth_reference, .. }
+                if fourth_reference.is_some() == (version >= 23)
+        ));
+    }
+}

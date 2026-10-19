@@ -252,6 +252,9 @@ pub(crate) enum PmDcFeaturePropertyKind {
     },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
+        /// The fourth reference that segment major versions 23 and later store.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fourth_reference: Option<crate::pmdc::PmDcReference>,
         state: u8,
         surface_form: u32,
         value: u32,
@@ -1275,6 +1278,9 @@ fn parse_termination_flag(
 
 /// Parse a surface record. Only the plane form is typed; other forms are not
 /// admitted.
+/// First segment major version whose surface records store four references.
+const FOUR_REFERENCE_SURFACE_VERSION: u8 = 23;
+
 fn parse_surface(
     source: View<'_>,
     version: u8,
@@ -1286,6 +1292,11 @@ fn parse_surface(
         cursor.reference("surface reference")?,
         cursor.reference("surface reference")?,
     ];
+    let fourth_reference = if version >= FOUR_REFERENCE_SURFACE_VERSION {
+        Some(cursor.reference("surface reference")?)
+    } else {
+        None
+    };
     let state = cursor.u8("surface state")?;
     let form = cursor.u32("surface form")?;
     if form != PLANE_SURFACE_FORM {
@@ -1301,6 +1312,7 @@ fn parse_surface(
         header,
         PmDcFeaturePropertyKind::PlaneSurface {
             references,
+            fourth_reference,
             state,
             surface_form: form,
             value,
@@ -4251,13 +4263,14 @@ fn enum16(
     family: PmDcFeatureEnumFamily,
     index: &ProjectionIndex<'_>,
 ) -> Option<u16> {
-    let expected_type = match family {
-        PmDcFeatureEnumFamily::PartOperation => 5,
-        PmDcFeatureEnumFamily::Extent => 11,
-        PmDcFeatureEnumFamily::Hole => 3,
-        PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => 2,
-        PmDcFeatureEnumFamily::SplitForm | PmDcFeatureEnumFamily::ThickenForm => 3,
-        PmDcFeatureEnumFamily::SplitSide => 4,
+    // Extent records of later saves use type value 12 for the same extent values.
+    let expected_types: &[i16] = match family {
+        PmDcFeatureEnumFamily::PartOperation => &[5],
+        PmDcFeatureEnumFamily::Extent => &[11, 12],
+        PmDcFeatureEnumFamily::Hole => &[3],
+        PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => &[2],
+        PmDcFeatureEnumFamily::SplitForm | PmDcFeatureEnumFamily::ThickenForm => &[3],
+        PmDcFeatureEnumFamily::SplitSide => &[4],
         PmDcFeatureEnumFamily::Auxiliary => return None,
     };
     match slot_property(source, slot, index)?.kind {
@@ -4265,7 +4278,7 @@ fn enum16(
             family: actual,
             type_value,
             value,
-        } if actual == family && type_value == expected_type => Some(value),
+        } if actual == family && expected_types.contains(&type_value) => Some(value),
         _ => None,
     }
 }
