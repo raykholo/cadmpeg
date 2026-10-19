@@ -104,6 +104,14 @@ impl DecodeBudget {
         self.decompressed.get()
     }
 
+    pub(super) fn admitted_usage(&self) -> super::context::AdmittedUsage {
+        super::context::AdmittedUsage {
+            retained_bytes: self.retained.get(),
+            entities: self.entities.get(),
+            collection_items: self.collection_items.get(),
+        }
+    }
+
     fn materialized_allowance(&self) -> u64 {
         let policy_limit = self.policy.limits.max_materialized_bytes;
         let Some(proportional) = MATERIALIZED_PER_INPUT_BYTE

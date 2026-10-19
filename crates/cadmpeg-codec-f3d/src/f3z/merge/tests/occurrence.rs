@@ -17,7 +17,7 @@ use cadmpeg_ir::Native;
 
 use crate::f3z::merge::{
     append_feature_history, compose_transforms, extend_native, occurrence_key,
-    reparent_component_roots, rescope_record, OccurrenceScope,
+    reparent_component_roots, rescope_record, MemberReuse, OccurrenceScope,
 };
 use crate::records::xref::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
@@ -746,4 +746,37 @@ fn occurrence_body_composition_preserves_work_refusal() {
         assert_eq!(Some(limit), ctx.resource_refusal());
         assert!(model.bodies[0].transform.is_none());
     });
+}
+
+#[test]
+fn repeated_member_decodes_once_and_each_extra_use_is_a_charged_copy() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let paths = ["a.f3d", "b.f3d", "a.f3d", "a.f3d"];
+    let mut reuse = MemberReuse::for_paths(&ctx, paths).unwrap();
+    let usage = cadmpeg_core::decode::AdmittedUsage {
+        retained_bytes: 100,
+        entities: 2,
+        collection_items: 7,
+    };
+    let mut decodes = 0;
+    let mut merged = Vec::new();
+    let before = ctx.admitted_usage();
+    for path in paths {
+        let member = if let Some(member) = reuse.take(&ctx, path).unwrap() {
+            member
+        } else {
+            decodes += 1;
+            reuse
+                .keep(&ctx, path, format!("decoded {path}"), usage)
+                .unwrap()
+        };
+        merged.push(member);
+    }
+    assert_eq!(decodes, 2, "each distinct member decodes once");
+    assert_eq!(merged, paths.map(|path| format!("decoded {path}")));
+    // `a.f3d` has three uses: two charged copies, then the original moves.
+    let copies = ctx.admitted_usage().since(before).unwrap();
+    assert!(copies.retained_bytes >= 2 * usage.retained_bytes);
+    assert_eq!(copies.entities, 2 * usage.entities);
+    assert!(copies.collection_items >= 2 * usage.collection_items);
 }

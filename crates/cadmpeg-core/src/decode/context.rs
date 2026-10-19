@@ -499,6 +499,27 @@ impl<'a> DecodeContext<'a> {
         self.budget.enter_nested(operation)
     }
 
+    /// Retained storage, entities and collection items admitted so far.
+    pub fn admitted_usage(&self) -> AdmittedUsage {
+        self.budget.admitted_usage()
+    }
+
+    /// Charge a copy of a value whose construction admitted `usage`.
+    ///
+    /// The construction's admissions bound everything the value retains, so
+    /// charging them again, plus one work unit per retained byte copied,
+    /// admits the copy without walking it.
+    pub fn charge_copy(
+        &self,
+        usage: AdmittedUsage,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_retained(usage.retained_bytes, operation)?;
+        self.charge_entities(usage.entities, operation)?;
+        self.charge_collection_items(usage.collection_items, operation)?;
+        self.charge_work(usage.retained_bytes, operation)
+    }
+
     /// Charges session-global algorithm work, fusing on refusal.
     pub fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_work(units, operation)
@@ -1467,3 +1488,30 @@ mod tests {
 
 #[cfg(test)]
 mod sort_tests;
+
+/// Retained storage, entities and collection items admitted by a session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AdmittedUsage {
+    /// Retained bytes admitted.
+    pub retained_bytes: u64,
+    /// Entities admitted.
+    pub entities: u64,
+    /// Collection items admitted.
+    pub collection_items: u64,
+}
+
+impl AdmittedUsage {
+    /// What was admitted after `earlier`, an earlier snapshot of the same
+    /// session. Admission counters never decrease, so `None` means `earlier`
+    /// is not an earlier snapshot.
+    #[must_use]
+    pub fn since(self, earlier: Self) -> Option<Self> {
+        Some(Self {
+            retained_bytes: self.retained_bytes.checked_sub(earlier.retained_bytes)?,
+            entities: self.entities.checked_sub(earlier.entities)?,
+            collection_items: self
+                .collection_items
+                .checked_sub(earlier.collection_items)?,
+        })
+    }
+}

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Occurrence-scoped merge of decoded F3Z member graphs.
 
-use cadmpeg_core::decode::DecodeContext;
+use std::collections::BTreeMap;
+
+use cadmpeg_core::decode::{AdmittedUsage, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::ids::UnknownId;
@@ -135,6 +137,13 @@ impl MergeSession<'_, '_> {
         // Rescoped member metadata is appended once, after every reference,
         // so the parent tables are rebuilt once rather than per occurrence.
         let mut fidelities = Vec::new();
+        let mut reuse = MemberReuse::for_paths(
+            self.ctx,
+            table
+                .references
+                .iter()
+                .map(|reference| reference.relative_path.as_str()),
+        )?;
         for reference in &table.references {
             let occurrence = occurrence_key(self.ctx, reference)?;
             let label = xref::design_for(table, reference)
@@ -200,24 +209,39 @@ impl MergeSession<'_, '_> {
             };
             let ctx = self.ctx;
             let _depth = ctx.enter_nested("f3z member reference")?;
-            let component = match crate::decode::decode_archive_member(
-                self.ctx,
-                member_scan,
-                &self.archive.layers,
-            ) {
-                Ok(component) => component.into_decoded(),
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => {
-                    super::push_loss(
-                        self.ctx,
-                        &mut parent_report.losses,
-                        F3dLossCode::XrefMemberUndecoded,
-                        format_args!(
-                            "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
-                            reference.relative_path
-                        ),
-                    )?;
-                    continue;
+            let component = if let Some(component) =
+                reuse.take(self.ctx, &reference.relative_path)?
+            {
+                component
+            } else {
+                let before = self.ctx.admitted_usage();
+                match crate::decode::decode_archive_member(
+                    self.ctx,
+                    member_scan,
+                    &self.archive.layers,
+                ) {
+                    Ok(component) => {
+                        let component = component.into_decoded();
+                        let usage = self.ctx.admitted_usage().since(before).ok_or_else(|| {
+                            CodecError::Malformed(
+                                "F3Z member decode admissions moved backwards".into(),
+                            )
+                        })?;
+                        reuse.keep(self.ctx, &reference.relative_path, component, usage)?
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error) => {
+                        super::push_loss(
+                            self.ctx,
+                            &mut parent_report.losses,
+                            F3dLossCode::XrefMemberUndecoded,
+                            format_args!(
+                                "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
+                                reference.relative_path
+                            ),
+                        )?;
+                        continue;
+                    }
                 }
             };
             let child_table = xref_table_from_ir(self.ctx, &component.ir)?;
@@ -299,6 +323,91 @@ impl MergeSession<'_, '_> {
         }
         parent_fidelity.append_all(self.ctx, fidelities)?;
         Ok(merged)
+    }
+}
+
+/// Decoded members that later references in the same table use again.
+///
+/// A member referenced several times decodes once. Each extra use receives
+/// a copy charged with the original decode's admissions, and the last use
+/// takes the decoded member itself.
+struct MemberReuse<'t, T> {
+    /// Uses still to come for each member path, after the current one.
+    remaining: BTreeMap<&'t str, usize>,
+    decoded: BTreeMap<&'t str, (T, AdmittedUsage)>,
+}
+
+impl<'t, T: Clone> MemberReuse<'t, T> {
+    fn for_paths(
+        ctx: &DecodeContext<'_>,
+        paths: impl IntoIterator<Item = &'t str>,
+    ) -> Result<Self, CodecError> {
+        let mut remaining = BTreeMap::new();
+        for path in paths {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(path.len())
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("count F3Z member uses", u64::MAX - 1, u64::MAX)
+                    })?,
+                "count F3Z member uses",
+            )?;
+            if let Some(count) = remaining.get_mut(path) {
+                *count += 1;
+            } else {
+                ctx.insert_btree_map(&mut remaining, path, 0usize, "count F3Z member uses")?;
+            }
+        }
+        Ok(Self {
+            remaining,
+            decoded: BTreeMap::new(),
+        })
+    }
+
+    /// A previously decoded copy of `path`, if one is kept.
+    fn take(&mut self, ctx: &DecodeContext<'_>, path: &str) -> Result<Option<T>, CodecError> {
+        let Some(remaining) = self.remaining.get_mut(path) else {
+            return Ok(None);
+        };
+        let Some((decoded, usage)) = self.decoded.get(path) else {
+            return Ok(None);
+        };
+        if *remaining == 0 {
+            return Ok(self.decoded.remove(path).map(|(decoded, _)| decoded));
+        }
+        *remaining -= 1;
+        ctx.charge_copy(*usage, "copy decoded F3Z member")?;
+        Ok(Some(decoded.clone()))
+    }
+
+    /// Keep a newly decoded member when a later reference uses it, and
+    /// return the copy this reference merges.
+    fn keep(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        path: &str,
+        decoded: T,
+        usage: AdmittedUsage,
+    ) -> Result<T, CodecError> {
+        let Some((key, remaining)) = self.remaining.get_key_value(path) else {
+            return Ok(decoded);
+        };
+        if *remaining == 0 {
+            return Ok(decoded);
+        }
+        let key = *key;
+        if let Some(count) = self.remaining.get_mut(path) {
+            *count -= 1;
+        }
+        ctx.charge_copy(usage, "copy decoded F3Z member")?;
+        let copy = decoded.clone();
+        ctx.insert_btree_map(
+            &mut self.decoded,
+            key,
+            (decoded, usage),
+            "keep decoded F3Z member",
+        )?;
+        Ok(copy)
     }
 }
 

@@ -33,7 +33,7 @@ pub use budget::{
     refuse_local_limit, work_units, BudgetExhausted, DepthGuard, ScopedReservation, WorkBudget,
     WorkBudgetRecursionGuard,
 };
-pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
+pub use context::{AdmittedUsage, DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
