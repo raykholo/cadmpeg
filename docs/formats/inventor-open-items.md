@@ -240,7 +240,9 @@ The meaning of the eight export-entry state bytes, of the export padding byte, a
 
 **Known.** Segment major versions 15 through 23 and 25 have exact design-record grammars. The extension values of version-23 and version-25 headers are -1, 0, or positive integers. The version-25 point list is empty in most records.
 
-**Need.** Each further version requires its header extension length and per-class header form before its design records parse.
+**Need.** Each further version requires its header extension length and per-class header form before its design records parse. The feature property vectors of several classes grow at segment major version 23: extrusion features store 31 slots instead of 30 (the added slot is null), sheet-metal plates 17 instead of 15 with a different slot-2 record type and two added trailing slots, the feature-label class `1a7d751f…` 28 instead of 26, and class `f258f74c…` 11 instead of 9. The plate projection and the projections of those classes require their version-23 slot maps.
+
+**Note.** A revolution feature (label class `5f015400d211251c600067b79b49ebb0`) stores 20 slots: part operation, boundary patch, axis record `896cf08ed1113c0460007cb801f31bb0`, extent enumeration, angle parameter, record `c26aa0c728412312abf0728f9d598bc9`, feature dimensions, an auxiliary enumeration, Booleans, and the result collection. The axis record stores, after its content header, four u32 values, an empty type-2 list, two f64 triples (the axis segment's endpoints in internal centimetres), and a u8. The extent values and the `c26aa0c7` value that select a full or one-sided revolution and its turn direction are not yet separated.
 
 ### DE-09. Version-25 spline points and spline auxiliary lists
 
