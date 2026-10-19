@@ -17,6 +17,8 @@ use cadmpeg_ir::units::{DirectionAboveEpsilon, UnitVector3};
 
 use crate::writer::{refs, Emitter, Ref};
 
+pub(crate) mod helix;
+
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1.0e-10;
@@ -749,6 +751,18 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
             e.emit_raw("B_SPLINE_SURFACE_WITH_KNOTS", &body)
         }
     })
+}
+
+/// Emit a helix restatement as a non-rational `B_SPLINE_CURVE_WITH_KNOTS`.
+pub(crate) fn helix_curve(e: &mut Emitter, fit: &helix::HelixBspline) -> Ref {
+    let pts: Vec<Ref> = fit.poles.iter().map(|p| point(e, *p)).collect();
+    let params = format!(
+        "'',3,{},.UNSPECIFIED.,.F.,.U.,{},{},.UNSPECIFIED.",
+        refs(&pts),
+        int_list(&fit.multiplicities),
+        real_list(e, &fit.knots)
+    );
+    e.emit("B_SPLINE_CURVE_WITH_KNOTS", &params)
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 //! STEP writer unit tests.
 
 mod cones;
+mod helices;
 mod reports;
 pub(crate) mod round_trips;
 mod targets;
