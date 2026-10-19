@@ -160,7 +160,19 @@ name_reference u32
 
 The prefix is followed by a u32-counted UTF-16LE name and a u32-counted UTF-16LE long name. Segment major versions above 16 then store a u16 style state, four u32-counted UTF-16LE strings, two u16 style values, and a 16-byte mixed-endian GUID. The four strings are the style label, Protein asset GUID, Protein material identifier, and Protein asset-library identifier. The remaining rendering fields are a retained suffix.
 
-The document-default rendering style is the rendering-style record selected by the default-style record's one-based reference in the same `PmApp` segment. Its Protein asset GUID and asset-library identifier resolve one unique appearance catalog entry. That appearance is the document default for every transferred part body. A missing, null, cross-carrier, or ambiguous reference does not produce an appearance binding.
+For segment major versions above 16, the retained suffix starts with an inline lighting block:
+
+```text
+ambient f32[4]
+diffuse f32[4]
+specular f32[4]
+emissive f32[4]
+shininess f32
+```
+
+Each color is an RGBA vector. The diffuse vector is the style's own color. A suffix shorter than 68 bytes, or a block with a non-finite component, stores no inline color. The bytes after the block are retained.
+
+The document-default rendering style is the rendering-style record selected by the default-style record's one-based reference in the same `PmApp` segment. Its Protein asset GUID and asset-library identifier resolve one unique appearance catalog entry. That appearance is the document default for every transferred part body. When the asset GUID is empty or no catalog entry carries it, the style's inline diffuse color is the document default for every transferred part body. A missing, null, cross-carrier, or ambiguous reference, an ambiguous catalog join, or a style without a catalog entry or inline color does not produce an appearance binding.
 
 A `PmGraphics` record reference stores a one-based record index in bits 0 through 30. Bit 31 is retained as the reference qualifier. Qualified and unqualified references use the same index arithmetic. Every non-null reference resolves within the same `PmGraphics` segment.
 

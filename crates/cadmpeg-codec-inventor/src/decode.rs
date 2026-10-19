@@ -792,7 +792,11 @@ fn decode_container<'a>(
         &body_ids,
         &face_keys,
     )?;
-    let face_color_appearance_count = presentation_projection.appearances.len();
+    let face_color_appearance_count = presentation_projection
+        .appearances
+        .iter()
+        .filter(|appearance| appearance.schema.as_deref() == Some("InventorPrimaryColorStyle"))
+        .count();
     let projected_colors = index_projected_colors(
         ctx,
         presentation_projection

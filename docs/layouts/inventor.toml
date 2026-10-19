@@ -901,6 +901,48 @@ source = "spec"
 anchor = "padding bytes[8] = 0"
 
 [[record]]
+name = "pm_app_rendering_style_inline_lighting"
+kind = "byte"
+section = "10"
+anchor = "the retained suffix starts with an inline lighting block"
+size = 68
+
+[[record.field]]
+name = "ambient"
+offset = 0
+type = "f32[4]"
+source = "spec"
+anchor = "ambient f32[4]"
+
+[[record.field]]
+name = "diffuse"
+offset = 16
+type = "f32[4]"
+source = "spec"
+anchor = "diffuse f32[4]"
+
+[[record.field]]
+name = "specular"
+offset = 32
+type = "f32[4]"
+source = "spec"
+anchor = "specular f32[4]"
+
+[[record.field]]
+name = "emissive"
+offset = 48
+type = "f32[4]"
+source = "spec"
+anchor = "emissive f32[4]"
+
+[[record.field]]
+name = "shininess"
+offset = 64
+type = "f32"
+source = "spec"
+anchor = "shininess f32"
+
+[[record]]
 name = "pm_app_rendering_style_current_prefix"
 kind = "byte"
 section = "10"

@@ -317,6 +317,18 @@ Spec §10 · layout: byte offsets · size: 55 B
 | 43 | 4 | `terminal_reference` | `u32` | little | spec | terminal_reference u32 |
 | 47 | 8 | `padding` | `bytes[8]` | little | spec | padding bytes[8] = 0 |
 
+## `pm_app_rendering_style_inline_lighting`
+
+Spec §10 · layout: byte offsets · size: 68 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `ambient` | `f32[4]` | little | spec | ambient f32[4] |
+| 16 | 16 | `diffuse` | `f32[4]` | little | spec | diffuse f32[4] |
+| 32 | 16 | `specular` | `f32[4]` | little | spec | specular f32[4] |
+| 48 | 16 | `emissive` | `f32[4]` | little | spec | emissive f32[4] |
+| 64 | 4 | `shininess` | `f32` | little | spec | shininess f32 |
+
 ## `pm_app_rendering_style_current_prefix`
 
 Spec §10 · layout: byte offsets · size: 27 B
