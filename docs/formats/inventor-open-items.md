@@ -128,6 +128,18 @@ The meaning of the eight export-entry state bytes, of the export padding byte, a
 
 **Need.** We must type the exceptional branches before transferring their scale, reflection, or singular-transform semantics.
 
+### AS-04. Occurrence visibility and grounded state
+
+**Question.** Which fields store the visibility and the grounded state of one assembly occurrence?
+
+**Known.** External-reference state bit `0x2000` is the only decoded occurrence state. It marks a suppressed occurrence and sets `visible = false`. No other field sets `visible`.
+
+The first `UFRxDoc` occurrence property section has the one-byte tags `0x07`, `0x0d`, `0x0f`, `0x10`, and `0x1d`. Tag `0x0f` and tag `0x10` change on one occurrence while all other occurrence, `AmDc`, and `AmGraphics` fields stay the same. Neither tag is visibility: the document preview shows the occurrence with each value. Tag `0x0f` is not the grounded state: an occurrence with tag `0x0f` set moves together with other occurrences when the constraint solution changes, and a one-occurrence assembly usually stores 0. Tag `0x0f` also stores values other than 0 and 1, for example `0x2a`, `0x37`, `0xd3`, and `0xff`. `AmDc` occurrence flag bits `0x00400000` and `0x00800000` change with no proven role. Bit `0x10` occurs only together with one of them.
+
+Visibility is a property of a design-view representation. `DesignViewSegment` stores one record of type `41a2c29dd211cc99a0002aa976d456c9` for each representation, with a counted UTF-16LE name and a list of record references. Records of type `553a6b21d31123656000f587346bfbb0` contain a counted u32 list whose values are `UFRxDoc` occurrence keys, the first entry at the root. Records of types `2133049bd21187a9a0002ea976d456c9` and `2123c271d21187a9a0002ea976d456c9` store small state values. The active representation, the join from a state record to a key-path record, and the meaning of the state values are unknown.
+
+**Need.** We must find the field for each state, and prove each value with two documents that differ only in that state, before we set `visible` from a representation or emit a grounded state. A grounded occurrence can map to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence. The IR needs no addition for it.
+
 ## 4. Properties, materials, and design intent
 
 ### PR-01. OLE property variants and code pages
