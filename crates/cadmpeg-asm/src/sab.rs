@@ -555,10 +555,14 @@ fn frame_impl(
 
     while pos < limit {
         let rec_start = pos;
+        // Name parts (borrowed from the stream) and subtype guards live only
+        // while one record is framed: their bytes are scoped to it and they
+        // admit no retained collection items. Payload tokens are retained by the record and
+        // each admits one item.
         let mut scratch = ctx
             .reserve_scoped(0, "frame SAB record")
             .map_err(StreamFailure::from_operation)?;
-        let mut name_parts: Vec<String> = Vec::new();
+        let mut name_parts: Vec<&str> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
         let mut depth_guards = Vec::new();
         let mut name_done = false;
@@ -590,24 +594,24 @@ fn frame_impl(
                     .into());
                 }
                 Lexed::SubIdent(s) if !name_done => {
-                    ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
+                    scratch
+                        .with_storage(|| {
+                            ctx.reserve_capacity(&mut name_parts, 1, "frame SAB name part")
+                        })
                         .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    name_parts.push(part);
+                    name_parts.push(s);
                 }
                 Lexed::Ident(s) if !name_done => {
-                    ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
+                    scratch
+                        .with_storage(|| {
+                            ctx.reserve_capacity(&mut name_parts, 1, "frame SAB name part")
+                        })
                         .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    name_parts.push(part);
+                    name_parts.push(s);
                     name_done = true;
                     // The history partition opens with the delta_state record.
                     // Stop at its name; the active slice ends before its payload.
-                    if name_parts.first().is_some_and(|n| n == "delta_state") {
+                    if name_parts.first().is_some_and(|n| *n == "delta_state") {
                         is_delta = true;
                         break;
                     }
@@ -622,7 +626,7 @@ fn frame_impl(
                     if payload_start
                         && name_parts
                             .iter()
-                            .map(String::as_str)
+                            .copied()
                             .eq(["End", "of", "ASM", "History", "Section"])
                         && identifier == "edge"
                     {
@@ -660,13 +664,11 @@ fn frame_impl(
                     let guard = ctx
                         .enter_nested("frame SAB subtype")
                         .map_err(StreamFailure::from_operation)?;
-                    ctx.reserve_scoped_vec(
-                        &mut scratch,
-                        &mut depth_guards,
-                        1,
-                        "frame SAB subtype guards",
-                    )
-                    .map_err(StreamFailure::from_operation)?;
+                    scratch
+                        .with_storage(|| {
+                            ctx.reserve_capacity(&mut depth_guards, 1, "frame SAB subtype guards")
+                        })
+                        .map_err(StreamFailure::from_operation)?;
                     depth_guards.push(guard);
                     name_done = true;
                     ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")
@@ -835,24 +837,14 @@ mod tests {
         assert_eq!(limit.operation, operation);
     }
 
+    /// Name parts and subtype guards live only while their record is framed,
+    /// so the first collection item the record admits is its first retained
+    /// payload token, and its three tokens and the record are all it admits.
     #[test]
-    fn sab_name_parts_refuse_collection_limit() {
-        assert_framed_collection_limit(0, "frame SAB name part");
-    }
-
-    #[test]
-    fn sab_subtype_guards_refuse_collection_limit() {
-        assert_framed_collection_limit(1, "frame SAB subtype guards");
-    }
-
-    #[test]
-    fn sab_tokens_refuse_collection_limit() {
+    fn sab_scratch_admits_no_items_and_tokens_and_records_each_admit_one() {
+        assert_framed_collection_limit(0, "frame SAB token");
         assert_framed_collection_limit(2, "frame SAB token");
-    }
-
-    #[test]
-    fn sab_records_refuse_collection_limit() {
-        assert_framed_collection_limit(5, "frame SAB record");
+        assert_framed_collection_limit(3, "frame SAB record");
     }
 
     #[test]

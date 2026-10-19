@@ -622,7 +622,7 @@ fn history_graph_visit_refuses_collection_limit() {
 fn history_record_references_refuse_collection_limit() {
     let bytes = one_framed_history_record();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = 2;
     let error = history_record_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -634,7 +634,7 @@ fn history_record_references_refuse_collection_limit() {
 fn history_record_vector_refuses_collection_limit() {
     let bytes = one_framed_history_record();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
+    policy.limits.max_collection_items = 3;
     let error = history_record_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

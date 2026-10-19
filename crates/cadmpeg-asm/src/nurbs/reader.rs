@@ -14,14 +14,14 @@ use cadmpeg_ir::scalar::NonZeroReal;
 /// The record states a pole and its weight together, so the reader states rows
 /// and no reader downstream pairs a pole lane with a weight lane.
 #[derive(Debug, Clone)]
-pub(super) enum ReadPoles3 {
+pub(super) enum ReadPoles3<P = Point3> {
     /// A polynomial record: its poles carry no weight.
-    Polynomial(Vec<Point3>),
+    Polynomial(Vec<P>),
     /// A rational record: every pole carries its weight.
-    Rational(Vec<WeightedPole3>),
+    Rational(Vec<WeightedPole3<P>>),
 }
 
-impl ReadPoles3 {
+impl<P> ReadPoles3<P> {
     /// Start a read of poles in the marker-selected form.
     pub(super) fn empty(rational: bool) -> Self {
         if rational {
@@ -48,7 +48,7 @@ impl ReadPoles3 {
     }
 
     /// Add one pole with the weight its own slot states.
-    pub(super) fn push(&mut self, point: Point3, weight: f64) -> Option<()> {
+    pub(super) fn push(&mut self, point: P, weight: f64) -> Option<()> {
         match self {
             Self::Polynomial(points) => points.push(point),
             Self::Rational(points) => points.push(WeightedPole3 {
@@ -60,19 +60,21 @@ impl ReadPoles3 {
     }
 
     /// The poles as one lane, in the order they were read.
-    pub(super) fn into_lane(self) -> NurbsPoles3 {
+    pub(super) fn into_lane(self) -> NurbsPoles3<P> {
         match self {
             Self::Polynomial(points) => NurbsPoles3::Polynomial { points },
             Self::Rational(points) => NurbsPoles3::Rational { points },
         }
     }
+}
 
+impl<P: Clone> ReadPoles3<P> {
     /// The poles as a `u`-major grid, read in the stream's `v`-major order.
     pub(super) fn into_transposed_grid(
         self,
         u_count: usize,
         v_count: usize,
-    ) -> Option<NurbsPoleGrid> {
+    ) -> Option<NurbsPoleGrid<P>> {
         fn transpose<T: Clone>(flat: &[T], u_count: usize, v_count: usize) -> Option<Vec<Vec<T>>> {
             (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
             (0..u_count)
@@ -92,42 +94,84 @@ impl ReadPoles3 {
             }),
         }
     }
+}
 
-    pub(super) fn into_counted_transposed_grid(
-        self,
+/// A pole grid filled in the stream's `v`-major order straight into its
+/// retained `u`-major rows.
+///
+/// Every row is admitted once at its final size before the first pole is
+/// read, so each retained pole and row is charged exactly once and no flat
+/// copy of the grid exists alongside the rows.
+#[derive(Debug)]
+pub(super) struct ReadPoleGrid3<P> {
+    rows: ReadPoleRows3<P>,
+    u_count: usize,
+    v_count: usize,
+    read: usize,
+}
+
+#[derive(Debug)]
+enum ReadPoleRows3<P> {
+    Polynomial(Vec<Vec<P>>),
+    Rational(Vec<Vec<WeightedPole3<P>>>),
+}
+
+impl<P> ReadPoleGrid3<P> {
+    /// Admit `u_count` rows of `v_count` poles in the marker-selected form.
+    pub(super) fn with_counted_capacity(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         u_count: usize,
         v_count: usize,
-    ) -> Option<Result<NurbsPoleGrid, cadmpeg_core::CodecError>> {
-        fn transpose<T: Clone>(
+        rational: bool,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        fn rows<T>(
             ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            flat: &[T],
             u_count: usize,
             v_count: usize,
-        ) -> Option<Result<Vec<Vec<T>>, cadmpeg_core::CodecError>> {
-            (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
-            let mut rows = match ctx.collection_vec(u_count, "ASM NURBS grid rows") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
-            for u in 0..u_count {
-                let mut row = match ctx.collection_vec(v_count, "ASM NURBS grid row poles") {
-                    Ok(row) => row,
-                    Err(error) => return Some(Err(error)),
-                };
-                for v in 0..v_count {
-                    row.push(flat.get(v.checked_mul(u_count)?.checked_add(u)?)?.clone());
-                }
-                rows.push(row);
+        ) -> Result<Vec<Vec<T>>, cadmpeg_core::CodecError> {
+            let mut rows = ctx.collection_vec(u_count, "ASM NURBS grid rows")?;
+            for _ in 0..u_count {
+                rows.push(ctx.collection_vec(v_count, "ASM NURBS grid row poles")?);
             }
-            Some(Ok(rows))
+            Ok(rows)
         }
-        match self {
-            Self::Polynomial(points) => transpose(ctx, &points, u_count, v_count)
-                .map(|result| result.map(|rows| NurbsPoleGrid::Polynomial { rows })),
-            Self::Rational(points) => transpose(ctx, &points, u_count, v_count)
-                .map(|result| result.map(|rows| NurbsPoleGrid::Rational { rows })),
+        let rows = if rational {
+            ReadPoleRows3::Rational(rows(ctx, u_count, v_count)?)
+        } else {
+            ReadPoleRows3::Polynomial(rows(ctx, u_count, v_count)?)
+        };
+        Ok(Self {
+            rows,
+            u_count,
+            v_count,
+            read: 0,
+        })
+    }
+
+    /// Add the next pole in stream order, `u` varying fastest, with the
+    /// weight its own slot states.
+    pub(super) fn push(&mut self, point: P, weight: f64) -> Option<()> {
+        // A pole past the admitted grid has no admitted slot.
+        (self.read < self.u_count.checked_mul(self.v_count)?).then_some(())?;
+        let u = self.read.checked_rem(self.u_count)?;
+        match &mut self.rows {
+            ReadPoleRows3::Polynomial(rows) => rows.get_mut(u)?.push(point),
+            ReadPoleRows3::Rational(rows) => rows.get_mut(u)?.push(WeightedPole3 {
+                point,
+                weight: NonZeroReal::new(weight)?,
+            }),
         }
+        self.read = self.read.checked_add(1)?;
+        Some(())
+    }
+
+    /// The `u`-major grid once every one of its poles has been read.
+    pub(super) fn finish(self) -> Option<NurbsPoleGrid<P>> {
+        (self.read == self.u_count.checked_mul(self.v_count)?).then_some(())?;
+        Some(match self.rows {
+            ReadPoleRows3::Polynomial(rows) => NurbsPoleGrid::Polynomial { rows },
+            ReadPoleRows3::Rational(rows) => NurbsPoleGrid::Rational { rows },
+        })
     }
 }
 
@@ -331,21 +375,38 @@ pub(super) fn checked_knot_layout(
     multiplicities: &[i64],
     degree: i64,
 ) -> Option<KnotExpansionLayout> {
+    checked_knot_layout_of(
+        multiplicities.iter().copied().map(Some),
+        multiplicities.len(),
+        degree,
+    )
+}
+
+/// [`checked_knot_layout`] over `count` multiplicities read one at a time, so
+/// a reader can lay out the expansion without keeping the table.
+pub(super) fn checked_knot_layout_of(
+    multiplicities: impl IntoIterator<Item = Option<i64>>,
+    count: usize,
+    degree: i64,
+) -> Option<KnotExpansionLayout> {
     let degree = usize::try_from(degree)
         .ok()
         .filter(|degree| (1..=MAX_NURBS_DEGREE).contains(degree))?;
     let mut sum = 0usize;
     let mut expanded_len = 0usize;
-    for (index, &multiplicity) in multiplicities.iter().enumerate() {
-        let multiplicity = usize::try_from(multiplicity).ok()?;
+    let mut read = 0usize;
+    for (index, multiplicity) in multiplicities.into_iter().take(count).enumerate() {
+        read = index.checked_add(1)?;
+        let multiplicity = usize::try_from(multiplicity?).ok()?;
         sum = sum.checked_add(multiplicity)?;
-        let endpoint_extra = usize::from(index == 0 || index + 1 == multiplicities.len());
+        let endpoint_extra = usize::from(index == 0 || index + 1 == count);
         let run_length = multiplicity.checked_add(endpoint_extra)?;
         expanded_len = expanded_len.checked_add(run_length)?;
         if expanded_len > MAX_EXPANDED_NURBS_KNOTS {
             return None;
         }
     }
+    (read == count).then_some(())?;
     let n_poles = sum.checked_sub(degree - 1)?;
     if !(2..=MAX_NURBS_POLES).contains(&n_poles) {
         return None;
@@ -591,7 +652,7 @@ mod marker_ownership_tests {
 
 #[cfg(test)]
 mod string_width_tests {
-    use super::{take_native_string, ReadPoles3};
+    use super::{take_native_string, ReadPoleGrid3, ReadPoles3};
     use crate::kernel_header::RefWidth;
     use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
     use cadmpeg_ir::math::Point3;
@@ -605,17 +666,46 @@ mod string_width_tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let points = (0..4)
-            .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
-            .collect();
-        let error = ReadPoles3::Polynomial(points)
-            .into_counted_transposed_grid(&ctx, 2, 2)
-            .expect("valid grid")
+        let error = ReadPoleGrid3::<Point3>::with_counted_capacity(&ctx, 2, 2, false)
             .expect_err("two rows and four poles need six items");
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    }
+
+    /// A grid read in stream order lands in `u`-major rows and charges each
+    /// retained row and pole once: two rows plus four poles, nothing more.
+    #[test]
+    fn token_surface_grid_reads_rows_and_charges_each_pole_once() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut grid = ReadPoleGrid3::with_counted_capacity(&ctx, 2, 2, false)
+            .expect("six items fit the budget");
+        for index in 0..4 {
+            assert!(grid
+                .push(Point3::new(f64::from(index), 0.0, 0.0), 1.0)
+                .is_some());
+        }
+        assert!(
+            grid.push(Point3::new(9.0, 0.0, 0.0), 1.0).is_none(),
+            "a fifth pole has no admitted slot"
+        );
+        assert!(
+            ctx.charge_collection_items(1, "probe").is_err(),
+            "the grid used exactly six items"
+        );
+        let NurbsPoleGrid::Polynomial { rows } = grid.finish().expect("a full grid") else {
+            panic!("a polynomial read states unweighted rows");
+        };
+        assert_eq!(rows[0][0].x, 0.0);
+        assert_eq!(rows[0][1].x, 2.0);
+        assert_eq!(rows[1][0].x, 1.0);
+        assert_eq!(rows[1][1].x, 3.0);
     }
 
     /// A `0x09` string whose length prefix is the stream integer width.

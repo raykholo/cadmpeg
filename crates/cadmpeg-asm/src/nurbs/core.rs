@@ -10,13 +10,15 @@
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions, read_control_points,
-    read_knots, take_tagged_int, BsplineMarker, KnotLayout, ReadPoles3, INT_WIDTHS, LEN_TO_MM,
+    read_knots, take_tagged_int, BsplineMarker, KnotLayout, ReadPoleGrid3, ReadPoles3, INT_WIDTHS,
+    LEN_TO_MM,
 };
 use crate::nurbs::subtypes;
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
-use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;
@@ -32,34 +34,68 @@ macro_rules! propagate_resource {
     };
 }
 
+/// Read one control point in the marker-selected form, scaling its position to
+/// millimetres and admitting it as finite.
+fn control_point(cur: &mut Cur<'_>, marker: BsplineMarker) -> Option<(FinitePoint3, f64)> {
+    let mut comps = [0.0f64; 4];
+    for comp in comps.iter_mut().take(marker.cp_dims()) {
+        *comp = cur.take_f64()?;
+    }
+    let point = FinitePoint3::new(Point3::new(
+        comps[0] * LEN_TO_MM,
+        comps[1] * LEN_TO_MM,
+        comps[2] * LEN_TO_MM,
+    ))?;
+    Some((point, comps[3]))
+}
+
 /// Read `count` control points in the marker-selected form, scaling positions to
 /// millimetres. Token-space counterpart of [`read_control_points`].
+///
+/// Poles are admitted as finite here, so the curve keeps this storage and each
+/// pole is charged once.
 fn control_points(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     count: usize,
     marker: BsplineMarker,
-) -> Option<Result<ReadPoles3, cadmpeg_core::CodecError>> {
+) -> Option<Result<ReadPoles3<FinitePoint3>, cadmpeg_core::CodecError>> {
     let mut poles = propagate_resource!(ReadPoles3::with_counted_capacity(
         ctx,
         count,
         marker.rational(),
     ));
     for _ in 0..count {
-        let mut comps = [0.0f64; 4];
-        for comp in comps.iter_mut().take(marker.cp_dims()) {
-            *comp = cur.take_f64()?;
-        }
-        poles.push(
-            Point3::new(
-                comps[0] * LEN_TO_MM,
-                comps[1] * LEN_TO_MM,
-                comps[2] * LEN_TO_MM,
-            ),
-            comps[3],
-        )?;
+        let (point, weight) = control_point(cur, marker)?;
+        poles.push(point, weight)?;
     }
     Some(Ok(poles))
+}
+
+/// Read a `u_count` by `v_count` control grid stored `v`-major (v outer, u
+/// inner) straight into the IR's `u`-major rows, where index `u * v_count + v`
+/// is pole `(u, v)`.
+///
+/// Poles are admitted as finite here, so the surface keeps these rows and each
+/// pole and row is charged once.
+fn control_point_grid(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &mut Cur<'_>,
+    u_count: usize,
+    v_count: usize,
+    marker: BsplineMarker,
+) -> Option<Result<NurbsPoleGrid<FinitePoint3>, cadmpeg_core::CodecError>> {
+    let mut grid = propagate_resource!(ReadPoleGrid3::with_counted_capacity(
+        ctx,
+        u_count,
+        v_count,
+        marker.rational(),
+    ));
+    for _ in 0..u_count.checked_mul(v_count)? {
+        let (point, weight) = control_point(cur, marker)?;
+        grid.push(point, weight)?;
+    }
+    Some(Ok(grid.finish()?))
 }
 
 /// Decode a surface `nubs`/`nurbs` block at token `marker_pos`, returning the
@@ -121,10 +157,9 @@ pub(super) fn surface_block(
         )));
     }
 
-    // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
-    // order where index `u * v_count + v` is pole `(u, v)`.
-    let poles = propagate_resource!(control_points(ctx, &mut cur, pole_count, marker)?);
-    let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
+    let grid = propagate_resource!(control_point_grid(
+        ctx, &mut cur, n_poles_u, n_poles_v, marker
+    )?);
     let surface = propagate_resource!(NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(
