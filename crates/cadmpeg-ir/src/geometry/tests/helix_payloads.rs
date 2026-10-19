@@ -165,12 +165,31 @@ fn helix_curve_scaling_is_atomic_and_reversal_preserves_admission() {
     assert_eq!(huge, old);
 }
 
+/// `asm.md` §6.3 `helix_int_cur`: `C(t)=center+s·(major·cos t+minor·sin t)+pitch·q`
+/// with `q=t/(2π)` and `s=1+apex_factor·q`.
+fn helix_point(value: &HelixCurveConstruction, t: f64) -> Point3 {
+    let q = t / std::f64::consts::TAU;
+    let s = value.apex_factor().get().mul_add(q, 1.0);
+    let center = value.center().get();
+    let major = value.major().get();
+    let minor = value.minor().get();
+    let pitch = value.pitch().get();
+    let (sin, cos) = t.sin_cos();
+    Point3::new(
+        center.x + s * (major.x * cos + minor.x * sin) + q * pitch.x,
+        center.y + s * (major.y * cos + minor.y * sin) + q * pitch.y,
+        center.z + s * (major.z * cos + minor.z * sin) + q * pitch.z,
+    )
+}
+
 #[test]
-fn helix_reversal_refuses_a_zero_radius_at_the_new_start_atomically() {
-    let mut value = HelixCurveConstruction::try_new(
-        [0.0, std::f64::consts::TAU],
+fn helix_reversal_preserves_every_point_of_a_tapered_helix() {
+    // The apex factor reaches a zero radius at the interval end; the
+    // reversed construction still states the same point set.
+    let original = HelixCurveConstruction::try_new(
+        [0.5, std::f64::consts::TAU],
         HelixFrame {
-            center: Point3::new(0.0, 0.0, 0.0),
+            center: Point3::new(1.0, -2.0, 3.0),
             major: Vector3::new(1.0, 0.0, 0.0),
             minor: Vector3::new(0.0, 1.0, 0.0),
             pitch: Vector3::new(0.0, 0.0, 1.0),
@@ -180,9 +199,23 @@ fn helix_reversal_refuses_a_zero_radius_at_the_new_start_atomically() {
         None,
     )
     .unwrap();
-    let original = value;
-    assert!(value.try_reverse_parameterization().is_err());
-    assert_eq!(value, original);
+    let mut reversed = original;
+    reversed.try_reverse_parameterization().unwrap();
+    assert_eq!(reversed.angle_range().get(), [-std::f64::consts::TAU, -0.5]);
+    for index in 0..=32 {
+        let t = 0.5 + (std::f64::consts::TAU - 0.5) * f64::from(index) / 32.0;
+        let forward = helix_point(&original, t);
+        let backward = helix_point(&reversed, -t);
+        let gap = Vector3::new(
+            forward.x - backward.x,
+            forward.y - backward.y,
+            forward.z - backward.z,
+        )
+        .norm();
+        assert!(gap <= 1.0e-12, "gap {gap} at {t}");
+    }
+    reversed.try_reverse_parameterization().unwrap();
+    assert_eq!(reversed, original);
 }
 
 #[test]

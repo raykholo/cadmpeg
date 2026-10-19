@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
-fn cacheless_helix_reversal_refuses_an_unrepresentable_start_frame() {
+fn cacheless_helix_reversal_negates_the_odd_terms() {
     let helix = HelixCurveConstruction::try_new(
         [0.0, std::f64::consts::TAU],
         HelixFrame {
@@ -25,8 +25,23 @@ fn cacheless_helix_reversal_refuses_an_unrepresentable_start_frame() {
     )
     .unwrap();
     let mut definition = ProceduralCurveDefinition::Helix(helix);
-    assert!(reverse_procedural_curve_definition(&mut definition).is_err());
-    assert_eq!(definition, ProceduralCurveDefinition::Helix(helix));
+    reverse_procedural_curve_definition(&mut definition).unwrap();
+    // `asm.md` §6.3 `helix_int_cur` reversal: interval `[-t1,-t0]`, the same
+    // center and major vector, and negated minor, pitch, and apex terms.
+    let expected = HelixCurveConstruction::try_new(
+        [-std::f64::consts::TAU, -0.0],
+        HelixFrame {
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(-0.0, -1.0, -0.0),
+            pitch: Vector3::new(-0.0, -0.0, -1.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        1.0,
+        None,
+    )
+    .unwrap();
+    assert_eq!(definition, ProceduralCurveDefinition::Helix(expected));
 }
 
 fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {

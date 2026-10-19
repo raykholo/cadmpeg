@@ -47,12 +47,12 @@ fn helix_fixture() -> (CadIr, CurveId) {
 }
 
 fn expected_helix(parameter: f64) -> (Point3, Vector3, Vector3) {
-    let start = 0.25;
     let major = Vector3::new(2.0, 0.0, 0.0);
     let minor = Vector3::new(0.0, 2.0, 0.0);
     let pitch = Vector3::new(0.0, 0.0, 3.0);
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
-    let revolution_fraction = (parameter - start) * inverse_revolution;
+    // `asm.md` §6.3 `helix_int_cur`: `q=t/(2π)`, measured from angle zero.
+    let revolution_fraction = parameter * inverse_revolution;
     let radial_scale = 1.0 + 0.4 * revolution_fraction;
     let radial = Vector3::new(
         major.x * parameter.cos() + minor.x * parameter.sin(),

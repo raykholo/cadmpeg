@@ -285,6 +285,8 @@ pub(crate) enum StepLossCode {
     ProceduralReducedToCarrier,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
+    /// A procedural curve with no STEP entity was restated as a fitted B-spline.
+    ProceduralCurveApproximated,
     /// Source-native records were not represented.
     SourceNativeRecordOmitted,
     /// A region has no writable outer shell.
@@ -467,6 +469,7 @@ impl StepLossCode {
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
         Self::ProceduralDefinitionNotWritten,
+        Self::ProceduralCurveApproximated,
         Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
@@ -645,6 +648,7 @@ impl StepLossCode {
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
+            Self::ProceduralCurveApproximated => "geometry.procedural-curve-approximated",
             Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
@@ -886,7 +890,9 @@ impl StepLossCode {
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
-            Self::ProceduralReducedToCarrier => LossTaxonomy::ProceduralReduced,
+            Self::ProceduralReducedToCarrier | Self::ProceduralCurveApproximated => {
+                LossTaxonomy::ProceduralReduced
+            }
         }
     }
 
@@ -1047,6 +1053,7 @@ mod tests {
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.procedural-definition-not-written",
+                "geometry.procedural-curve-approximated",
                 "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",

@@ -36,6 +36,10 @@ mod ownership;
 mod wire;
 
 const EPS_IDENTITY: f64 = 1.0e-12;
+/// Fraction of the document linear tolerance a fitted helix restatement may
+/// deviate from its helix. The context uncertainty is at least the linear
+/// tolerance, so it covers every fit.
+const HELIX_FIT_FRACTION_OF_LINEAR_TOLERANCE: f64 = 0.5;
 
 /// Serializes an IR document as an ISO 10303-21 STEP Part 21 file declaring
 /// `schema`.
@@ -259,6 +263,9 @@ pub(crate) struct Builder<'a> {
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
     written_procedural_curves: BTreeSet<String>,
+    /// Procedural helices restated as fitted B-splines, with each fit's proven
+    /// error bound.
+    approximated_procedural_curves: BTreeMap<String, f64>,
     /// Analytic surface records the writer put in the file, in emission order.
     written_analytic_surfaces: Vec<WrittenAnalyticSurface<'a>>,
 
@@ -433,6 +440,7 @@ impl<'a> Builder<'a> {
             active_curves: BTreeSet::new(),
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
+            approximated_procedural_curves: BTreeMap::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
@@ -1533,7 +1541,8 @@ impl<'a> Builder<'a> {
             "( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )",
         );
         // The coincidence distance covers the tolerances of tolerant edges and vertices: their
-        // positions are consistent only to that distance.
+        // positions are consistent only to that distance. It starts at the linear tolerance, so
+        // it also covers every fitted helix restatement (`helix_fit_tolerance`).
         let uncertainty = self
             .ir
             .model
@@ -2592,7 +2601,7 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             };
-            if !geometry::curve_is_supported(&curve.geometry) {
+            if !self.edge_curve_is_writable(curve_id.as_str(), &curve.geometry) {
                 self.curveless_edges.insert(edge_key.to_string());
                 self.topology_relation_loss(
                     format!("edge:{edge_key}:unsupported-curve:{curve_id}"),
@@ -2749,7 +2758,7 @@ impl<'a> Builder<'a> {
         if self
             .curves
             .get(curve_id.as_str())
-            .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
+            .is_some_and(|curve| !self.edge_curve_is_writable(curve_id.as_str(), &curve.geometry))
         {
             self.curveless_edges.insert(edge_id.to_string());
             self.topology_relation_loss(
@@ -3075,9 +3084,9 @@ impl<'a> Builder<'a> {
                     procedural.definition().clone(),
                 )
             });
-            let emitted = procedural.and_then(|(id, definition)| {
-                self.emit_procedural_curve(&definition)
-                    .map(|reference| (id, reference))
+            let emitted = procedural.as_ref().and_then(|(id, definition)| {
+                self.emit_procedural_curve(definition)
+                    .map(|reference| (id.clone(), reference))
             });
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_curves.insert(id);
@@ -3122,10 +3131,17 @@ impl<'a> Builder<'a> {
                         }
                     ),
                 )
-            } else if !geometry::curve_is_supported(&geometry) {
-                return None;
-            } else {
+            } else if geometry::curve_is_supported(&geometry) {
                 geometry::curve(&mut self.emitter, geometry.solved()?)?
+            } else if let Some((id, ProceduralCurveDefinition::Helix(helix))) = &procedural {
+                // STEP has no helix entity. A helix without a writable solved
+                // carrier is restated as a fitted cubic B-spline.
+                let fit = geometry::helix::helix_bspline(helix, self.helix_fit_tolerance())?;
+                self.approximated_procedural_curves
+                    .insert(id.clone(), fit.error_bound);
+                geometry::helix_curve(&mut self.emitter, &fit)
+            } else {
+                return None;
             };
             Some(r)
         })();
@@ -3135,6 +3151,26 @@ impl<'a> Builder<'a> {
             self.curve_refs.insert(curve_id.to_string(), r);
         }
         result
+    }
+
+    /// Whether an edge carrier has a STEP curve: a supported solved carrier,
+    /// or a procedural helix whose B-spline restatement fits.
+    fn edge_curve_is_writable(&self, curve_id: &str, geometry: &CurveGeometry) -> bool {
+        geometry::curve_is_supported(geometry)
+            || self
+                .procedural_curves
+                .get(curve_id)
+                .is_some_and(|procedural| match procedural.definition() {
+                    ProceduralCurveDefinition::Helix(helix) => {
+                        geometry::helix::helix_bspline(helix, self.helix_fit_tolerance()).is_some()
+                    }
+                    _ => false,
+                })
+    }
+
+    /// Model-space fit tolerance of a helix B-spline restatement.
+    fn helix_fit_tolerance(&self) -> f64 {
+        self.ir.tolerances.linear.get() * HELIX_FIT_FRACTION_OF_LINEAR_TOLERANCE
     }
 
     fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
@@ -4875,6 +4911,9 @@ impl<'a> Builder<'a> {
                     && !self
                         .written_procedural_curves
                         .contains(procedural.id.as_str())
+                    && !self
+                        .approximated_procedural_curves
+                        .contains_key(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -4899,6 +4938,9 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_curves
                     .contains(procedural.id.as_str())
+                    && !self
+                        .approximated_procedural_curves
+                        .contains_key(procedural.id.as_str())
                     && !reduced_curves.contains(procedural.id.as_str())
             })
             .count();
@@ -4909,6 +4951,21 @@ impl<'a> Builder<'a> {
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
                     "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
+                ),
+            );
+        }
+        if !self.approximated_procedural_curves.is_empty() {
+            let largest_bound = self
+                .approximated_procedural_curves
+                .values()
+                .copied()
+                .fold(0.0, f64::max);
+            self.loss(
+                StepLossCode::ProceduralCurveApproximated,
+                format!(
+                    "{} helix procedural curve definition(s) were restated as fitted cubic B-spline carriers within fit tolerance {:e} mm (largest proven deviation {largest_bound:e} mm)",
+                    self.approximated_procedural_curves.len(),
+                    self.helix_fit_tolerance()
                 ),
             );
         }
