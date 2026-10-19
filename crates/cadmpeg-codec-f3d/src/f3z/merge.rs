@@ -132,6 +132,9 @@ impl MergeSession<'_, '_> {
         table: &XrefTable,
     ) -> Result<usize, CodecError> {
         let mut merged = 0usize;
+        // Rescoped member metadata is appended once, after every reference,
+        // so the parent tables are rebuilt once rather than per occurrence.
+        let mut fidelities = Vec::new();
         for reference in &table.references {
             let occurrence = occurrence_key(self.ctx, reference)?;
             let label = xref::design_for(table, reference)
@@ -265,10 +268,10 @@ impl MergeSession<'_, '_> {
                 component_ir.native,
                 &occurrence,
             )?;
-            parent_fidelity.append(
-                self.ctx,
-                rescope_fidelity(self.ctx, component_fidelity, &occurrence)?,
-            )?;
+            let rescoped = rescope_fidelity(self.ctx, component_fidelity, &occurrence)?;
+            self.ctx
+                .reserve_vec(&mut fidelities, 1, "collect F3Z member fidelity")?;
+            fidelities.push(rescoped);
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
@@ -294,6 +297,7 @@ impl MergeSession<'_, '_> {
                     reference.relative_path
                 ), "collect F3Z report notes", "retain F3Z report note")?;
         }
+        parent_fidelity.append_all(self.ctx, fidelities)?;
         Ok(merged)
     }
 }

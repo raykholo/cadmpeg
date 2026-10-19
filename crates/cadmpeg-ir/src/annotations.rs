@@ -14,6 +14,7 @@ use cadmpeg_core::CodecError;
 
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
+mod append_all;
 mod identity_work;
 mod rescope;
 mod sparse;

@@ -392,6 +392,57 @@ impl SourceFidelity {
         Ok(())
     }
 
+    /// Append many source metadata tables in one bulk rebuild of each table.
+    ///
+    /// Appending one table at a time rebuilds the growing destination on
+    /// every call. Failure leaves this source metadata unchanged.
+    pub fn append_all(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        others: Vec<Self>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const OPERATION: &str = "append source records";
+        let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
+        let mut seen = BTreeSet::new();
+        for id in others
+            .iter()
+            .flat_map(|other| other.retained_records.keys())
+        {
+            let combined = self
+                .retained_records
+                .len()
+                .checked_add(seen.len())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            crate::annotations::admit_identity_work(
+                ctx,
+                combined,
+                id.as_str().len(),
+                2,
+                OPERATION,
+            )?;
+            if self.retained_records.contains_key(id) || seen.contains(id) {
+                return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                    format_args!("duplicate retained or native unknown record {id}"),
+                    "report duplicate source record",
+                )?));
+            }
+            ctx.insert_scoped_btree_value(&mut scratch, &mut seen, id, OPERATION)?;
+            ctx.admit_btree_node_storage::<UnknownId, RetainedSourceRecord>(combined, OPERATION)?;
+            ctx.charge_collection_items(1, OPERATION)?;
+        }
+        drop(seen);
+        drop(scratch);
+        let (annotations, records): (Vec<_>, Vec<_>) =
+            others.into_iter().map(Self::into_parts).unzip();
+        self.annotations
+            .append_all(ctx, annotations, "append source provenance")?
+            .map_err(cadmpeg_core::CodecError::from)?;
+        for (id, record) in records.into_iter().flatten() {
+            self.retained_records.insert(id, record);
+        }
+        Ok(())
+    }
+
     /// Finds a retained source record by identifier.
     pub fn retained_record(&self, id: &str) -> Option<&RetainedSourceRecord> {
         self.retained_records.get(id)

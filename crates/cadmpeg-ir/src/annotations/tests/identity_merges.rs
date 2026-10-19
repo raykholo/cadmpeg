@@ -332,3 +332,66 @@ fn annotation_remap_destination_refusal_preserves_both_source_tables() {
         );
     }
 }
+
+fn noted(ids: &[&str], exact: &[&str]) -> crate::annotations::Annotations {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let stream =
+        StreamHandle::new(&ctx, crate::stream_name!("source"), "fixture stream handle").unwrap();
+    let mut builder = AnnotationBuilder::new();
+    for (offset, id) in ids.iter().enumerate() {
+        builder
+            .note(
+                &ctx,
+                id,
+                &stream,
+                u64::try_from(offset).unwrap(),
+                Some("tag"),
+            )
+            .unwrap();
+    }
+    for id in exact {
+        builder.exactness(&ctx, id, Exactness::Derived).unwrap();
+    }
+    builder.build()
+}
+
+#[test]
+fn bulk_append_matches_one_at_a_time_append() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let parts = [
+        noted(&["m:2", "m:5"], &["m:5"]),
+        noted(&["m:1", "m:9"], &[]),
+        noted(&["m:3"], &["m:4"]),
+        noted(&["m:0", "m:7"], &["m:7"]),
+        noted(&["m:6"], &[]),
+    ];
+    let mut sequential = noted(&["m:8"], &["m:8"]);
+    for part in parts.clone() {
+        sequential
+            .append(&ctx, part, "test append")
+            .unwrap()
+            .unwrap();
+    }
+    let mut bulk = noted(&["m:8"], &["m:8"]);
+    bulk.append_all(&ctx, parts.to_vec(), "test append")
+        .unwrap()
+        .unwrap();
+    assert_eq!(bulk, sequential);
+}
+
+#[test]
+fn bulk_append_refuses_identity_shared_across_tables_without_mutation() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut annotations = noted(&["m:1"], &[]);
+    let before = annotations.clone();
+    let error = annotations
+        .append_all(
+            &ctx,
+            vec![noted(&["m:2"], &[]), noted(&["m:3"], &["m:2"])],
+            "test append",
+        )
+        .unwrap()
+        .unwrap_err();
+    assert!(matches!(error, AnnotationIdentityCollision { id } if id == "m:2"));
+    assert_eq!(annotations, before);
+}
