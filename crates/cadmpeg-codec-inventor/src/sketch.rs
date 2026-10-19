@@ -190,6 +190,9 @@ pub(crate) struct PmDcSketchConstraintPayload {
     save_version_major: u8,
     pub(crate) header: PmDcConstraintHeader,
     pub(crate) kind: PmDcSketchConstraintKind,
+    /// The u32 that segment major versions 23 and later append to a midpoint constraint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tail: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -463,6 +466,9 @@ pub(crate) struct PmDcSketchEntityPayload {
     entity_flags: u32,
     pub(crate) sketch: PmDcReference,
     pub(crate) kind: PmDcSketchEntityKind,
+    /// The reference list that segment major version 25 adds to the end of a point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) extension: Option<PmDcReferenceList>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -774,7 +780,7 @@ pub(crate) fn inventory(
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
-        if !(15..=22).contains(&version) {
+        if crate::pmdc::content_header_extension_len(version).is_none() {
             continue;
         }
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
@@ -916,7 +922,7 @@ fn parse_sketch_layout(
     block_definition: bool,
 ) -> Result<PmDcSketchPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, 0)?;
     let state = cursor.u32("sketch state")?.cast_signed();
     let count_value = cursor.u32("sketch count value")?;
     let entities = reference_list(ctx, &mut cursor, 8, "sketch entity array")?;
@@ -1078,14 +1084,22 @@ fn parse_entity(
     version: u8,
 ) -> Result<PmDcSketchEntityPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let entity_flags = cursor.u32("sketch entity flags")?;
     let sketch = cursor.reference("sketch entity sketch reference")?;
+    let listed = version >= ENTITY_EXTENSION_LIST_VERSION;
+    let mut extension = None;
     let kind = match tag {
-        SketchEntityTag::Point => parse_point(ctx, &mut cursor)?,
-        SketchEntityTag::Line => parse_line(ctx, &mut cursor)?,
-        SketchEntityTag::Circle => parse_circle(ctx, &mut cursor)?,
-        SketchEntityTag::Ellipse => parse_ellipse(ctx, &mut cursor)?,
+        SketchEntityTag::Point => {
+            let kind = parse_point(ctx, &mut cursor, listed)?;
+            if listed {
+                extension = Some(reference_list(ctx, &mut cursor, 2, "point extension list")?);
+            }
+            kind
+        }
+        SketchEntityTag::Line => parse_line(ctx, &mut cursor, listed)?,
+        SketchEntityTag::Circle => parse_circle(ctx, &mut cursor, listed)?,
+        SketchEntityTag::Ellipse => parse_ellipse(ctx, &mut cursor, listed)?,
         SketchEntityTag::Spline => parse_spline(ctx, &mut cursor)?,
         SketchEntityTag::BlockInstance => PmDcSketchEntityKind::BlockInstance {
             definition: cursor.reference("block instance definition reference")?,
@@ -1123,6 +1137,7 @@ fn parse_entity(
         entity_flags,
         sketch,
         kind,
+        extension,
     })
 }
 
@@ -1144,11 +1159,16 @@ fn point3(cursor: &mut Cursor<'_>, field: &str) -> Result<[FiniteReal; 3], Codec
 fn parse_point(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
+    listed: bool,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
     let position = point2(cursor, "sketch point")?;
     let endpoint_of = reference_list(ctx, cursor, 2, "point endpoint-of list")?;
     let center_of = reference_list(ctx, cursor, 2, "point center-of list")?;
-    let tail = if cursor.remaining() == 0 {
+    // The tail is absent when the record ends, or, at segment major version 25, when the
+    // extension list follows at once.
+    let absent = cursor.remaining() == 0
+        || (listed && cursor.peek_u32("point tail state")? == REFERENCE_LIST_MARKER);
+    let tail = if absent {
         PointTail::Absent
     } else {
         PointTail::Present {
@@ -1164,14 +1184,66 @@ fn parse_point(
     })
 }
 
+/// First segment major version whose points end with an extension reference list and whose
+/// lines, circles and ellipses gate their auxiliary lists.
+const ENTITY_EXTENSION_LIST_VERSION: u8 = 25;
+/// The `2, 0x3000` marker of a reference list, read as one u32.
+const REFERENCE_LIST_MARKER: u32 = 0x3000_0002;
+
 fn edge_prefix(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
     fixed_tail: usize,
     field: &str,
+    gated: bool,
 ) -> Result<(PmDcReferenceList, Vec<PmDcReferenceList>), CodecError> {
     let points = reference_list(ctx, cursor, 2, &format!("{field} point list"))?;
     let mut auxiliary = Vec::new();
+    if gated {
+        // Segment major version 25: a presence gate, then both auxiliary lists when present.
+        let gate = [
+            cursor.u32("edge list gate 0")?,
+            cursor.u32("edge list gate 1")?,
+        ];
+        match gate {
+            [0, 0] => {}
+            [1, 0] => {
+                for index in 0..2 {
+                    auxiliary.push(reference_list(
+                        ctx,
+                        cursor,
+                        2,
+                        &format!("{field} auxiliary list {index}"),
+                    )?);
+                }
+            }
+            _ => {
+                return Err(CodecError::malformed(format_args!(
+                    "Inventor PmDc {field} list gate is {gate:?}"
+                )));
+            }
+        }
+    } else {
+        ungated_auxiliary(ctx, cursor, fixed_tail, field, &mut auxiliary)?;
+    }
+    if cursor.remaining() != fixed_tail {
+        return Err(CodecError::malformed(format_args!(
+            "Inventor PmDc {field} has {} bytes before its fixed tail, expected {fixed_tail}",
+            cursor.remaining()
+        )));
+    }
+    Ok((points, auxiliary))
+}
+
+/// Auxiliary lists of a curve before segment major version 25: one list, or a `[1, 0]` gate and
+/// one or two lists.
+fn ungated_auxiliary(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    fixed_tail: usize,
+    field: &str,
+    auxiliary: &mut Vec<PmDcReferenceList>,
+) -> Result<(), CodecError> {
     let tail8 = fixed_tail
         .checked_add(8)
         .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
@@ -1213,20 +1285,15 @@ fn edge_prefix(
             )?);
         }
     }
-    if cursor.remaining() != fixed_tail {
-        return Err(CodecError::malformed(format_args!(
-            "Inventor PmDc {field} has {} bytes before its fixed tail, expected {fixed_tail}",
-            cursor.remaining()
-        )));
-    }
-    Ok((points, auxiliary))
+    Ok(())
 }
 
 fn parse_line(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
+    gated: bool,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 32, "line")?;
+    let (points, auxiliary) = edge_prefix(ctx, cursor, 32, "line", gated)?;
     let origin = point2(cursor, "line origin")?;
     let direction = point2(cursor, "line direction")?;
     Ok(PmDcSketchEntityKind::Line {
@@ -1240,8 +1307,9 @@ fn parse_line(
 fn parse_circle(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
+    gated: bool,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 13, "circle")?;
+    let (points, auxiliary) = edge_prefix(ctx, cursor, 13, "circle", gated)?;
     let center = cursor.reference("circle center reference")?;
     let radius = cursor.f64("circle radius")?;
     let state = cursor.u8("circle state")?;
@@ -1260,8 +1328,9 @@ fn parse_circle(
 fn parse_ellipse(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
+    gated: bool,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 37, "ellipse")?;
+    let (points, auxiliary) = edge_prefix(ctx, cursor, 37, "ellipse", gated)?;
     let center = cursor.reference("ellipse center reference")?;
     let major_direction = point2(cursor, "ellipse major direction")?;
     let major_radius = cursor.f64("ellipse major radius")?;
@@ -1406,7 +1475,7 @@ fn parse_projection(
     form: PmDcProjectionForm,
 ) -> Result<PmDcSketchProjectionPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, 0)?;
     let state = cursor.u32("sketch projection state")?.cast_signed();
     let entity = cursor.reference("sketch projection entity reference")?;
     let transform = cursor.reference("sketch projection transform reference")?;
@@ -1429,7 +1498,7 @@ fn parse_projection(
 
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let prefix_present = cursor.peek_u32("transform prefix")? == TRANSFORM_PREFIX;
     if prefix_present {
         cursor.u32("transform prefix")?;
@@ -1450,7 +1519,7 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload
 
 fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirectionPayload, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     let entity_flags = cursor.u32("direction entity flags")?;
     let parameter = cursor.f64("direction parameter")?;
     let extension = match cursor.remaining() {
@@ -1545,7 +1614,7 @@ fn parse_constraint_header(
     version: u8,
     has_parameter: bool,
 ) -> Result<PmDcConstraintHeader, CodecError> {
-    let content = content_header(cursor)?;
+    let content = content_header(cursor, 0)?;
     let state = cursor.u32("constraint state")?.cast_signed();
     let group = cursor.reference("constraint group reference")?;
     let (scalar_map, reference_map) = if version <= 16 {
@@ -1572,6 +1641,9 @@ fn parse_constraint_header(
         },
     })
 }
+
+/// First segment major version whose midpoint constraints end with a u32.
+const TAILED_MIDPOINT_VERSION: u8 = 23;
 
 fn parse_constraint(
     ctx: &DecodeContext<'_>,
@@ -1746,11 +1818,18 @@ fn parse_constraint(
             state: NativeBytes::new(cursor.take_array::<3>("point angle state")?),
         },
     };
+    let tail = if matches!(tag, SketchConstraintTag::Midpoint) && version >= TAILED_MIDPOINT_VERSION
+    {
+        Some(cursor.u32("midpoint constraint tail")?)
+    } else {
+        None
+    };
     cursor.finish("sketch constraint")?;
     Ok(PmDcSketchConstraintPayload {
         save_version_major: version,
         header,
         kind,
+        tail,
     })
 }
 
@@ -5283,6 +5362,140 @@ mod tests {
         bytes.extend_from_slice(&0x8000_000cu32.to_le_bytes());
         bytes.extend_from_slice(&parameter.to_le_bytes());
         bytes
+    }
+
+    /// `content(index)` with `extension` appended: an extended content header.
+    fn extended_entity_prefix(index: u32, sketch: u32, extension: &[i32]) -> Vec<u8> {
+        let mut bytes = content(index);
+        for value in extension {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&sketch.to_le_bytes());
+        bytes
+    }
+
+    fn line_tail(bytes: &mut Vec<u8>) {
+        for value in [0.0f64, 0.0, 1.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    #[test]
+    fn version_23_entities_extend_their_header() {
+        let mut point = extended_entity_prefix(1, 3, &[-1]);
+        for value in [1.25f64, -2.5] {
+            point.extend_from_slice(&value.to_le_bytes());
+        }
+        point.extend(list(2, &[]));
+        point.extend(list(2, &[]));
+        let parsed = parse(&point, |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Point, source, 23).expect("point")
+        });
+        assert_eq!(parsed.header.extension, [-1]);
+        assert!(parsed.extension.is_none());
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Point { position, .. } if position.map(FiniteReal::get) == [1.25, -2.5]
+        ));
+
+        let mut line = extended_entity_prefix(2, 3, &[-1]);
+        line.extend(list(2, &[4, 5]));
+        line.extend(list(2, &[]));
+        line_tail(&mut line);
+        let parsed = parse(&line, |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Line, source, 23).expect("line")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Line { ref auxiliary, .. } if auxiliary.len() == 1
+        ));
+    }
+
+    #[test]
+    fn version_25_points_end_with_a_list_and_curves_gate_their_lists() {
+        let mut point = extended_entity_prefix(1, 3, &[-1, -1]);
+        for value in [0.5f64, 0.25] {
+            point.extend_from_slice(&value.to_le_bytes());
+        }
+        point.extend(list(2, &[7]));
+        point.extend(list(2, &[]));
+        point.extend_from_slice(&0u32.to_le_bytes());
+        point.extend(list(2, &[]));
+        point.extend(list(2, &[9]));
+        let parsed = parse(&point, |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Point, source, 25).expect("point")
+        });
+        assert_eq!(parsed.header.extension, [-1, -1]);
+        assert_eq!(
+            parsed.extension.as_ref().map(|list| list
+                .references()
+                .iter()
+                .map(|r| r.index())
+                .collect::<Vec<_>>()),
+            Some(vec![9])
+        );
+
+        // Gate [0, 0]: no auxiliary lists.
+        let mut line = extended_entity_prefix(2, 3, &[-1, -1]);
+        line.extend(list(2, &[4, 5]));
+        line.extend_from_slice(&0u32.to_le_bytes());
+        line.extend_from_slice(&0u32.to_le_bytes());
+        line_tail(&mut line);
+        let parsed = parse(&line, |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Line, source, 25).expect("ungated line")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Line { ref auxiliary, .. } if auxiliary.is_empty()
+        ));
+
+        // Gate [1, 0]: both auxiliary lists.
+        let mut circle = extended_entity_prefix(3, 3, &[-1, -1]);
+        circle.extend(list(2, &[]));
+        circle.extend_from_slice(&1u32.to_le_bytes());
+        circle.extend_from_slice(&0u32.to_le_bytes());
+        circle.extend(list(2, &[]));
+        circle.extend(list(2, &[6]));
+        circle.extend_from_slice(&4u32.to_le_bytes());
+        circle.extend_from_slice(&2.5f64.to_le_bytes());
+        circle.push(1);
+        let parsed = parse(&circle, |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Circle, source, 25).expect("gated circle")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcSketchEntityKind::Circle { ref auxiliary, radius, .. }
+                if auxiliary.len() == 2 && radius.get() == 2.5
+        ));
+
+        // Any other gate is refused.
+        let mut line = extended_entity_prefix(2, 3, &[-1, -1]);
+        line.extend(list(2, &[4, 5]));
+        line.extend_from_slice(&2u32.to_le_bytes());
+        line.extend_from_slice(&0u32.to_le_bytes());
+        line_tail(&mut line);
+        let error = parse(&line, |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Line, source, 25).map(|_| ())
+        });
+        assert!(error.is_err());
+    }
+
+    #[test]
+    fn version_23_constraints_keep_their_header_and_midpoints_gain_a_tail() {
+        let mut midpoint = constraint_header(5, 0);
+        midpoint.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+        midpoint.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+        let at_22 = parse(&midpoint, |ctx, source| {
+            parse_constraint(ctx, SketchConstraintTag::Midpoint, source, 22).expect("midpoint")
+        });
+        assert!(at_22.tail.is_none());
+        midpoint.extend_from_slice(&0u32.to_le_bytes());
+        let at_23 = parse(&midpoint, |ctx, source| {
+            parse_constraint(ctx, SketchConstraintTag::Midpoint, source, 23).expect("midpoint")
+        });
+        assert_eq!(at_23.tail, Some(0));
+        assert!(at_23.header.content.extension.is_empty());
     }
 
     #[test]

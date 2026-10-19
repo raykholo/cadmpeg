@@ -5,8 +5,9 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
+use cadmpeg_asm::brep::{decode_with_header_and_charts, AsmBrep, CarrierReading, DecodePurpose};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
+use cadmpeg_asm::nurbs::proc_curve::PcurveCharts;
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
@@ -169,14 +170,19 @@ pub(crate) fn decode_kernel_carrier(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
     );
-    let brep = decode_with_header(
+    // Inventor part carriers store plane pcurves by the plane's v sense and sphere and torus
+    // pcurves with the azimuth second.
+    let brep = decode_with_header_and_charts(
         ctx,
         &records,
         bytes,
         Some(&header.metadata),
         &stream,
         cadmpeg_asm::asm_format!("inventor"),
-        DecodePurpose::Model,
+        CarrierReading {
+            purpose: DecodePurpose::Model,
+            charts: PcurveCharts::Witnessed,
+        },
     )?;
     Ok(DecodedKernelCarrier {
         header: copy_kernel_header(ctx, header, "copy Inventor decoded kernel header")?,

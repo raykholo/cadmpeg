@@ -59,6 +59,7 @@ fn transform_payload_streams_flat_matrix_under_retained_limit() {
             flags: 0,
             context: reference,
             source_index: 1,
+            extension: Vec::new(),
         },
         prefix_present: true,
         matrix: CompactMatrix::try_from_rows(0, 0, [[2.0; 4]; 4]).expect("finite compact matrix"),

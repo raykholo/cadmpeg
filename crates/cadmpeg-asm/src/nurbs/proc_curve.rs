@@ -174,11 +174,63 @@ impl EmbeddedSurfaceCurve {
     }
 }
 
+/// Which analytic pcurve charts the embedding format's carriers use.
+///
+/// `Standard` reads every plane pcurve's second coordinate opposite `normal × u_deriv` and
+/// keeps sphere and torus pcurves in the neutral `(azimuth, angle)` order. `Witnessed` reads
+/// the plane's `forward_v`/`reverse_v` Boolean and puts the stored latitude or tube angle
+/// second: the charts Inventor part carriers store.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PcurveCharts {
+    /// The charts of formats without a decoded plane, sphere, or torus pcurve witness.
+    #[default]
+    Standard,
+    /// The charts Inventor part carriers store.
+    Witnessed,
+}
+
 #[derive(Clone, Copy)]
 enum NativeSupportChart {
     Canonical,
-    PlaneLengths,
-    Cone { axial_scale: f64 },
+    /// A plane chart: `u` along the stored `u_deriv` and `v` along `normal × u_deriv`
+    /// (opposite it on a `reverse_v` plane, `v_sign` -1), both in multiples of the `u_deriv`
+    /// length (`scale`, in millimetres).
+    PlaneLengths {
+        scale: f64,
+        v_sign: f64,
+    },
+    Cone {
+        axial_scale: f64,
+    },
+    /// A sphere or torus chart: latitude or tube angle first, azimuth second.
+    AnglesAzimuthSecond,
+}
+
+/// The plane chart of a plane's stored fields: the position, the normal, the length-bearing
+/// `u_deriv`, and the `forward_v` (`false`) or `reverse_v` (`true`) Boolean.
+fn plane_chart(toks: &[Token], charts: PcurveCharts) -> Option<NativeSupportChart> {
+    let start = toks
+        .iter()
+        .position(|token| matches!(token, Token::Position(_)))?;
+    let (Some(Token::Vector3(_)), Some(Token::Vector3(u_deriv)), Some(sense)) = (
+        toks.get(start + 1),
+        toks.get(start + 2),
+        toks.get(start + 3),
+    ) else {
+        return None;
+    };
+    let v_sign = match (charts, sense) {
+        (PcurveCharts::Standard, Token::False | Token::True) => -1.0,
+        (PcurveCharts::Witnessed, Token::False) => 1.0,
+        (PcurveCharts::Witnessed, Token::True) => -1.0,
+        _ => return None,
+    };
+    let length =
+        (u_deriv[0] * u_deriv[0] + u_deriv[1] * u_deriv[1] + u_deriv[2] * u_deriv[2]).sqrt();
+    (length.is_finite() && length > f64::EPSILON).then_some(NativeSupportChart::PlaneLengths {
+        scale: length * LEN_TO_MM,
+        v_sign,
+    })
 }
 
 fn cone_axial_scale(sine: f64, cosine: f64, u_scale: f64) -> f64 {
@@ -187,13 +239,21 @@ fn cone_axial_scale(sine: f64, cosine: f64, u_scale: f64) -> f64 {
 }
 
 /// The native parameter chart of the support serialized at token `position`.
-fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
+fn native_support_chart(
+    toks: &[Token],
+    position: usize,
+    charts: PcurveCharts,
+) -> NativeSupportChart {
     let mut cur = Cur::at(toks, position);
     let Some(kind) = cur.take_ident() else {
         return NativeSupportChart::Canonical;
     };
     match kind {
-        "plane" => NativeSupportChart::PlaneLengths,
+        "plane" => plane_chart(toks.get(position..).unwrap_or_default(), charts)
+            .unwrap_or(NativeSupportChart::Canonical),
+        "sphere" | "torus" if charts == PcurveCharts::Witnessed => {
+            NativeSupportChart::AnglesAzimuthSecond
+        }
         "cone" => {
             let parsed = (|| {
                 cur.take_position()?;
@@ -222,13 +282,26 @@ fn normalize_support_pcurve(
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
     match chart {
         NativeSupportChart::Canonical => {}
-        NativeSupportChart::PlaneLengths => {
+        NativeSupportChart::PlaneLengths { scale, v_sign } => {
             propagate_resource!(pcurve.try_map_control_points(
                 |_, point| {
                     let point = point.get();
                     cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
-                        point.u * LEN_TO_MM,
-                        point.v * -LEN_TO_MM,
+                        point.u * scale,
+                        point.v * scale * v_sign,
+                    ))
+                    .ok_or(())
+                },
+                ctx
+            ))
+            .ok()?;
+        }
+        NativeSupportChart::AnglesAzimuthSecond => {
+            propagate_resource!(pcurve.try_map_control_points(
+                |_, point| {
+                    let native = point.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        native.v, native.u,
                     ))
                     .ok_or(())
                 },
@@ -260,10 +333,20 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface_head: &str,
     surface_tokens: &[Token],
+    charts: PcurveCharts,
     pcurve: &mut PcurveNurbs,
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
     let chart = match surface_head {
-        "plane" => NativeSupportChart::PlaneLengths,
+        "plane" => {
+            propagate_resource!(ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(surface_tokens.len()),
+                "ASM surface chart tokens"
+            ));
+            plane_chart(surface_tokens, charts)?
+        }
+        "sphere" | "torus" if charts == PcurveCharts::Witnessed => {
+            NativeSupportChart::AnglesAzimuthSecond
+        }
         "cone" => {
             propagate_resource!(ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(surface_tokens.len()),
@@ -294,6 +377,7 @@ struct RequiredSupportPair {
 fn required_support_pair(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
+    charts: PcurveCharts,
 ) -> Option<Result<RequiredSupportPair, cadmpeg_core::CodecError>> {
     let first_surface_start = cur.pos();
     let first_surface = propagate_resource!(embedded_surface(ctx, cur)?);
@@ -307,12 +391,12 @@ fn required_support_pair(
     cur.set_pos(second_end);
     propagate_resource!(normalize_support_pcurve(
         ctx,
-        native_support_chart(cur.toks(), first_surface_start),
+        native_support_chart(cur.toks(), first_surface_start, charts),
         &mut first_pcurve,
     )?);
     propagate_resource!(normalize_support_pcurve(
         ctx,
-        native_support_chart(cur.toks(), second_surface_start),
+        native_support_chart(cur.toks(), second_surface_start, charts),
         &mut second_pcurve,
     )?);
     Some(Ok(RequiredSupportPair {
@@ -941,6 +1025,7 @@ fn procedural_curve_recursive(
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
 ) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
+    let charts = table.pcurve_charts();
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM procedural curve reference"));
     let vector_offset = match vector_offset_definition(ctx, toks) {
         Some(Ok(value)) => Some(value),
@@ -988,7 +1073,7 @@ fn procedural_curve_recursive(
             .map(Ok)
             .or_else(|| subset.map(ProceduralCurveConstruction::Subset).map(Ok))
             .or_else(|| {
-                embedded_two_sided_offset(ctx, toks)
+                embedded_two_sided_offset(ctx, toks, charts)
                     .map(|result| result.map(ProceduralCurveConstruction::TwoSidedOffset))
             })
             .or_else(|| {
@@ -999,7 +1084,7 @@ fn procedural_curve_recursive(
                 })
             })
             .or_else(|| {
-                embedded_three_surface_intersection(ctx, toks)
+                embedded_three_surface_intersection(ctx, toks, charts)
                     .map(|result| result.map(ProceduralCurveConstruction::ThreeSurface))
             })
             .or_else(|| {
@@ -1007,7 +1092,7 @@ fn procedural_curve_recursive(
                     .map(|result| result.map(ProceduralCurveConstruction::SurfaceCurve))
             })
             .or_else(|| {
-                embedded_silhouette(ctx, toks)
+                embedded_silhouette(ctx, toks, charts)
                     .map(|result| result.map(ProceduralCurveConstruction::Silhouette))
             })
             .or_else(|| {
@@ -1023,11 +1108,11 @@ fn procedural_curve_recursive(
                     .map(|result| result.map(ProceduralCurveConstruction::Deformable))
             })
             .or_else(|| {
-                embedded_projection(ctx, toks)
+                embedded_projection(ctx, toks, charts)
                     .map(|result| result.map(ProceduralCurveConstruction::Projection))
             })
             .or_else(|| {
-                embedded_law_curve(ctx, toks)
+                embedded_law_curve(ctx, toks, charts)
                     .map(|result| result.map(ProceduralCurveConstruction::Law))
             })
             .or_else(|| compound.map(ProceduralCurveConstruction::Compound).map(Ok))
@@ -1311,6 +1396,7 @@ fn law_version_bound(cur: &mut Cur<'_>) -> Option<Nullable<f64>> {
 fn embedded_law_curve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
+    charts: PcurveCharts,
 ) -> Option<Result<EmbeddedLawCurve, cadmpeg_core::CodecError>> {
     let marker = propagate_resource!(crate::nurbs::toks::find_owned_intcurve_subtype(
         ctx,
@@ -1348,8 +1434,8 @@ fn embedded_law_curve(
         propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value(),
     ];
     for (pcurve, chart) in pcurves.iter_mut().zip([
-        native_support_chart(toks, first_surface_start),
-        native_support_chart(toks, second_surface_start),
+        native_support_chart(toks, first_surface_start, charts),
+        native_support_chart(toks, second_surface_start, charts),
     ]) {
         if let Some(pcurve) = pcurve {
             propagate_resource!(normalize_support_pcurve(ctx, chart, pcurve)?);
@@ -1399,6 +1485,7 @@ fn embedded_spring(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<EmbeddedSpring, cadmpeg_core::CodecError>> {
+    let charts = table.pcurve_charts();
     let marker = propagate_resource!(crate::nurbs::toks::find_owned_intcurve_subtype(
         ctx,
         toks,
@@ -1430,7 +1517,7 @@ fn embedded_spring(
             )))
         } else {
             cur.set_pos(saved);
-            let chart = native_support_chart(toks, cur.pos());
+            let chart = native_support_chart(toks, cur.pos(), charts);
             Some(Ok((
                 EmbeddedSpringSupport::Surface(match embedded_surface(ctx, &mut cur)? {
                     Ok(surface) => surface,
@@ -1889,6 +1976,7 @@ fn embedded_surface_offset(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<EmbeddedSurfaceOffset, cadmpeg_core::CodecError>> {
+    let charts = table.pcurve_charts();
     let marker = propagate_resource!(crate::nurbs::toks::find_owned_intcurve_subtype(
         ctx,
         toks,
@@ -1932,7 +2020,7 @@ fn embedded_surface_offset(
         }));
     }
     let RequiredSupportPair { surfaces, pcurves } =
-        propagate_resource!(required_support_pair(ctx, &mut cur)?);
+        propagate_resource!(required_support_pair(ctx, &mut cur, charts)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
         propagate_resource!(cur.take_float_array(ctx)?),
@@ -2044,6 +2132,7 @@ const ZERO_DRAFT_FACTOR: cadmpeg_ir::scalar::FiniteReal = cadmpeg_ir::scalar::Fi
 fn embedded_silhouette(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
+    charts: PcurveCharts,
 ) -> Option<Result<EmbeddedSilhouette, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::SilhouetteKind;
     let names = [
@@ -2068,7 +2157,7 @@ fn embedded_silhouette(
         .find_map(|(candidate, silhouette)| (*candidate == name).then(|| silhouette.clone()))?;
     let mut cur = Cur::at(toks, marker + 2);
     let RequiredSupportPair { surfaces, pcurves } =
-        propagate_resource!(required_support_pair(ctx, &mut cur)?);
+        propagate_resource!(required_support_pair(ctx, &mut cur, charts)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
         propagate_resource!(cur.take_float_array(ctx)?),
@@ -2147,6 +2236,7 @@ fn embedded_surface_curve(
     table: &SubtypeTable,
 ) -> Option<Result<EmbeddedSurfaceCurve, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
+    let charts = table.pcurve_charts();
     let names = [
         ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
         ("bldcur", SurfaceCurveFamilyKind::Blend),
@@ -2167,7 +2257,7 @@ fn embedded_surface_curve(
         .iter()
         .find_map(|(candidate, family)| (*candidate == name).then_some(*family))?;
     let position = marker + 2;
-    context_first_surface_curve(ctx, toks, position, family)
+    context_first_surface_curve(ctx, toks, position, family, charts)
         .or_else(|| cache_first_surface_curve(ctx, toks, position, family, table))
 }
 
@@ -2386,6 +2476,7 @@ fn cache_first_curve_context(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<Result<CacheFirstCurveContext, cadmpeg_core::CodecError>> {
+    let charts = table.pcurve_charts();
     let revision = PositiveI64::new(cur.take_long()?)?;
     // The leading enum selects the approximation-cache form. `0` stores the
     // solved curve cache and its fit tolerance; `2` stores neither and instead
@@ -2438,14 +2529,14 @@ fn cache_first_curve_context(
     if let Some(pcurve) = &mut pcurves[0] {
         propagate_resource!(normalize_support_pcurve(
             ctx,
-            native_support_chart(cur.toks(), first_surface_start),
+            native_support_chart(cur.toks(), first_surface_start, charts),
             pcurve,
         )?);
     }
     if let Some(pcurve) = &mut pcurves[1] {
         propagate_resource!(normalize_support_pcurve(
             ctx,
-            native_support_chart(cur.toks(), second_surface_start),
+            native_support_chart(cur.toks(), second_surface_start, charts),
             pcurve,
         )?);
     }
@@ -2478,10 +2569,11 @@ fn context_first_surface_curve(
     toks: &[Token],
     position: usize,
     family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+    charts: PcurveCharts,
 ) -> Option<Result<EmbeddedSurfaceCurve, cadmpeg_core::CodecError>> {
     let mut cur = Cur::at(toks, position);
     let RequiredSupportPair { surfaces, pcurves } =
-        propagate_resource!(required_support_pair(ctx, &mut cur)?);
+        propagate_resource!(required_support_pair(ctx, &mut cur, charts)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
         propagate_resource!(cur.take_float_array(ctx)?),
@@ -2591,6 +2683,7 @@ pub fn surface_curve_patch_layout(
 fn embedded_three_surface_intersection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
+    charts: PcurveCharts,
 ) -> Option<Result<EmbeddedThreeSurfaceIntersection, cadmpeg_core::CodecError>> {
     let (marker, _) = propagate_resource!(crate::nurbs::toks::find_owned_subtype_marker(
         ctx,
@@ -2601,7 +2694,7 @@ fn embedded_three_surface_intersection(
     let RequiredSupportPair {
         surfaces: [first, second],
         pcurves: [first_pcurve, second_pcurve],
-    } = propagate_resource!(required_support_pair(ctx, &mut cur)?);
+    } = propagate_resource!(required_support_pair(ctx, &mut cur, charts)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
         propagate_resource!(cur.take_float_array(ctx)?),
@@ -2614,7 +2707,7 @@ fn embedded_three_surface_intersection(
     let (mut third_pcurve, _) = propagate_resource!(pcurve_block_with_end(ctx, toks, cur.pos())?);
     propagate_resource!(normalize_support_pcurve(
         ctx,
-        native_support_chart(toks, third_surface_start),
+        native_support_chart(toks, third_surface_start, charts),
         &mut third_pcurve,
     )?);
     Some(Ok(EmbeddedThreeSurfaceIntersection {
@@ -2670,6 +2763,7 @@ pub fn three_surface_patch_layout(
 fn embedded_projection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
+    charts: PcurveCharts,
 ) -> Option<Result<EmbeddedProjection, cadmpeg_core::CodecError>> {
     let marker = propagate_resource!(crate::nurbs::toks::find_owned_intcurve_subtype(
         ctx,
@@ -2678,7 +2772,7 @@ fn embedded_projection(
     )?);
     let mut cur = Cur::at(toks, marker + 2);
     let RequiredSupportPair { surfaces, pcurves } =
-        propagate_resource!(required_support_pair(ctx, &mut cur)?);
+        propagate_resource!(required_support_pair(ctx, &mut cur, charts)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
         propagate_resource!(cur.take_float_array(ctx)?),
@@ -2821,12 +2915,13 @@ fn embedded_intersection(
     solved: &NurbsCurve,
     table: &SubtypeTable,
 ) -> Option<Result<(EmbeddedIntersection, bool), cadmpeg_core::CodecError>> {
+    let charts = table.pcurve_charts();
     let names = ["int_int_cur", "surf_surf_int_cur", "surfintcur"];
     let (marker, _) = propagate_resource!(crate::nurbs::toks::find_owned_subtype_marker(
         ctx, toks, &names
     )?);
     let position = marker + 2;
-    context_first_intersection(ctx, toks, position)
+    context_first_intersection(ctx, toks, position, charts)
         .or_else(|| cache_first_intersection(ctx, toks, position, solved, table))
 }
 
@@ -2834,10 +2929,11 @@ fn context_first_intersection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     position: usize,
+    charts: PcurveCharts,
 ) -> Option<Result<(EmbeddedIntersection, bool), cadmpeg_core::CodecError>> {
     let mut cur = Cur::at(toks, position);
     let RequiredSupportPair { surfaces, pcurves } =
-        propagate_resource!(required_support_pair(ctx, &mut cur)?);
+        propagate_resource!(required_support_pair(ctx, &mut cur, charts)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
         propagate_resource!(cur.take_float_array(ctx)?),
@@ -2863,6 +2959,7 @@ fn cache_first_intersection(
     solved: &NurbsCurve,
     table: &SubtypeTable,
 ) -> Option<Result<(EmbeddedIntersection, bool), cadmpeg_core::CodecError>> {
+    let charts = table.pcurve_charts();
     let mut cur = Cur::at(toks, position);
     (cur.take_long()? > 0).then_some(())?;
     (cur.take_enum()? == 0).then_some(())?;
@@ -2887,14 +2984,14 @@ fn cache_first_intersection(
     if let Some(pcurve) = &mut pcurves[0] {
         propagate_resource!(normalize_support_pcurve(
             ctx,
-            native_support_chart(toks, first_surface_start),
+            native_support_chart(toks, first_surface_start, charts),
             pcurve
         )?);
     }
     if let Some(pcurve) = &mut pcurves[1] {
         propagate_resource!(normalize_support_pcurve(
             ctx,
-            native_support_chart(toks, second_surface_start),
+            native_support_chart(toks, second_surface_start, charts),
             pcurve
         )?);
     }
@@ -2967,6 +3064,7 @@ pub fn intersection_patch_layout(
 fn embedded_two_sided_offset(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
+    charts: PcurveCharts,
 ) -> Option<Result<EmbeddedTwoSidedOffset, cadmpeg_core::CodecError>> {
     let marker = propagate_resource!(crate::nurbs::toks::find_owned_intcurve_subtype(
         ctx,
@@ -2983,8 +3081,8 @@ fn embedded_two_sided_offset(
     let second_pcurve = propagate_resource!(optional_pcurve(ctx, &mut cur)?).value();
     let mut pcurves = [first_pcurve, second_pcurve];
     for (pcurve, chart) in pcurves.iter_mut().zip([
-        native_support_chart(toks, first_surface_start),
-        native_support_chart(toks, second_surface_start),
+        native_support_chart(toks, first_surface_start, charts),
+        native_support_chart(toks, second_surface_start, charts),
     ]) {
         if let Some(pcurve) = pcurve {
             propagate_resource!(normalize_support_pcurve(ctx, chart, pcurve)?);
@@ -3894,7 +3992,14 @@ mod cache_form_tests {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("root");
             let Some(Err(cadmpeg_core::CodecError::ResourceLimit(limit))) =
-                normalize_support_pcurve(&ctx, NativeSupportChart::PlaneLengths, &mut pcurve)
+                normalize_support_pcurve(
+                    &ctx,
+                    NativeSupportChart::PlaneLengths {
+                        scale: crate::nurbs::reader::LEN_TO_MM,
+                        v_sign: -1.0,
+                    },
+                    &mut pcurve,
+                )
             else {
                 panic!("resource refusal stays in the result");
             };
@@ -3936,7 +4041,10 @@ mod cache_form_tests {
         let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
         normalize_support_pcurve(
             &cadmpeg_test_support::service_decode_context(),
-            NativeSupportChart::PlaneLengths,
+            NativeSupportChart::PlaneLengths {
+                scale: crate::nurbs::reader::LEN_TO_MM,
+                v_sign: -1.0,
+            },
             &mut plane,
         )
         .transpose()
@@ -3965,7 +4073,10 @@ mod cache_form_tests {
     #[test]
     fn support_chart_overflow_refuses_projection_without_changing_the_pcurve() {
         for chart in [
-            NativeSupportChart::PlaneLengths,
+            NativeSupportChart::PlaneLengths {
+                scale: crate::nurbs::reader::LEN_TO_MM,
+                v_sign: -1.0,
+            },
             NativeSupportChart::Cone { axial_scale: 2.0 },
         ] {
             let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
@@ -3983,6 +4094,86 @@ mod cache_form_tests {
     }
 
     #[test]
+    fn plane_chart_scales_by_the_u_derivative_length_and_follows_the_v_sense() {
+        use super::PcurveCharts::{Standard, Witnessed};
+        for (charts, length, reverse_v, scale, v_sign) in [
+            (Witnessed, 1.0, false, 10.0, 1.0),
+            (Witnessed, 0.1, false, 1.0, 1.0),
+            (Witnessed, 1.0, true, 10.0, -1.0),
+            (Standard, 1.0, false, 10.0, -1.0),
+            (Standard, 0.1, true, 1.0, -1.0),
+        ] {
+            let tokens = [
+                Token::Ident("plane".into()),
+                Token::Position([2.5, 0.0, 0.0]),
+                Token::Vector3([1.0, 0.0, 0.0]),
+                Token::Vector3([0.0, 0.0, -length]),
+                if reverse_v { Token::True } else { Token::False },
+            ];
+            let NativeSupportChart::PlaneLengths {
+                scale: actual,
+                v_sign: sign,
+            } = native_support_chart(&tokens, 0, charts)
+            else {
+                panic!("plane tokens select a plane chart");
+            };
+            assert!((actual - scale).abs() < 1e-12, "{actual} for {length}");
+            assert_eq!(sign, v_sign);
+            let mut pcurve = linear_pcurve([Point2::new(-5.0, 1.0), Point2::new(2.0, 0.5)]);
+            normalize_pcurve_for_surface_record(
+                &cadmpeg_test_support::service_decode_context(),
+                "plane",
+                &tokens[1..],
+                charts,
+                &mut pcurve,
+            )
+            .transpose()
+            .expect("support pole edit admission")
+            .unwrap();
+            let first = pcurve.control_points()[0];
+            assert!(
+                (first.u - -5.0 * scale).abs() < 1e-9 && (first.v - scale * v_sign).abs() < 1e-9
+            );
+        }
+        // A plane without a u derivative or v sense has no chart.
+        let tokens = [Token::Position([0.0; 3]), Token::Vector3([0.0, 0.0, 1.0])];
+        assert!(super::plane_chart(&tokens, Witnessed).is_none());
+    }
+
+    #[test]
+    fn witnessed_sphere_and_torus_charts_put_the_azimuth_second() {
+        use super::PcurveCharts::{Standard, Witnessed};
+        for head in ["sphere", "torus"] {
+            let tokens = [Token::Ident(head.into())];
+            assert!(matches!(
+                native_support_chart(&tokens, 0, Witnessed),
+                NativeSupportChart::AnglesAzimuthSecond
+            ));
+            assert!(matches!(
+                native_support_chart(&tokens, 0, Standard),
+                NativeSupportChart::Canonical
+            ));
+            for (charts, expected) in [
+                (Witnessed, [Point2::new(-1.5, 0.25), Point2::new(2.0, 0.5)]),
+                (Standard, [Point2::new(0.25, -1.5), Point2::new(0.5, 2.0)]),
+            ] {
+                let mut pcurve = linear_pcurve([Point2::new(0.25, -1.5), Point2::new(0.5, 2.0)]);
+                normalize_pcurve_for_surface_record(
+                    &cadmpeg_test_support::service_decode_context(),
+                    head,
+                    &[],
+                    charts,
+                    &mut pcurve,
+                )
+                .transpose()
+                .expect("support pole edit admission")
+                .unwrap();
+                assert_eq!(pcurve.control_points(), expected);
+            }
+        }
+    }
+
+    #[test]
     fn native_cone_chart_projects_generator_distance_onto_its_axis() {
         let tokens = [
             Token::Ident("cone".into()),
@@ -3996,7 +4187,9 @@ mod cache_form_tests {
             Token::Double(0.5),
             Token::Double(1.5),
         ];
-        let NativeSupportChart::Cone { axial_scale } = native_support_chart(&tokens, 0) else {
+        let NativeSupportChart::Cone { axial_scale } =
+            native_support_chart(&tokens, 0, super::PcurveCharts::Standard)
+        else {
             panic!("cone tokens select a cone parameter chart");
         };
         assert_eq!(axial_scale, 7.5);
@@ -4015,6 +4208,7 @@ mod cache_form_tests {
             &cadmpeg_test_support::service_decode_context(),
             "cone",
             &surface,
+            super::PcurveCharts::Standard,
             &mut pcurve,
         )
         .transpose()

@@ -134,6 +134,28 @@ pub(crate) struct PmDcContentHeader {
     pub(crate) flags: u32,
     pub(crate) context: PmDcReference,
     pub(crate) source_index: u32,
+    /// Values that segment major versions 23 and later append to the header.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) extension: Vec<i32>,
+}
+
+/// Number of i32 extension values an extended content header carries at a segment major
+/// version, or `None` for a major version outside the implemented design-record grammar.
+pub(crate) const fn content_header_extension_len(version: u8) -> Option<usize> {
+    match version {
+        15..=22 => Some(0),
+        23 => Some(1),
+        25 => Some(2),
+        _ => None,
+    }
+}
+
+/// Extension length of an extended content header at a supported segment major version.
+pub(crate) const fn extended(version: u8) -> usize {
+    match content_header_extension_len(version) {
+        Some(len) => len,
+        None => 0,
+    }
 }
 
 /// A reference list with metadata, carrying the marker its format prefixes it with.
@@ -524,14 +546,29 @@ impl<'a> Cursor<'a> {
     }
 }
 
-pub(crate) fn content_header(cursor: &mut Cursor<'_>) -> Result<PmDcContentHeader, CodecError> {
+pub(crate) fn content_header(
+    cursor: &mut Cursor<'_>,
+    extension_len: usize,
+) -> Result<PmDcContentHeader, CodecError> {
+    let header_value = cursor.u32("content header value")?;
+    let header_id = cursor.u16("content header id")?;
+    let next = cursor.reference("content header next reference")?;
+    let flags = cursor.u32("content header flags")?;
+    let context = cursor.reference("content header context reference")?;
+    let source_index = cursor.u32("content header source index")?;
+    let count = extension_len;
+    let mut extension = Vec::new();
+    for _ in 0..count {
+        extension.push(cursor.i32("content header extension value")?);
+    }
     Ok(PmDcContentHeader {
-        header_value: cursor.u32("content header value")?,
-        header_id: cursor.u16("content header id")?,
-        next: cursor.reference("content header next reference")?,
-        flags: cursor.u32("content header flags")?,
-        context: cursor.reference("content header context reference")?,
-        source_index: cursor.u32("content header source index")?,
+        header_value,
+        header_id,
+        next,
+        flags,
+        context,
+        source_index,
+        extension,
     })
 }
 
@@ -934,7 +971,7 @@ mod tests {
         bytes.extend_from_slice(&9_u16.to_le_bytes());
         let mut cursor = Cursor::new(View::over_retained(&bytes));
         assert_eq!(
-            displayed_truncation(content_header(&mut cursor)),
+            displayed_truncation(content_header(&mut cursor, 0)),
             "truncated input during content header next reference at space 0 offset 6"
         );
     }

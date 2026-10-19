@@ -241,7 +241,7 @@ The record ends after `tertiary_factor`. The texts are unit-qualified expression
 
 ## 11. Part parameters
 
-For segment major versions 15 through 22, a `PmDc` record with type identifier `264d8790d011f8d10008cabc0663dc09` stores one numeric design parameter. Its payload contains:
+For segment major versions 15 through 23 and 25, a `PmDc` record with type identifier `264d8790d011f8d10008cabc0663dc09` stores one numeric design parameter. Its payload starts with the extended content header of section 12 and contains:
 
 ```text
 header_value u32
@@ -309,7 +309,7 @@ Parameter ownership requires exactly one document model root in the segment, exa
 
 ## 12. Planar sketches
 
-For segment major versions 15 through 22, PmDc content records start with this 22-byte header:
+For segment major versions 15 through 23 and 25, PmDc content records start with this 22-byte header:
 
 ```text
 header_value u32
@@ -320,6 +320,8 @@ context_reference u32
 source_index u32
 ```
 
+An extended content header follows `source_index` with `extension_values:i32[n]`, where `n` is 0 for segment major versions 15 through 22, 1 for segment major version 23, and 2 for segment major version 25. The record type selects the header form. Parameters, planar sketch entities, sketch transforms, sketch directions, and feature property records use the extended header. Planar sketches, sketch-block definitions, projection links, planar constraints, feature records, pattern-feature records, end-of-features records, origin folders, and sheet-metal group records use the 22-byte header at every segment major version. A section that states "the content header" for a record type of the extended form means the extended content header.
+
 Type `114d8790d011f8d10008cabc0663dc09` is a planar sketch. The content header is followed by `state:i32`, `count_value:u32`, a type-8 entity-reference array, transform and direction references, and two u32 values. A trailing type-2 reference list is optional. The entity-reference array contains geometric entities, constraints, and helper records.
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
@@ -328,7 +330,7 @@ Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after t
 
 The planar entity types are:
 
-- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional u32 state plus type-2 association list.
+- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional u32 state plus type-2 association list. Segment major version 25 ends the point with one more type-2 list; the state and association list are absent when that list follows the center-of list directly.
 - `3adf52ced011d0d20008ccbc0663dc09`: line. It stores a type-2 point list, versioned auxiliary type-2 lists, and two-f64 origin and direction vectors. The first two points are the start and end points. Further points lie on the line and are bound to it by relations.
 - `3bdf52ced011d0d20008ccbc0663dc09`: circle or circular arc. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a positive f64 radius, and a u8 state. A point list whose first two references are null, or an empty point list, is the complete circle. Otherwise the first two points are the start and end points of an arc that runs counterclockwise from start to end about the center. Further points lie on the arc.
 - `60d40745d111bee680006fb1e13554c7`: ellipse. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a two-f64 major-axis direction, positive f64 major and minor radii, and a u8 state. A point list with two null leading references is the complete ellipse.
@@ -358,13 +360,17 @@ The compact 3-by-3 transform stores `value_mask:u16`, `zero_mask:u16`, and the e
 
 Type `c4aaa4865f4a916625d4ae83c3122a26` is a sketch-block definition. It stores the planar-sketch layout through the auxiliary type-2 list, then a type-2 instance list, a base-point reference, a 16-byte identifier, and a u32 value. Its type-8 entity array lists its member entities and relations. A definition member is placed in a host sketch once per instance. A proxy is the host-sketch identity of one placed member: its geometry is the member geometry mapped by the instance transform. A placed member without a proxy has no record of its own in the host sketch.
 
+In segment major version 25, the point list of a line, circle, or ellipse is followed by a two-u32 gate instead of the versioned auxiliary lists. Gate `[0, 0]` has no auxiliary list. Gate `[1, 0]` is followed by two type-2 auxiliary lists. Other gate values are not defined.
+
 Sketch coordinates and radii use internal centimetres. Neutral planar coordinates and lengths multiply these values by 10 to obtain millimetres. The stored start and end points of a bounded entity define its direction. A complete circle or ellipse forms a closed profile by itself. Non-construction bounded entities join through their start and end points. After entities with a free end are removed, a connected component whose vertices all join two entities is one closed profile loop; a branched component contributes each bounded face of its planar graph as one loop.
 
 Type `184d8790d011f8d10008cabc0663dc09` stores a compressed 4-by-4 sketch transform after the content header. An optional u32 value `0x203` precedes two u16 masks. For matrix element bit `b`, a clear zero-mask bit and clear value-mask bit select one following f64. A clear zero-mask bit and set value-mask bit select positive one. A set zero-mask bit and clear value-mask bit select zero. Both bits set select negative one. Explicit values occur in row-major order. Translation values use internal centimetres.
 
 Type `40df52ced011d0d20008ccbc0663dc09` stores a sketch direction. It adds `entity_flags:u32`, `parameter:f64`, an optional u32 extension, and a three-f64 direction vector after the content header. The transform's first column is the sketch u-axis. Its third column and the direction vector are the same oriented plane normal. The last matrix row is `[0, 0, 0, 1]`.
 
-A planar constraint starts with the content header, `state:i32`, and a group reference. Segment major versions 15 and 16 store the parameter reference immediately after the group reference. Segment major versions 17 through 22 store two type-6 maps before the parameter reference. A type-6 map starts with u16 values `6, 0x3000` and a u32 count. A nonempty map then stores two u32 metadata values. The first map stores reference/f64 pairs: for each operand entity, the curve parameter of the related locus. A line parameter is normalized, with 0 at the start point and 1 at the end point. An arc parameter is an angle in radians. The second map stores reference/u32 pairs: for each operand entity, an endpoint selector with 0 for no endpoint, 1 for the start point, and 2 for the end point.
+A planar constraint starts with the content header, `state:i32`, and a group reference. Segment major versions 15 and 16 store the parameter reference immediately after the group reference. Segment major versions 17 and later store two type-6 maps before the parameter reference. A type-6 map starts with u16 values `6, 0x3000` and a u32 count. A nonempty map then stores two u32 metadata values. The first map stores reference/f64 pairs: for each operand entity, the curve parameter of the related locus. A line parameter is normalized, with 0 at the start point and 1 at the end point. An arc parameter is an angle in radians. The second map stores reference/u32 pairs: for each operand entity, an endpoint selector with 0 for no endpoint, 1 for the start point, and 2 for the end point.
+
+In segment major versions 23 and 25, a midpoint constraint (`bf70e821`) ends with one more u32 value.
 
 The constraint types are listed below by their first four identifier bytes. Types `944d8790` through `994d8790` have the same remaining 12 identifier bytes as the planar-sketch type. Each type then stores the fields named.
 
@@ -408,11 +414,11 @@ A coincident relation between a point and a bounded entity binds the entity's st
 
 ## 13. Feature records
 
-For segment major versions 15 through 22, PmDc type `914d8790d011f8d10008cabc0663dc09` stores one feature record. Its fixed prefix contains the 22-byte content header, `state:i32`, `outline_value:u32`, and a type-2 property-reference list prefix. The ordered property references follow the list metadata. A final u32 value follows the reference list and ends the record.
+For segment major versions 15 through 23 and 25, PmDc type `914d8790d011f8d10008cabc0663dc09` stores one feature record. Its fixed prefix contains the 22-byte content header, `state:i32`, `outline_value:u32`, and a type-2 property-reference list prefix. The ordered property references follow the list metadata. A final u32 value follows the reference list and ends the record.
 
 PmDc type `24fd418fd211ac6e00082aab32a3dc09` stores an end-of-features record. Its 26-byte payload contains the 22-byte content header followed by `state:i32`.
 
-Feature property records use the same 22-byte content header. The following enumeration records add `type_value:i16` and `value:u16` and then end:
+Feature property records use the extended content header. The following enumeration records add `type_value:i16` and `value:u16` and then end:
 
 - `28be9a72d111440900084eba32a3dc09`: part operation;
 - `297d6392d1113cb9000831bd0663dc09`: extent;
@@ -422,7 +428,7 @@ Feature property records use the same 22-byte content header. The following enum
 
 Type `3200aa7dd2112b836000f3a89dccefb0` stores the chamfer form. It adds the same `type_value:i16` and `value:u16` fields, followed by a zero u32 terminal value.
 
-The part-operation, extent, hole-form, fillet-form, and chamfer-form records use type values 5, 11, 3, 2, and 2 respectively.
+The part-operation, extent, hole-form, fillet-form, and chamfer-form records use type values 5, 11, 3, 2, and 2 respectively. An extent record can also use type value 12; its extent values have the same meanings.
 
 Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
 
@@ -457,7 +463,7 @@ entity_type u32
 
 The body reference selects a PmDc kernel-body record of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link.
 
-Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`. An edge item with an empty index-reference list has content-header flag bit 2 (`0x4`) set and references no edge. A fillet, corner-round, or chamfer edge collection selects the edges of its edge items that have an index reference.
+Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Segment major versions 23 and 25 add one final u32 value. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`. An edge item with an empty index-reference list has content-header flag bit 2 (`0x4`) set and references no edge. A fillet, corner-round, or chamfer edge collection selects the edges of its edge items that have an index reference.
 
 Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges.
 
@@ -469,7 +475,7 @@ The extent-7 target is the work plane in slot 11, or the model face recorded by 
 
 Type `fd24893dd211fa99000840ab0663dc09` is a termination flag. It adds one `value:u8` after the content header. A face target requires value 1.
 
-Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
+Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references (four in segment major versions 23 and 25), `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
 
 Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
 

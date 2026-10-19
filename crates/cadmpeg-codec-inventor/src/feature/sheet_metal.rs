@@ -106,7 +106,7 @@ pub(super) fn parse_sheet_metal_property(
     let (count, state_count) = family.layout();
     let total = count + usize::from(state_count > 0);
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, crate::pmdc::extended(version))?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(total),
         "admit Inventor sheet-metal property references",
@@ -214,7 +214,7 @@ pub(super) fn parse_group(
         }
     };
     let mut cursor = Cursor::new(source);
-    let header = content_header(&mut cursor)?;
+    let header = content_header(&mut cursor, 0)?;
     let value = cursor.i32("sheet-metal group value")?;
     let members = reference_list(ctx, &mut cursor, 2, "sheet-metal group members")?;
     let terminal = cursor.u32("sheet-metal group terminal value")?;

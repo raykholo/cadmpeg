@@ -5,5 +5,6 @@ mod cones;
 mod reports;
 pub(crate) mod round_trips;
 mod targets;
+mod uncertainty;
 
 mod ownership;

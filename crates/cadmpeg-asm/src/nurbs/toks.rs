@@ -715,6 +715,8 @@ pub struct SubtypeTable {
     /// The stream's ASM save format version from the `asmheader` record. Tokens
     /// omit this value, so the table carries it into token-space decoders.
     save_format_version: Option<u32>,
+    /// The analytic pcurve charts of the embedding format's carriers.
+    pcurve_charts: crate::nurbs::proc_curve::PcurveCharts,
 }
 
 impl SubtypeTable {
@@ -741,6 +743,7 @@ impl SubtypeTable {
         Ok(Self {
             defs,
             save_format_version: None,
+            pcurve_charts: crate::nurbs::proc_curve::PcurveCharts::Standard,
         })
     }
 
@@ -754,6 +757,18 @@ impl SubtypeTable {
     /// The stream's ASM save format version, when known.
     pub(super) fn save_format_version(&self) -> Option<u32> {
         self.save_format_version
+    }
+
+    /// Read analytic pcurve charts under `charts`.
+    #[must_use]
+    pub fn with_pcurve_charts(mut self, charts: crate::nurbs::proc_curve::PcurveCharts) -> Self {
+        self.pcurve_charts = charts;
+        self
+    }
+
+    /// The analytic pcurve charts of this stream's carriers.
+    pub(crate) fn pcurve_charts(&self) -> crate::nurbs::proc_curve::PcurveCharts {
+        self.pcurve_charts
     }
 
     /// The balanced scope of definition `index`, sliced from its owning record.

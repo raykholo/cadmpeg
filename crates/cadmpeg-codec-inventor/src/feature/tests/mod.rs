@@ -409,6 +409,7 @@ pub(super) fn test_header() -> PmDcContentHeader {
         flags: 0,
         context: reference(0),
         source_index: 0,
+        extension: Vec::new(),
     }
 }
 
@@ -418,6 +419,7 @@ fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProp
             save_version_major: 16,
             header: test_header(),
             kind,
+            tail: None,
         },
         crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
             .expect("test GUID"),
@@ -537,6 +539,7 @@ fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
                 flags: 0,
                 context: reference(0),
                 source_index: ordinal,
+                extension: Vec::new(),
             },
             name: format!("p{ordinal}"),
             name_value: 0,
