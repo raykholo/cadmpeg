@@ -109,8 +109,24 @@ pub(crate) struct PmAppRenderingStyle<'a> {
     pub(crate) comment: String,
     pub(crate) long_name: String,
     pub(crate) extension: Option<RenderingStyleExtension>,
+    pub(crate) inline_colors: Option<RenderingStyleColors>,
     pub(crate) suffix: View<'a>,
 }
+
+/// The lighting colours a current rendering style stores inline at the start
+/// of its retained suffix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RenderingStyleColors {
+    pub(crate) ambient: [cadmpeg_ir::scalar::FiniteBinary32; 4],
+    pub(crate) diffuse: [cadmpeg_ir::scalar::FiniteBinary32; 4],
+    pub(crate) specular: [cadmpeg_ir::scalar::FiniteBinary32; 4],
+    pub(crate) emissive: [cadmpeg_ir::scalar::FiniteBinary32; 4],
+    pub(crate) shininess: cadmpeg_ir::scalar::FiniteBinary32,
+}
+
+/// Byte length of the inline lighting block: four RGBA `f32` vectors and an
+/// `f32` shininess.
+const RENDERING_STYLE_COLORS_LEN: usize = 4 * 16 + 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RenderingStyleExtension {
@@ -243,76 +259,95 @@ fn project_default_bindings(
         });
     }
     let style = selected[0];
-    let Some(asset_guid) = style
+    let asset_guid = style
         .extension
         .as_ref()
         .map(|extension| extension.asset_guid.as_str())
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(PresentationProjection {
-            appearances: Vec::new(),
-            bindings: Vec::new(),
-            unresolved_defaults: 1,
-            unresolved_face_overrides: BTreeMap::new(),
-        });
-    };
+        .filter(|value| !value.is_empty());
     let library_id = style
         .extension
         .as_ref()
         .map(|extension| extension.asset_library_id.as_str());
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(appearances.len()),
-        "match Inventor default appearances",
-    )?;
-    let matching_count = appearances
-        .iter()
-        .filter(|appearance| {
-            appearance
-                .asset_guid
-                .as_deref()
-                .is_some_and(|value| value.eq_ignore_ascii_case(asset_guid))
-        })
-        .filter(|appearance| match library_id {
-            Some(value) if !value.is_empty() => appearance
-                .library_id
-                .as_deref()
-                .is_some_and(|library| library.eq_ignore_ascii_case(value)),
-            _ => true,
-        })
-        .count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(matching_count),
-        "match Inventor default appearance",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(appearances.len()),
-        "collect Inventor default appearances",
-    )?;
-    let matches = appearances
-        .iter()
-        .filter(|appearance| {
-            appearance
-                .asset_guid
-                .as_deref()
-                .is_some_and(|value| value.eq_ignore_ascii_case(asset_guid))
-        })
-        .filter(|appearance| match library_id {
-            Some(value) if !value.is_empty() => appearance
-                .library_id
-                .as_deref()
-                .is_some_and(|library| library.eq_ignore_ascii_case(value)),
-            _ => true,
-        })
-        .collect::<Vec<_>>();
-    if matches.len() != 1 {
-        return Ok(PresentationProjection {
-            appearances: Vec::new(),
-            bindings: Vec::new(),
-            unresolved_defaults: 1,
-            unresolved_face_overrides: BTreeMap::new(),
-        });
-    }
-    let appearance = &matches[0].id;
+    let catalog_matches = match asset_guid {
+        Some(asset_guid) => {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(appearances.len()),
+                "match Inventor default appearances",
+            )?;
+            let matching_count = appearances
+                .iter()
+                .filter(|appearance| catalog_join(appearance, asset_guid, library_id))
+                .count();
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(matching_count),
+                "match Inventor default appearance",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(appearances.len()),
+                "collect Inventor default appearances",
+            )?;
+            appearances
+                .iter()
+                .filter(|appearance| catalog_join(appearance, asset_guid, library_id))
+                .collect::<Vec<_>>()
+        }
+        None => Vec::new(),
+    };
+    let mut style_appearances = Vec::new();
+    let appearance = match catalog_matches.as_slice() {
+        [single] => single
+            .id
+            .try_clone_for_decode(ctx, "retain Inventor default appearance id")?,
+        [] => {
+            // No catalog asset: the style's own inline diffuse colour is the
+            // part colour.
+            let Some(color) = style.inline_colors.and_then(|colors| {
+                let [r, g, b, a] = colors.diffuse.map(cadmpeg_ir::scalar::FiniteBinary32::get);
+                Color::new(r, g, b, a)
+            }) else {
+                return Ok(unresolved_default_projection());
+            };
+            ctx.charge_collection_items(1, "project Inventor rendering-style appearance")?;
+            ctx.charge_entities(1, "project Inventor rendering-style appearance")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(
+                    "inventor:presentation:style-color#".len()
+                        + style.identity.segment_token.as_str().len()
+                        + 11
+                        + style.name.len()
+                        + "InventorRenderingStyle".len(),
+                ),
+                "retain Inventor rendering-style appearance",
+            )?;
+            let id = {
+                let mut copied_storage =
+                    ctx.reserve_scoped(0, "compose Inventor rendering-style appearance key")?;
+                copied_storage.with_storage(|| {
+                    Ok::<_, CodecError>(AppearanceId::compose(
+                        &cadmpeg_ir::identity_namespace!("inventor", "presentation", "style-color"),
+                        style.identity.key(ctx)?,
+                    ))
+                })
+            }?;
+            style_appearances.push(Appearance {
+                id: id
+                    .try_clone_for_decode(ctx, "retain Inventor rendering-style appearance id")?,
+                name: (!style.name.is_empty()).then(|| style.name.clone()),
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: Some("InventorRenderingStyle".into()),
+                category: None,
+                base_color: Some(color),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+            id
+        }
+        _ => return Ok(unresolved_default_projection()),
+    };
+    let appearance = &appearance;
     let mut bindings = Vec::new();
     for body in bodies {
         ctx.charge_collection_items(1, "project Inventor default appearance binding")?;
@@ -359,11 +394,36 @@ fn project_default_bindings(
         });
     }
     Ok(PresentationProjection {
-        appearances: Vec::new(),
+        appearances: style_appearances,
         bindings,
         unresolved_defaults: 0,
         unresolved_face_overrides: BTreeMap::new(),
     })
+}
+
+fn unresolved_default_projection() -> PresentationProjection {
+    PresentationProjection {
+        appearances: Vec::new(),
+        bindings: Vec::new(),
+        unresolved_defaults: 1,
+        unresolved_face_overrides: BTreeMap::new(),
+    }
+}
+
+/// Whether a catalog appearance carries the rendering style's Protein asset
+/// GUID and, when the style names one, its asset-library identifier.
+fn catalog_join(appearance: &Appearance, asset_guid: &str, library_id: Option<&str>) -> bool {
+    appearance
+        .asset_guid
+        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case(asset_guid))
+        && match library_id {
+            Some(value) if !value.is_empty() => appearance
+                .library_id
+                .as_deref()
+                .is_some_and(|library| library.eq_ignore_ascii_case(value)),
+            _ => true,
+        }
 }
 
 fn project_face_bindings(
@@ -1066,6 +1126,11 @@ fn parse_rendering_style<'a>(
         None
     };
     let suffix = cursor.remainder()?;
+    let inline_colors = if extension.is_some() {
+        parse_rendering_style_colors(suffix)
+    } else {
+        None
+    };
     Ok(PmAppRenderingStyle {
         segment_version_major: version,
         header_value,
@@ -1080,7 +1145,37 @@ fn parse_rendering_style<'a>(
         comment,
         long_name,
         extension,
+        inline_colors,
         suffix,
+    })
+}
+
+/// Reads the inline lighting block at the start of a current rendering
+/// style's suffix. A suffix shorter than the block, or a non-finite
+/// component, stores no inline colours.
+fn parse_rendering_style_colors(suffix: View<'_>) -> Option<RenderingStyleColors> {
+    if suffix.window().len() < RENDERING_STYLE_COLORS_LEN {
+        return None;
+    }
+    let mut cursor = Cursor::new(suffix);
+    let mut vector = || -> Option<[cadmpeg_ir::scalar::FiniteBinary32; 4]> {
+        let mut color = [cadmpeg_ir::scalar::FiniteBinary32::ZERO; 4];
+        for component in &mut color {
+            *component = cursor.finite_f32("rendering-style inline color").ok()?;
+        }
+        Some(color)
+    };
+    let ambient = vector()?;
+    let diffuse = vector()?;
+    let specular = vector()?;
+    let emissive = vector()?;
+    let shininess = cursor.finite_f32("rendering-style shininess").ok()?;
+    Some(RenderingStyleColors {
+        ambient,
+        diffuse,
+        specular,
+        emissive,
+        shininess,
     })
 }
 
@@ -1282,6 +1377,8 @@ fn hex(bytes: &[u8]) -> String {
 mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroUsize;
+
+    use super::{PmAppDefaultStyle, PmAppRenderingStyle, RENDERING_STYLE_COLORS_LEN};
 
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -1885,6 +1982,222 @@ mod tests {
             binding.target,
             AppearanceTarget::Body(BodyId::mint("inventor:test:body#1").expect("identity grammar"))
         );
+    }
+
+    #[test]
+    fn current_rendering_style_suffix_starts_with_inline_lighting() {
+        let bytes = rendering_style_fixture_with_colors([0.004, 0.235, 0.824, 1.0]);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic rendering style fits policy");
+
+        let style = parse_rendering_style(&ctx, root, 26).expect("rendering style parses");
+
+        let colors = style.inline_colors.expect("inline lighting block");
+        assert_eq!(
+            colors.diffuse.map(cadmpeg_ir::scalar::FiniteBinary32::get),
+            [0.004, 0.235, 0.824, 1.0]
+        );
+        assert_eq!(
+            colors.ambient.map(cadmpeg_ir::scalar::FiniteBinary32::get),
+            [0.2; 4]
+        );
+        assert_eq!(colors.shininess.get(), 51.5);
+        assert_eq!(style.suffix.window().len(), RENDERING_STYLE_COLORS_LEN + 2);
+    }
+
+    #[test]
+    fn a_short_or_non_finite_inline_block_stores_no_inline_color() {
+        let arena = DecodeArena::new();
+        let short = rendering_style_fixture();
+        let (ctx, root) = DecodeContext::from_root_bytes(&short, &arena, &DecodePolicy::default())
+            .expect("synthetic rendering style fits policy");
+        let style = parse_rendering_style(&ctx, root, 26).expect("rendering style parses");
+        assert!(style.inline_colors.is_none());
+
+        let mut bytes = rendering_style_fixture_with_colors([0.5; 4]);
+        let diffuse = bytes.len() - 2 - RENDERING_STYLE_COLORS_LEN + 16;
+        bytes[diffuse..diffuse + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic rendering style fits policy");
+        let style = parse_rendering_style(&ctx, root, 26).expect("rendering style parses");
+        assert!(style.inline_colors.is_none());
+    }
+
+    #[test]
+    fn default_style_without_catalog_asset_binds_its_inline_color() {
+        let mut style_bytes = rendering_style_fixture_with_colors([1.0, 0.0, 0.0, 1.0]);
+        blank_fixture_asset_guid(&mut style_bytes);
+        let default_bytes = default_style_fixture();
+        let arena = DecodeArena::new();
+        let (_, default_root) =
+            DecodeContext::from_root_bytes(&default_bytes, &arena, &DecodePolicy::default())
+                .expect("synthetic default style fits policy");
+        let arena = DecodeArena::new();
+        let (ctx, style_root) =
+            DecodeContext::from_root_bytes(&style_bytes, &arena, &DecodePolicy::default())
+                .expect("synthetic rendering style fits policy");
+        let style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
+        assert_eq!(
+            style
+                .extension
+                .as_ref()
+                .map(|value| value.asset_guid.as_str()),
+            Some("")
+        );
+        let inventory = default_inventory(
+            parse_default_style(&ctx, default_root, 26).expect("default parses"),
+            style,
+        );
+        let body = BodyId::mint("inventor:test:body#1").expect("identity grammar");
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+        let projection =
+            project_default_bindings(&ctx, &inventory, &[], std::slice::from_ref(&body))
+                .expect("default binding projection");
+
+        assert_eq!(projection.unresolved_defaults, 0);
+        let [appearance] = projection.appearances.as_slice() else {
+            panic!("one inline-color appearance must be projected");
+        };
+        assert_eq!(appearance.name.as_deref(), Some("Steel"));
+        assert_eq!(appearance.schema.as_deref(), Some("InventorRenderingStyle"));
+        assert_eq!(appearance.base_color, Color::new(1.0, 0.0, 0.0, 1.0));
+        let [binding] = projection.bindings.as_slice() else {
+            panic!("one body binding must be projected");
+        };
+        assert_eq!(binding.appearance, appearance.id);
+        assert_eq!(binding.target, AppearanceTarget::Body(body));
+    }
+
+    #[test]
+    fn catalog_asset_takes_precedence_over_inline_color() {
+        let style_bytes = rendering_style_fixture_with_colors([1.0, 0.0, 0.0, 1.0]);
+        let default_bytes = default_style_fixture();
+        let arena = DecodeArena::new();
+        let (_, default_root) =
+            DecodeContext::from_root_bytes(&default_bytes, &arena, &DecodePolicy::default())
+                .expect("synthetic default style fits policy");
+        let arena = DecodeArena::new();
+        let (ctx, style_root) =
+            DecodeContext::from_root_bytes(&style_bytes, &arena, &DecodePolicy::default())
+                .expect("synthetic rendering style fits policy");
+        let style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
+        let inventory = default_inventory(
+            parse_default_style(&ctx, default_root, 26).expect("default parses"),
+            style,
+        );
+        let catalog = |id: &str| Appearance {
+            id: AppearanceId::mint(id).expect("identity grammar"),
+            name: None,
+            asset_guid: Some("d3c6130d-6c0f-4525-b268-53517ab46a78".into()),
+            library_id: Some("afefc330-5e61-4e24-814f-ae810148b79d".into()),
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        };
+        let body = BodyId::mint("inventor:test:body#1").expect("identity grammar");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("projection context");
+
+        let unique = project_default_bindings(
+            &ctx,
+            &inventory,
+            &[catalog("inventor:test:appearance#1")],
+            std::slice::from_ref(&body),
+        )
+        .expect("default binding projection");
+        assert!(unique.appearances.is_empty());
+        assert_eq!(
+            unique
+                .bindings
+                .first()
+                .map(|binding| binding.appearance.as_str()),
+            Some("inventor:test:appearance#1")
+        );
+
+        let ambiguous = project_default_bindings(
+            &ctx,
+            &inventory,
+            &[
+                catalog("inventor:test:appearance#1"),
+                catalog("inventor:test:appearance#2"),
+            ],
+            std::slice::from_ref(&body),
+        )
+        .expect("default binding projection");
+        assert_eq!(ambiguous.unresolved_defaults, 1);
+        assert!(ambiguous.bindings.is_empty());
+        assert!(ambiguous.appearances.is_empty());
+    }
+
+    fn default_inventory<'a>(
+        default: PmAppDefaultStyle<'a>,
+        style: PmAppRenderingStyle<'a>,
+    ) -> PresentationInventory<'a> {
+        let token = || {
+            cadmpeg_ir::identity_key!("segment")
+                .try_clone_for_decode(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "Inventor located fixture token",
+                )
+                .expect("service fixture token")
+        };
+        PresentationInventory {
+            default_styles: vec![Located::new(
+                default,
+                crate::record_identity::RecordTypeId::from_bytes(DEFAULT_STYLE_TYPE),
+                token(),
+                0,
+            )],
+            rendering_styles: vec![Located::new(
+                style,
+                crate::record_identity::RecordTypeId::from_bytes(RENDERING_STYLE_TYPE),
+                token(),
+                8,
+            )],
+            graphics_faces: Vec::new(),
+            graphics_style_collections: Vec::new(),
+            graphics_primary_color_styles: Vec::new(),
+            issues: Vec::new(),
+        }
+    }
+
+    /// The rendering-style fixture with an inline lighting block (ambient
+    /// 0.2, the given diffuse, unit specular, zero emissive, shininess 51.5)
+    /// before its two retained suffix bytes.
+    fn rendering_style_fixture_with_colors(diffuse: [f32; 4]) -> Vec<u8> {
+        let mut bytes = rendering_style_fixture();
+        bytes.truncate(bytes.len() - 2);
+        for color in [[0.2; 4], diffuse, [1.0; 4], [0.0, 0.0, 0.0, 1.0]] {
+            for component in color {
+                bytes.extend(component.to_le_bytes());
+            }
+        }
+        bytes.extend(51.5_f32.to_le_bytes());
+        bytes.extend([0xaa, 0x55]);
+        bytes
+    }
+
+    /// Rewrites the fixture's Protein asset GUID text as an empty string.
+    fn blank_fixture_asset_guid(bytes: &mut Vec<u8>) {
+        let guid = "d3c6130d-6c0f-4525-b268-53517ab46a78"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let start = bytes
+            .windows(guid.len())
+            .position(|window| window == guid.as_slice())
+            .expect("fixture stores the asset GUID");
+        let count = start - 4;
+        bytes.splice(count..start + guid.len(), 0_u32.to_le_bytes());
     }
 
     fn default_style_fixture() -> Vec<u8> {
