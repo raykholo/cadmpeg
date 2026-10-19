@@ -170,6 +170,58 @@ An operand normally selects an `AmDc` operand record with type identifier `52ce1
 
 A parameter selects an `AmDc` parameter-role record with type identifier `e1c68e253d4f5330cc0627af509ee444`. Its 16-byte payload contains `header_value:u32`, `header_id:u16`, `role:u16`, `parameter_reference:u32`, and u32 zero. `parameter_reference` selects a numeric parameter record of section 11 in the same segment. The low byte of `role` is 3 for a length, 4 for an angle, and 5 for a ratio. A high byte of 0 selects the constraint value. High bytes 1 and 2 select the two limit parameters.
 
+### 9.2 Constraint operand selection keys
+
+Each operand geometry record of section 9.1 is the `geometry_reference` target of exactly one selection-key record in the same `AmDc` segment, or of none. The key record type gives what the operand selects. Key records share the 26-byte prefix `header_value:u32`, `header_id:u16`, `next_reference:u32`, `flags:u32`, `context_reference:u32`, `source_index:u32`, and `state:i32`.
+
+A key string is a counted UTF-16LE string `<kind>Segment::<segment>:<revision>:<number>`. `<kind>` is `PmDC` for the design segment of a part document and `AmDc` for the design segment of an assembly document. `<segment>` is the RSe token of that design segment in the referenced document, so it selects the referenced document's `PmDCSegment` or `AmDcSegment` pair. `<number>` is ASCII decimal digits. The meaning of `<revision>` and `<number>` is not established. Each key string is followed by a counted UTF-16LE occurrence key.
+
+A record with type identifier `564d8790d011f8d10008cabc0663dc09` selects a face of the referenced document, and the plane operand is the plane of that face. A record with type identifier `f32cee1dd111efb26000c8b1f1bc87b0` selects a face whose axis is the line operand. After the prefix both contain:
+
+```text
+key_form u16 = 0x0500
+reserved u32 = 0
+key counted UTF-16LE
+occurrence_key counted UTF-16LE
+value_marker u16 = 1
+values u32, u32 = 0, u32
+empty list u16 8, u16 0x3000, u32 0
+empty list u16 8, u16 0x3000, u32 0
+state u8 = 0
+face_marker u8 = 1                 type 564d8790 only
+geometry_reference u32
+face_trailer u32 = 0               type 564d8790 only
+name_map_reference u32
+name_key u32
+```
+
+The record ends after `name_key`. `name_map_reference` selects a name-map record with type identifier `4220e9ccd111c5710008a7ba32a3dc09`. Its payload is `header_value:u32`, `header_id:u16`, u32 zero, `largest_key:u32`, `count:u32`, and `count` pairs of `key:u32` and `name_reference:u32`. Keys ascend strictly and the last key equals `largest_key`. The pair whose key equals `name_key` selects the naming record of the face.
+
+A naming record with type identifier `fdd5bd47d34aa6b6ed0a11a3138fd1af` names a face of an imported B-rep:
+
+```text
+header_value u32
+header_id u16
+form u16 = 5
+reserved u16 = 0
+occurrence_path reference list, marker 2, of occurrence identifiers
+gap bytes[20] = 0
+span u32 = 180
+reserved u32 = 0
+class list u16 2, u16 0x3000, u32 1, u32 1, u32 0x10000000, u32 15
+null i32 = -1
+reserved u32 = 0
+group_count u32
+groups: width u32, (width - 1) i32 values, separator u32 = 0
+terminator u32 = 0
+```
+
+`width` is at least 2. The record ends after the terminator. The face it names is the face of the referenced part whose `NMx_Import_Brep_tag` naming-matching attribute stores the same group count, groups, separators, and terminator after its leading `15, -1` values. Other naming-record types (`205fa956d111af49000887ba32a3dc09`, `a5c245062846bbe61da9eda12072ce35`, `7a260eaed211715d60007eb71269f1b0`, `341b896fc649bafd4aaecf8eec120897`, `1974ba075a47ca63be91488d91a45491`) name faces and edges of modeled parts; their grammars are not established.
+
+A record with type identifier `61b8480cd2110541600093b7b035c3b0` selects a work feature. After the prefix it contains `geometry_reference:u32`, `local:u8`, and `tag:u8 = 5`. When `local` is 1, `target_reference:u32` selects a geometry record of the current assembly, `target_source_index:u32` equals that record's `source_index`, and u32 zero ends the record. When `local` is 0, the record continues with u32 zero, a key string, an occurrence key, u16 1, `source_index:u32`, and u32 zero, which ends the record. The key's `<kind>` is `PmDC` for a part work feature and `AmDc` for a subassembly work feature, and `source_index` equals the `source_index` of the work-feature record in that design segment.
+
+An operand geometry record stores the selected geometry in the coordinates of the referenced document, in centimetres. A plane record ends with nine f64 values: origin, then the first and second in-plane directions; their cross product is the outward normal of the selected face. A line record stores its origin and direction as six f64 values at payload offset 50, followed by one byte.
+
 ## 10. Part appearance assignments
 
 A `PmApp` record with type identifier `cdecfb11d1116b250008ebbb21eddc09` stores the document-default style references. For segment major versions above 19, its 55-byte payload contains:
