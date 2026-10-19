@@ -9,7 +9,7 @@
 
 #[cfg(any(test, feature = "test-support"))]
 use crate::kernel_header::RefWidth;
-use crate::nurbs::reader::{checked_knot_layout, BsplineMarker, Nullable};
+use crate::nurbs::reader::{checked_knot_layout_of, BsplineMarker, Nullable};
 use crate::sab::Token;
 
 /// A cursor over one record's payload tokens.
@@ -241,25 +241,17 @@ pub(super) fn take_knot_table(
     if let Err(error) = ctx.charge_work(work, "read ASM unique knot pairs") {
         return Some(Err(error));
     }
-    let mut scratch = match ctx.reserve_scoped(0, "ASM knot expansion inputs") {
-        Ok(scratch) => scratch,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut values = match scratch.with_storage(|| ctx.collection_vec(n, "ASM unique knot values"))
-    {
-        Ok(values) => values,
-        Err(error) => return Some(Err(error)),
-    };
-    let mut mults = match scratch.with_storage(|| ctx.collection_vec(n, "ASM knot multiplicities"))
-    {
-        Ok(mults) => mults,
-        Err(error) => return Some(Err(error)),
-    };
-    for _ in 0..n {
-        values.push(cur.take_f64()?);
-        mults.push(cur.take_long()?);
-    }
-    let expansion = checked_knot_layout(&mults, degree)?;
+    // Lay the expansion out from a first pass over the pairs, then expand from
+    // a second pass: only the retained expanded vector is admitted.
+    let mut probe = *cur;
+    let expansion = checked_knot_layout_of(
+        (0..n).map(|_| {
+            probe.take_f64()?;
+            probe.take_long()
+        }),
+        n,
+        degree,
+    )?;
     if let Err(error) = ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(expansion.expanded_len()),
         "expand ASM knots",
@@ -270,11 +262,13 @@ pub(super) fn take_knot_table(
         Ok(expanded) => expanded,
         Err(error) => return Some(Err(error)),
     };
-    for (index, (value, multiplicity)) in values.iter().zip(&mults).enumerate() {
-        let run_length = usize::try_from(*multiplicity).ok()?
-            + usize::from(index == 0 || index + 1 == mults.len());
+    for index in 0..n {
+        let value = cur.take_f64()?;
+        let multiplicity = cur.take_long()?;
+        let run_length =
+            usize::try_from(multiplicity).ok()? + usize::from(index == 0 || index + 1 == n);
         for _ in 0..run_length {
-            expanded.push(*value);
+            expanded.push(value);
         }
     }
     Some(Ok((expanded, expansion.n_poles)))
@@ -948,6 +942,34 @@ mod tests {
 
     fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
         with_ctx(|ctx| cache_scope_ctx(ctx, toks).transpose().unwrap())
+    }
+
+    /// A clamped cubic table `0 x3, 1 x3` expands to eight knots and admits
+    /// exactly those eight items: the unique pairs are not kept.
+    #[test]
+    fn knot_table_admits_only_the_expanded_knots() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let tokens = [
+            Token::Double(0.0),
+            Token::Long(3),
+            Token::Double(1.0),
+            Token::Long(3),
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut cur = Cur::at(&tokens, 0);
+        let (knots, n_poles) = super::take_knot_table(&ctx, &mut cur, 2, 3)
+            .expect("a valid table")
+            .expect("eight items fit the budget");
+        assert_eq!(knots, [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(n_poles, 4);
+        assert_eq!(cur.pos(), tokens.len());
+        assert!(
+            ctx.charge_collection_items(1, "probe").is_err(),
+            "the table used exactly eight items"
+        );
     }
 
     #[test]

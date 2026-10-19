@@ -522,7 +522,7 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
             )
         })
         .collect();
-    let error = with_collection_limit(18, |ctx| {
+    let error = with_collection_limit(14, |ctx| {
         let table = nurbs::toks::SubtypeTable::from_records(ctx, &records)
             .expect("subtype table fits limit");
         let mut out = AsmBrep::default();
