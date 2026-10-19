@@ -10,6 +10,11 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::records::RseRecordFrame;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+mod selection;
+
+use selection::SelectionKey;
+pub(crate) use selection::{OperandSelection, ProjectionHint};
+
 pub(super) const CONSTRAINT_TYPE: [u8; 16] = [
     0x47, 0xf0, 0x86, 0x4e, 0xd1, 0x11, 0xc3, 0x6c, 0x00, 0x08, 0x5c, 0xbb, 0x0f, 0xed, 0xdc, 0x09,
 ];
@@ -103,6 +108,9 @@ pub(crate) struct ConstraintOperandRecord {
     pub(crate) geometry: Option<OperandGeometry>,
     /// `occurrence_id` of the occurrence that owns the operand geometry.
     pub(crate) occurrence_id: Option<u32>,
+    /// What the operand's selection key names (section 9.2).
+    pub(crate) projection_hint: Option<ProjectionHint>,
+    pub(crate) selection: Option<OperandSelection>,
 }
 
 /// One parameter of a constraint, resolved through its parameter-role record.
@@ -175,6 +183,28 @@ pub(crate) fn inventory(
             continue;
         };
         let token = segment.pair.token.as_str();
+        let mut keys = Vec::new();
+        for record in &table.records {
+            let result = match record.type_id {
+                selection::FACE_KEY_TYPE => selection::parse_face_key(ctx, record, false),
+                selection::FACE_AXIS_KEY_TYPE => selection::parse_face_key(ctx, record, true),
+                selection::WORK_FEATURE_KEY_TYPE => selection::parse_work_feature_key(ctx, record),
+                _ => continue,
+            };
+            ctx.charge_work(1, "scan Inventor constraint selection key")?;
+            let result = result.and_then(|mut key| {
+                name_face_key(ctx, &mut key, &table.records)?;
+                Ok(key)
+            });
+            match result {
+                Ok(key) => {
+                    ctx.charge_collection_items(1, "admit Inventor constraint selection key")?;
+                    keys.push(key);
+                }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => push_issue(ctx, &mut issues, segment, record.ordinal, error)?,
+            }
+        }
         for record in &table.records {
             if record.type_id != CONSTRAINT_TYPE {
                 continue;
@@ -188,6 +218,7 @@ pub(crate) fn inventory(
                     &payload,
                     &table.records,
                     occurrences,
+                    &keys,
                 )
             });
             match result {
@@ -196,24 +227,71 @@ pub(crate) fn inventory(
                     constraints.push(constraint);
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => {
-                    ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
-                    ctx.charge_entities(1, "admit Inventor assembly issue")?;
-                    ctx.charge_formatted_retained(
-                        format_args!("{error}"),
-                        "retain Inventor assembly issue detail",
-                    )?;
-                    issues.push(RecordIssue {
-                        family: RecordIssueFamily::Assembly,
-                        segment_token: segment.pair.token.key().clone(),
-                        record_ordinal: record.ordinal,
-                        detail: crate::issue_detail(error)?,
-                    });
-                }
+                Err(error) => push_issue(ctx, &mut issues, segment, record.ordinal, error)?,
             }
         }
     }
     Ok((constraints, issues))
+}
+
+fn push_issue(
+    ctx: &DecodeContext<'_>,
+    issues: &mut Vec<RecordIssue>,
+    segment: &crate::rse::SegmentDescriptor<'_>,
+    record_ordinal: u32,
+    error: CodecError,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
+    ctx.charge_entities(1, "admit Inventor assembly issue")?;
+    ctx.charge_formatted_retained(
+        format_args!("{error}"),
+        "retain Inventor assembly issue detail",
+    )?;
+    issues.push(RecordIssue {
+        family: RecordIssueFamily::Assembly,
+        segment_token: segment.pair.token.key().clone(),
+        record_ordinal,
+        detail: crate::issue_detail(error)?,
+    });
+    Ok(())
+}
+
+/// Follows a face key through its name map to the naming record.
+fn name_face_key(
+    ctx: &DecodeContext<'_>,
+    key: &mut SelectionKey,
+    records: &[RseRecordFrame<'_>],
+) -> Result<(), CodecError> {
+    let OperandSelection::Face {
+        name_map_reference,
+        name_key,
+        name_record,
+        name_type,
+        imported_name,
+        ..
+    } = &mut key.selection
+    else {
+        return Ok(());
+    };
+    let Some(map) =
+        target(records, *name_map_reference).filter(|map| map.type_id == selection::NAME_MAP_TYPE)
+    else {
+        return Ok(());
+    };
+    let Some(name) = selection::name_map_lookup(ctx, map.payload, *name_key)?
+        .and_then(|reference| target(records, reference))
+    else {
+        return Ok(());
+    };
+    *name_record = Some(name.ordinal);
+    *name_type = Some(ctx.format_retained(
+        format_args!("{}", crate::pmdc::type_id_string(name.type_id)),
+        "retain Inventor constraint name type",
+    )?);
+    if name.type_id == selection::IMPORTED_FACE_NAME_TYPE {
+        *imported_name = Some(selection::imported_face_name(ctx, name.payload)?);
+    }
+    Ok(())
 }
 
 pub(super) fn parse(
@@ -330,6 +408,7 @@ fn resolve(
     payload: &ConstraintPayload,
     records: &[RseRecordFrame<'_>],
     occurrences: &[super::AssemblyOccurrence],
+    keys: &[SelectionKey],
 ) -> Result<AssemblyConstraintRecord, CodecError> {
     let mut operands = ctx.vector_storage(
         payload.operands.len(),
@@ -342,6 +421,7 @@ fn resolve(
             *reference,
             records,
             occurrences,
+            keys,
         )?);
     }
     let mut parameters = ctx.vector_storage(
@@ -386,6 +466,7 @@ fn resolve_operand(
     reference: PmDcReference,
     records: &[RseRecordFrame<'_>],
     occurrences: &[super::AssemblyOccurrence],
+    keys: &[SelectionKey],
 ) -> Result<ConstraintOperandRecord, CodecError> {
     let mut operand = ConstraintOperandRecord {
         reference,
@@ -394,6 +475,8 @@ fn resolve_operand(
         geometry_type: None,
         geometry: None,
         occurrence_id: None,
+        projection_hint: None,
+        selection: None,
     };
     let Some(record) = target(records, reference) else {
         return Ok(operand);
@@ -440,6 +523,23 @@ fn resolve_operand(
             (Some(owner), None) => Some(owner.occurrence_id),
             _ => None,
         };
+    }
+    if let Some(geometry) = geometry_reference.record_ordinal() {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(keys.len()),
+            "join Inventor constraint selection key",
+        )?;
+        let mut matches = keys
+            .iter()
+            .filter(|key| key.geometry_ordinal == Some(geometry));
+        if let (Some(key), None) = (matches.next(), matches.next()) {
+            ctx.charge_retained(
+                selection::retained_len(&key.selection),
+                "retain Inventor constraint operand selection",
+            )?;
+            operand.projection_hint = Some(key.hint);
+            operand.selection = Some(key.selection.clone());
+        }
     }
     operand.occurrence_reference =
         (occurrence_reference.index() != 0).then_some(occurrence_reference);

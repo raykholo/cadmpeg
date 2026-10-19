@@ -3,9 +3,15 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_core::CodecError;
 
+use super::selection::{
+    imported_face_name, name_map_lookup, parse_face_key, parse_work_feature_key, KeySegmentKind,
+    FACE_AXIS_KEY_TYPE, FACE_KEY_TYPE, IMPORTED_FACE_NAME_TYPE, NAME_MAP_TYPE,
+    WORK_FEATURE_KEY_TYPE,
+};
 use super::{
-    parse, resolve, ConstraintKind, OperandGeometry, CONSTRAINT_TYPE, LINE_TYPE,
-    OCCURRENCE_INSTANCE_TYPE, OPERAND_TYPE, PARAMETER_ROLE_TYPE, PLANE_TYPE,
+    name_face_key, parse, resolve, ConstraintKind, OperandGeometry, OperandSelection,
+    ProjectionHint, CONSTRAINT_TYPE, LINE_TYPE, OCCURRENCE_INSTANCE_TYPE, OPERAND_TYPE,
+    PARAMETER_ROLE_TYPE, PLANE_TYPE,
 };
 use crate::assembly::AssemblyOccurrence;
 use crate::pmdc::PmDcReference;
@@ -200,8 +206,8 @@ fn resolves_operands_parameters_and_the_occurrence() {
         occurrence_id: 77,
     }];
     let payload = parse(&ctx, records[0].payload).expect("mate record");
-    let record =
-        resolve(&ctx, "segment", 0, &payload, &records, &occurrences).expect("resolved constraint");
+    let record = resolve(&ctx, "segment", 0, &payload, &records, &occurrences, &[])
+        .expect("resolved constraint");
     assert_eq!(record.id, "inventor:assembly:constraint#segment-0");
     let [assembly, part] = record.operands.as_slice() else {
         panic!("two operands");
@@ -238,7 +244,7 @@ fn operands_without_an_operand_record_stay_unresolved() {
         test_frame(1, [1; 16], View::over_retained(&other)),
     ];
     let payload = parse(&ctx, records[0].payload).expect("tangent record");
-    let record = resolve(&ctx, "segment", 0, &payload, &records, &[]).expect("resolved");
+    let record = resolve(&ctx, "segment", 0, &payload, &records, &[], &[]).expect("resolved");
     assert!(record
         .operands
         .iter()
@@ -250,5 +256,307 @@ fn operands_without_an_operand_record_stay_unresolved() {
         test_frame(1, OPERAND_TYPE, View::over_retained(&short[..17])),
     ];
     let payload = parse(&ctx, records[0].payload).expect("tangent record");
-    assert!(displayed(resolve(&ctx, "segment", 0, &payload, &records, &[])).contains("17 bytes"));
+    assert!(
+        displayed(resolve(&ctx, "segment", 0, &payload, &records, &[], &[])).contains("17 bytes")
+    );
+}
+
+fn push_text(bytes: &mut Vec<u8>, text: &str) {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    push_u32(
+        bytes,
+        u32::try_from(units.len()).expect("fixture text fits u32"),
+    );
+    for unit in units {
+        push_u16(bytes, unit);
+    }
+}
+
+fn key_header(bytes: &mut Vec<u8>) {
+    push_u32(bytes, 0);
+    push_u16(bytes, 0x120);
+    push_u32(bytes, 0);
+    push_u32(bytes, 0x0200);
+    push_u32(bytes, QUALIFIED | 3);
+    push_u32(bytes, 0x36);
+    push_u32(bytes, u32::MAX);
+}
+
+const PART_KEY: &str = "PmDCSegment::partsegment:revision:6";
+
+fn face_key_bytes(axis: bool, geometry: u32, map: u32, name: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    key_header(&mut bytes);
+    push_u16(&mut bytes, 0x0500);
+    push_u32(&mut bytes, 0);
+    push_text(&mut bytes, PART_KEY);
+    push_text(&mut bytes, "10");
+    push_u16(&mut bytes, 1);
+    push_u32(&mut bytes, 2);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 2);
+    for _ in 0..2 {
+        push_u16(&mut bytes, 8);
+        push_u16(&mut bytes, 0x3000);
+        push_u32(&mut bytes, 0);
+    }
+    bytes.push(0);
+    if !axis {
+        bytes.push(1);
+    }
+    push_u32(&mut bytes, geometry);
+    if !axis {
+        push_u32(&mut bytes, 0);
+    }
+    push_u32(&mut bytes, map);
+    push_u32(&mut bytes, name);
+    bytes
+}
+
+fn name_map_bytes(entries: &[(u32, u32)]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 0x1d);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, entries.last().map_or(0, |entry| entry.0));
+    push_u32(
+        &mut bytes,
+        u32::try_from(entries.len()).expect("fixture count"),
+    );
+    for (key, reference) in entries {
+        push_u32(&mut bytes, *key);
+        push_u32(&mut bytes, *reference);
+    }
+    bytes
+}
+
+fn imported_name_bytes(groups: &[&[i32]]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 0x121);
+    push_u16(&mut bytes, 5);
+    push_u16(&mut bytes, 0);
+    push_list(&mut bytes, &[10]);
+    bytes.extend_from_slice(&[0; 20]);
+    push_u32(&mut bytes, 180);
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 2);
+    push_u16(&mut bytes, 0x3000);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 0x1000_0000);
+    push_u32(&mut bytes, 15);
+    push_u32(&mut bytes, u32::MAX);
+    push_u32(&mut bytes, 0);
+    push_u32(
+        &mut bytes,
+        u32::try_from(groups.len()).expect("fixture count"),
+    );
+    for group in groups {
+        push_u32(
+            &mut bytes,
+            u32::try_from(group.len() + 1).expect("fixture width"),
+        );
+        for value in *group {
+            push_u32(&mut bytes, u32::from_le_bytes(value.to_le_bytes()));
+        }
+        push_u32(&mut bytes, 0);
+    }
+    push_u32(&mut bytes, 0);
+    bytes
+}
+
+fn work_feature_part_bytes(geometry: u32, key: &str, source_index: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    key_header(&mut bytes);
+    push_u32(&mut bytes, geometry);
+    bytes.push(0);
+    bytes.push(5);
+    push_u32(&mut bytes, 0);
+    push_text(&mut bytes, key);
+    push_text(&mut bytes, "62");
+    push_u16(&mut bytes, 1);
+    push_u32(&mut bytes, source_index);
+    push_u32(&mut bytes, 0);
+    bytes
+}
+
+fn work_feature_local_bytes(geometry: u32, target: u32, source_index: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    key_header(&mut bytes);
+    push_u32(&mut bytes, geometry);
+    bytes.push(1);
+    bytes.push(5);
+    push_u32(&mut bytes, target);
+    push_u32(&mut bytes, source_index);
+    push_u32(&mut bytes, 0);
+    bytes
+}
+
+#[test]
+fn face_keys_follow_the_name_map_to_an_imported_face_name() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let key = face_key_bytes(false, QUALIFIED | 2, QUALIFIED | 3, 8);
+    let map = name_map_bytes(&[(7, QUALIFIED | 5), (8, QUALIFIED | 4)]);
+    let name = imported_name_bytes(&[&[40, 0, 700], &[40, 0, 701]]);
+    let empty: [u8; 0] = [];
+    let records = [
+        test_frame(0, FACE_KEY_TYPE, View::over_retained(&key)),
+        test_frame(1, PLANE_TYPE, View::over_retained(&empty)),
+        test_frame(2, NAME_MAP_TYPE, View::over_retained(&map)),
+        test_frame(3, IMPORTED_FACE_NAME_TYPE, View::over_retained(&name)),
+        test_frame(4, [0; 16], View::over_retained(&empty)),
+    ];
+    let mut parsed = parse_face_key(&ctx, &records[0], false).expect("face key");
+    assert_eq!(parsed.geometry_ordinal, Some(1));
+    assert_eq!(parsed.hint, ProjectionHint::PartFace);
+    name_face_key(&ctx, &mut parsed, &records).expect("named face key");
+    let OperandSelection::Face {
+        part,
+        values,
+        name_key,
+        name_record,
+        name_type,
+        imported_name,
+        ..
+    } = &parsed.selection
+    else {
+        panic!("face selection");
+    };
+    assert_eq!(part.segment_kind, KeySegmentKind::Part);
+    assert_eq!(part.part_segment, "partsegment");
+    assert_eq!(part.revision_key, "revision");
+    assert_eq!(part.key_number, "6");
+    assert_eq!(part.occurrence_key, "10");
+    assert_eq!(*values, [2, 2]);
+    assert_eq!(*name_key, 8);
+    assert_eq!(*name_record, Some(3));
+    assert_eq!(
+        name_type.as_deref(),
+        Some("fdd5bd47d34aa6b6ed0a11a3138fd1af")
+    );
+    assert_eq!(
+        imported_name.as_deref(),
+        Some([vec![40, 0, 700], vec![40, 0, 701]].as_slice())
+    );
+
+    let axis = face_key_bytes(true, QUALIFIED | 2, QUALIFIED | 3, 7);
+    let frame = test_frame(0, FACE_AXIS_KEY_TYPE, View::over_retained(&axis));
+    let mut parsed = parse_face_key(&ctx, &frame, true).expect("axis key");
+    assert_eq!(parsed.hint, ProjectionHint::PartFaceAxis);
+    name_face_key(&ctx, &mut parsed, &records).expect("named axis key");
+    let OperandSelection::Face {
+        name_record,
+        imported_name,
+        ..
+    } = &parsed.selection
+    else {
+        panic!("face selection");
+    };
+    // Key 7 names a record of another naming type; only its identity is kept.
+    assert_eq!(*name_record, Some(4));
+    assert_eq!(*imported_name, None);
+}
+
+#[test]
+fn work_feature_keys_name_part_subassembly_or_local_geometry() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let part = work_feature_part_bytes(QUALIFIED | 5, "PmDCSegment::seg:rev:9", 4);
+    let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&part));
+    let parsed = parse_work_feature_key(&ctx, &frame).expect("part work feature");
+    assert_eq!(parsed.geometry_ordinal, Some(4));
+    assert_eq!(parsed.hint, ProjectionHint::PartWorkFeature);
+    assert!(matches!(
+        parsed.selection,
+        OperandSelection::WorkFeature {
+            source_index: 4,
+            ..
+        }
+    ));
+
+    let sub = work_feature_part_bytes(QUALIFIED | 5, "AmDcSegment::seg:rev:12", 2);
+    let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&sub));
+    let parsed = parse_work_feature_key(&ctx, &frame).expect("subassembly work feature");
+    assert_eq!(parsed.hint, ProjectionHint::SubassemblyWorkFeature);
+
+    let local = work_feature_local_bytes(QUALIFIED | 5, QUALIFIED | 0x27, 0x40);
+    let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&local));
+    let parsed = parse_work_feature_key(&ctx, &frame).expect("assembly geometry");
+    assert_eq!(parsed.hint, ProjectionHint::AssemblyGeometry);
+    let OperandSelection::AssemblyGeometry {
+        target_reference,
+        target_source_index,
+        ..
+    } = parsed.selection
+    else {
+        panic!("assembly geometry");
+    };
+    assert_eq!(target_reference.record_ordinal(), Some(0x26));
+    assert_eq!(target_source_index, 0x40);
+}
+
+#[test]
+fn selection_keys_refuse_broken_grammar() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let other = work_feature_part_bytes(QUALIFIED | 5, "PmXXSegment::seg:rev:9", 4);
+    let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&other));
+    assert!(displayed(parse_work_feature_key(&ctx, &frame)).contains("design segment"));
+
+    let short = work_feature_part_bytes(QUALIFIED | 5, "PmDCSegment::seg:rev", 4);
+    let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&short));
+    assert!(displayed(parse_work_feature_key(&ctx, &frame)).contains("three components"));
+
+    let mut form = work_feature_local_bytes(QUALIFIED | 5, QUALIFIED | 0x27, 0x40);
+    form[30] = 2;
+    let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&form));
+    assert!(displayed(parse_work_feature_key(&ctx, &frame)).contains("form is 2"));
+
+    let mut trailing = face_key_bytes(false, QUALIFIED | 2, QUALIFIED | 3, 8);
+    trailing.push(0);
+    let frame = test_frame(0, FACE_KEY_TYPE, View::over_retained(&trailing));
+    assert!(displayed(parse_face_key(&ctx, &frame, false)).contains("trailing bytes"));
+
+    let descending = name_map_bytes(&[(8, QUALIFIED | 4), (7, QUALIFIED | 5)]);
+    assert!(
+        displayed(name_map_lookup(&ctx, View::over_retained(&descending), 7))
+            .contains("not ascending")
+    );
+
+    let mut width = imported_name_bytes(&[&[40, 0, 700]]);
+    let group = width.len() - 24;
+    width[group] = 99;
+    assert!(displayed(imported_face_name(&ctx, View::over_retained(&width))).contains("width 99"));
+}
+
+#[test]
+fn operands_take_the_selection_key_of_their_geometry() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let constraint = constraint_bytes(1, &[QUALIFIED | 2], &[], 0);
+    let operand = operand_bytes(0, QUALIFIED | 3);
+    let local = work_feature_local_bytes(QUALIFIED | 3, QUALIFIED | 0x27, 0x40);
+    let empty: [u8; 0] = [];
+    let records = [
+        test_frame(0, CONSTRAINT_TYPE, View::over_retained(&constraint)),
+        test_frame(1, OPERAND_TYPE, View::over_retained(&operand)),
+        test_frame(2, PLANE_TYPE, View::over_retained(&empty)),
+        test_frame(3, WORK_FEATURE_KEY_TYPE, View::over_retained(&local)),
+    ];
+    let key = parse_work_feature_key(&ctx, &records[3]).expect("assembly geometry");
+    let payload = parse(&ctx, records[0].payload).expect("mate record");
+    let record = resolve(&ctx, "segment", 0, &payload, &records, &[], &[key]).expect("resolved");
+    let [operand] = record.operands.as_slice() else {
+        panic!("one operand");
+    };
+    assert_eq!(
+        operand.projection_hint,
+        Some(ProjectionHint::AssemblyGeometry)
+    );
+    assert!(matches!(
+        operand.selection,
+        Some(OperandSelection::AssemblyGeometry { .. })
+    ));
 }
