@@ -6008,9 +6008,11 @@ fn native_support_pcurve_for_range(
     let mut poles = native.pole_rows().to_raw();
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
+            // The generated plane is `forward_v`: its second chart coordinate runs along
+            // `normal × u_dir`.
             poles.edit_points(|point| {
                 point.u /= LEN_TO_MM;
-                point.v /= -LEN_TO_MM;
+                point.v /= LEN_TO_MM;
                 Ok(())
             })?;
         }
