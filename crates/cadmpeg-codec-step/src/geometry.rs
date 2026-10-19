@@ -473,12 +473,21 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
         // Reversing the axis and angle maps a negative-angle cone exactly under
         // the parameter change `(u, v) -> (-u, -v)`.
+        // A zero half-angle cone of positive radius is the cylinder of that radius in the same
+        // chart (`u` around the axis, `v` along it), so it is written as one.
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
             let axis = *cone_surface.frame().axis();
             let ref_direction = *cone_surface.frame().reference();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
+            if half_angle == 0.0 && radius > 0.0 {
+                let pl = placement(e, origin, axis, ref_direction);
+                return Some(e.emit(
+                    "CYLINDRICAL_SURFACE",
+                    &format!("'',{pl},{}", e.real(radius)),
+                ));
+            }
             let written_axis = if half_angle < 0.0 {
                 axis.reversed()
             } else {

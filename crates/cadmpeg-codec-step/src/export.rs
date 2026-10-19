@@ -137,9 +137,10 @@ fn out_of_domain_cone_half_angle(mut geometry: &SolvedSurfaceGeometry) -> Option
     loop {
         match geometry {
             SolvedSurfaceGeometry::Cone(cone) => {
+                // A zero angle of positive radius is written as a cylinder.
                 let angle = cone.half_angle().get();
-                return (angle == 0.0 || angle.abs() >= std::f64::consts::FRAC_PI_2)
-                    .then_some(angle);
+                let line = angle == 0.0 && cone.radius().get() == 0.0;
+                return (line || angle.abs() >= std::f64::consts::FRAC_PI_2).then_some(angle);
             }
             SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             _ => return None,

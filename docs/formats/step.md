@@ -1191,6 +1191,12 @@ cross-section radius at axial distance `v` is `radius + v tan(semi_angle)`,
 and `(abs(semi_angle), -axis)` holds the same locus under the parameter change
 `(u, v) -> (-u, -v)`, which moves the chart that pcurves are written against.
 
+The writer states a negative-angle cone as `(abs(semi_angle), -axis)`. A
+zero-angle cone of positive radius is the cylinder of that radius with the
+same placement and the same `(u, v)` chart, so the writer states it as a
+`CYLINDRICAL_SURFACE`; a zero-angle cone of zero radius and an angle of at
+least `pi/2` in magnitude have no STEP analytic surface and refuse the file.
+
 A NURBS `closed` or `periodic` field uses the STEP LOGICAL domain.
 TRUE and FALSE encode the property state. UNKNOWN is a valid LOGICAL value.
 A `POLYLINE` with `n` points is the degree-one NURBS with those points as

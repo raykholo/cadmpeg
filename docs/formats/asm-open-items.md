@@ -245,7 +245,7 @@ If one coedge of a valid pair is dropped because its face carrier is unavailable
 
 **Question.** Which native member gives an ASM body's `Solid`, `Sheet`, or `General` kind?
 
-**Known.** `asm.md` §5.2 documents the body flags/history field and topology links but does not define a body-kind member. `classify_body_kinds` in `brep/geometry.rs` sets `Wire` or `General` from visible topology, then labels a face-bearing body `Solid` when every counted edge has exactly two coedge uses and `Sheet` otherwise. It runs only after model transfer and records no inference or loss.
+**Known.** `asm.md` §5.2 documents the body flags/history field and topology links but does not define a body-kind member. `classify_body_kinds` in `brep/geometry.rs` sets `Wire` or `General` from visible topology, then labels a face-bearing body `Solid` when every counted edge has exactly two coedge uses and `Sheet` otherwise. A point edge (null curve, both vertex references identical; `asm.md` `degenerate_curve`) is not counted: only the face that closes at the apex or pole uses it, so a solid with a cone apex or sphere pole is not labelled `Sheet` for its one use. It runs only after model transfer and records no inference or loss.
 
 If a closed sheet or a body with a non-manifold internal face has every edge counted twice, the rule emits `Solid`. If a solid has a missing coedge, it emits `Sheet`. The same topological count can therefore select different native body meanings without reading a source discriminator.
 

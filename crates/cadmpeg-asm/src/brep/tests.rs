@@ -1775,6 +1775,61 @@ fn body_classification_refuses_collection_limit() {
 }
 
 #[test]
+fn body_classification_lets_a_point_edge_close_a_solid() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::topology::BodyKind;
+
+    fn v<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
+        serde_json::from_value(value).expect("synthetic topology")
+    }
+
+    // A disc and a cone sharing their base circle; the cone's apex is a curveless edge on one
+    // vertex that only the cone uses.
+    let n = |i| id(FORMAT, i).into_string();
+    let brep = |apex_curve: bool| {
+        let mut apex = serde_json::json!({"id": n(31), "carrier": {"param_range": [0.0, 1.0]}, "start": n(41), "end": n(41)});
+        if apex_curve {
+            apex["carrier"]["curve"] = serde_json::json!(n(51));
+        }
+        let coedge = |i: i64, owner: i64, edge: i64, next: i64| serde_json::json!({"id": n(i), "owner_loop": n(owner), "edge": n(edge), "radial_next": n(next), "sense": "forward"});
+        let face = |i: i64, surface: i64, loops: Vec<String>| serde_json::json!({"id": n(i), "shell": n(3), "surface": n(surface), "sense": "forward", "loops": {"classification": "unspecified", "loops": loops}});
+        let ring = |i: i64, face: i64, coedge: i64| serde_json::json!({"id": n(i), "face": n(face), "boundary": {"kind": "ring", "coedges": [n(coedge)]}});
+        AsmBrep {
+            bodies: v(serde_json::json!([{"id": n(1), "kind": "general", "regions": [n(2)]}])),
+            regions: v(serde_json::json!([{"id": n(2), "body": n(1), "shells": [n(3)]}])),
+            shells: v(
+                serde_json::json!([{"id": n(3), "region": n(2), "members": [{"kind": "face", "id": n(11)}, {"kind": "face", "id": n(12)}]}]),
+            ),
+            faces: v(serde_json::json!([
+                face(11, 61, vec![n(21)]),
+                face(12, 62, vec![n(22), n(23)])
+            ])),
+            loops: v(serde_json::json!([
+                ring(21, 11, 71),
+                ring(22, 12, 72),
+                ring(23, 12, 73)
+            ])),
+            coedges: v(serde_json::json!([
+                coedge(71, 21, 30, 72),
+                coedge(72, 22, 30, 71),
+                coedge(73, 23, 31, 73)
+            ])),
+            edges: v(
+                serde_json::json!([{"id": n(30), "carrier": {"curve": n(52), "param_range": [0.0, 1.0]}, "start": n(40), "end": n(40)}, apex]),
+            ),
+            ..AsmBrep::default()
+        }
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    for (apex_curve, kind) in [(false, BodyKind::Solid), (true, BodyKind::Sheet)] {
+        let mut brep = brep(apex_curve);
+        super::geometry::classify_body_kinds(&ctx, &mut brep).expect("within limits");
+        assert_eq!(brep.bodies[0].kind, kind, "apex has a curve: {apex_curve}");
+    }
+}
+
+#[test]
 fn loss_kind_count_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

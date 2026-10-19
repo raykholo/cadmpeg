@@ -1653,10 +1653,16 @@ fn cone_semi_angle_inside_wr2_is_planned() {
 }
 
 #[test]
-fn zero_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(0.0).expect_err("zero cone angle is outside WR2");
+fn zero_cone_semi_angle_is_written_as_its_cylinder() {
+    let plan = circular_cone_plan(0.0).expect("a zero-angle cone of radius 2 is a cylinder");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("writes");
+    let text = String::from_utf8(bytes).expect("STEP is UTF-8");
+    assert!(!text.contains("CONICAL_SURFACE"));
+    assert!(text.contains("CYLINDRICAL_SURFACE('',"));
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+        text.contains(",2.)"),
+        "the cone's radius is the cylinder's: {text}"
     );
 }
 
@@ -1736,7 +1742,7 @@ fn transformed_cone_basis(ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry 
 
 #[test]
 fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
-    let ir = transformed_surface_ir(transformed_cone_basis(1.0, 0.0));
+    let ir = transformed_surface_ir(transformed_cone_basis(1.0, std::f64::consts::FRAC_PI_2));
     let error = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, None),
@@ -1744,7 +1750,7 @@ fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
         )
         .expect_err("transformed cone basis remains outside WR2");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
     );
 }
 
@@ -1859,7 +1865,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
             Vector3::new(1.0, 0.0, 0.0),
             2.0,
             1.0,
-            0.0,
+            std::f64::consts::FRAC_PI_2,
         )
         .unwrap(),
     ));
@@ -1895,7 +1901,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
         )
         .expect_err("a cached cone outside WR2 cannot be written");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
     );
 }
 
