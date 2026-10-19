@@ -49,7 +49,8 @@ pub(crate) struct UfrxDocument<'a> {
 
 #[derive(Debug)]
 pub(crate) struct UfrxOccurrence<'a> {
-    pub(crate) end_string_flag: u32,
+    /// `reference_id` of the external reference the occurrence instantiates.
+    pub(crate) reference_id: u32,
     pub(crate) occurrence_id: u32,
     pub(crate) occurrence_key: u32,
     pub(crate) header_value: u32,
@@ -561,16 +562,21 @@ fn parse_occurrences<'a>(
         "admit UFRxDoc occurrences",
     )?;
     let mut occurrences = ctx.vector_storage(count, "admit UFRxDoc occurrences")?;
+    require_u32(
+        cursor.u32("occurrence table reserved value")?,
+        0,
+        "occurrence table reserved value",
+    )?;
     for _ in 0..count {
         let start = cursor.position();
-        let end_string_flag = cursor.u32("occurrence end-string flag")?;
+        let reference_id = cursor.u32("occurrence reference id")?;
         let occurrence_id = cursor.u32("occurrence id")?;
         let occurrence_key = cursor.u32("occurrence key")?;
         let header_value = cursor.u32("occurrence header value")?;
         let title_count = cursor.count32("occurrence title marker", 65_536)?;
         let title = if title_count == 0 {
             None
-        } else if section_version >= 28 || title_count == 1 || end_string_flag == 0 {
+        } else if section_version >= 28 {
             Some(cursor.utf16(ctx, "occurrence title", 65_536)?)
         } else {
             Some(cursor.utf16_counted(ctx, "occurrence title", title_count)?)
@@ -628,7 +634,7 @@ fn parse_occurrences<'a>(
             .child(source.start() + start, source.start() + cursor.position())
             .ok_or_else(|| CodecError::Malformed("UFRxDoc occurrence range is invalid".into()))?;
         occurrences.push(UfrxOccurrence {
-            end_string_flag,
+            reference_id,
             occurrence_id,
             occurrence_key,
             header_value,
@@ -638,9 +644,6 @@ fn parse_occurrences<'a>(
             component_name: join.component_name.into_value(),
             source: record,
         });
-    }
-    if count == 0 {
-        cursor.u32("occurrence table terminator")?;
     }
     Ok(occurrences)
 }
@@ -1562,6 +1565,7 @@ mod tests {
     fn frames_extended_occurrence_header() {
         let mut bytes = Vec::new();
         push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 0);
         push_occurrence(&mut bytes, 28, 2020, 9, 17, "extended");
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
@@ -1581,10 +1585,11 @@ mod tests {
 
     /// One section-21 occurrence record with a raw title header, the two join
     /// properties in its first section and a one-entry export table.
-    fn legacy_occurrence(end_string_flag: u32, title_header: &[u8], save_year: u16) -> Vec<u8> {
+    fn legacy_occurrence(reference_id: u32, title_header: &[u8], save_year: u16) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_u32(&mut bytes, 1);
-        push_u32(&mut bytes, end_string_flag);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, reference_id);
         push_u32(&mut bytes, 9);
         push_u32(&mut bytes, 3);
         push_u32(&mut bytes, 1);
@@ -1648,7 +1653,7 @@ mod tests {
     }
 
     #[test]
-    fn a_legacy_title_marker_is_a_code_unit_count_unless_the_end_string_flag_is_zero() {
+    fn a_legacy_title_count_is_the_title_code_unit_count() {
         let mut counted = Vec::new();
         push_u32(&mut counted, 5);
         for unit in "Part4".encode_utf16() {
@@ -1657,17 +1662,26 @@ mod tests {
         let bytes = legacy_occurrence(3, &counted, 2015);
         assert_eq!(
             parse_legacy(&bytes, 2015),
-            vec![(Some("Part4".into()), bytes.len() - 4)]
+            vec![(Some("Part4".into()), bytes.len() - 8)]
         );
 
-        let mut marked = Vec::new();
-        push_u32(&mut marked, 5);
-        push_utf16(&mut marked, "");
-        let bytes = legacy_occurrence(0, &marked, 2015);
-        assert_eq!(
-            parse_legacy(&bytes, 2015),
-            vec![(Some(String::new()), bytes.len() - 4)]
-        );
+        let mut untitled = Vec::new();
+        push_u32(&mut untitled, 0);
+        let bytes = legacy_occurrence(3, &untitled, 2015);
+        assert_eq!(parse_legacy(&bytes, 2015), vec![(None, bytes.len() - 8)]);
+    }
+
+    #[test]
+    fn the_first_occurrence_follows_a_reserved_table_value() {
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 7);
+        push_occurrence(&mut bytes, 18, 0, 7, 42, "placed");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic occurrence fits policy");
+        let mut cursor = Cursor::new(root);
+        assert!(parse_occurrences(&ctx, root, &mut cursor, 18, 0).is_err());
     }
 
     #[test]
@@ -1678,7 +1692,7 @@ mod tests {
             let bytes = legacy_occurrence(1, &marked, save_year);
             assert_eq!(
                 parse_legacy(&bytes, save_year),
-                vec![(None, bytes.len() - 4)]
+                vec![(None, bytes.len() - 8)]
             );
         }
     }
@@ -1842,6 +1856,7 @@ mod tests {
         push_u32(&mut bytes, 4);
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 0);
         push_occurrence(&mut bytes, 18, 0, 7, 42, "placed");
         bytes.extend_from_slice(b"tail");
         (bytes, invariant_offset)
@@ -1855,12 +1870,16 @@ mod tests {
         occurrence_key: u32,
         title: &str,
     ) {
-        push_u32(bytes, 0);
+        push_u32(bytes, 1);
         push_u32(bytes, occurrence_id);
         push_u32(bytes, occurrence_key);
         push_u32(bytes, 0);
-        push_u32(bytes, 1);
-        push_utf16(bytes, title);
+        if section_version >= 28 {
+            push_u32(bytes, 1);
+            push_utf16(bytes, title);
+        } else {
+            push_utf16(bytes, title);
+        }
         if section_version >= 28 {
             push_u16(bytes, 0);
             push_u16(bytes, 0);
