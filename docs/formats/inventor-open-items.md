@@ -282,7 +282,7 @@ Section 9.4 projects the constraints with `solution` 0 into neutral joints. Cons
 
 **Question.** Which RSe schema, metadata, record-trailer, and carrier variants accompany CFB version 4 or metadata versions other than 8?
 
-**Known.** The compound reader admits valid CFB version 3 and 4 containers. The Inventor semantic envelope is schema 31 and metadata version 8. Those grammars are applied to every document, whatever it declares; a declaration outside them leaves the document dialect-unverified.
+**Known.** The compound reader admits valid CFB version 3 and 4 containers, and a DIFAT chain terminated by FREESECT only at its exact FAT-implied count. FREESECT terminators on directory, mini-FAT, and stream chains have not been observed. The Inventor semantic envelope is schema 31 and metadata version 8. Those grammars are applied to every document, whatever it declares; a declaration outside them leaves the document dialect-unverified.
 
 **Need.** Each governing variant requires a separate finite support envelope.
 
