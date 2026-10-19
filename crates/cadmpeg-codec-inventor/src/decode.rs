@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
+mod metadata;
 mod presentation_native_projection;
 mod rse_native_projection;
 
@@ -21,6 +22,7 @@ use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
 
+use self::metadata::{MetadataKey, MetadataProjection, FMTID_SUMMARY_INFORMATION};
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
 use crate::dialect::{dialect_loss, kernel_dialect_loss, DialectRecovery};
@@ -297,9 +299,9 @@ fn decode_container<'a>(
                         let scalar_value = property.value.scalar_text(ctx)?;
                         metadata.consider(
                             ctx,
-                            &section.fmtid,
-                            property.id,
+                            (&section.fmtid, property.id),
                             property_name.as_deref(),
+                            &property.value,
                             scalar_value.as_deref(),
                             &native_id,
                         )?;
@@ -1537,23 +1539,20 @@ fn project_root_product(
         "retain Inventor root product id",
     )?;
     let source_name = metadata
-        .title
-        .as_deref()
+        .get(MetadataKey::Title)
         .map(|name| ctx.copy_retained_text(name, "retain Inventor root product source name"))
         .transpose()?;
     let label = metadata
-        .title
-        .as_deref()
+        .get(MetadataKey::Title)
         .map(|name| ctx.copy_retained_text(name, "retain Inventor root product label"))
         .transpose()?;
     let description = metadata
-        .description
-        .as_deref()
+        .get(MetadataKey::Description)
+        .or_else(|| metadata.get(MetadataKey::Comments))
         .map(|value| ctx.copy_retained_text(value, "retain Inventor root product description"))
         .transpose()?;
     let part_number = metadata
-        .part_number
-        .as_deref()
+        .get(MetadataKey::PartNumber)
         .map(|value| ctx.copy_retained_text(value, "retain Inventor root part number"))
         .transpose()?;
     ctx.charge_collection_items(
@@ -2677,138 +2676,6 @@ fn structural_issue(
     })
 }
 
-const FMTID_SUMMARY_INFORMATION: [u8; 16] = [
-    0xe0, 0x85, 0x9f, 0xf2, 0xf9, 0x4f, 0x68, 0x10, 0xab, 0x91, 0x08, 0x00, 0x2b, 0x27, 0xb3, 0xd9,
-];
-
-#[derive(Default)]
-struct MetadataProjection {
-    title: Option<String>,
-    author: Option<String>,
-    description: Option<String>,
-    part_number: Option<String>,
-    document_kind: Option<DocumentKind>,
-    bom_properties: BTreeMap<String, String>,
-    unmapped: usize,
-}
-
-impl MetadataProjection {
-    fn consider(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        fmtid: &[u8; 16],
-        property_id: u32,
-        name: Option<&str>,
-        value: Option<&str>,
-        native_id: &str,
-    ) -> Result<(), CodecError> {
-        let Some(value) = value.filter(|value| !value.is_empty()) else {
-            return Ok(());
-        };
-        let normalized = name
-            .map(|name| normalize_property_name(ctx, name))
-            .transpose()?;
-        if matches!(normalized.as_deref(), Some("documentkind" | "documenttype")) {
-            self.document_kind = DocumentKind::parse_property(value);
-            if self.document_kind.is_some() {
-                return Ok(());
-            }
-        }
-        let target = if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 2
-            || normalized.as_deref() == Some("title")
-        {
-            Some(&mut self.title)
-        } else if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 4
-            || matches!(normalized.as_deref(), Some("author" | "designer"))
-        {
-            Some(&mut self.author)
-        } else if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 6
-            || matches!(normalized.as_deref(), Some("description" | "comments"))
-        {
-            Some(&mut self.description)
-        } else if normalized.as_deref() == Some("partnumber") {
-            Some(&mut self.part_number)
-        } else {
-            None
-        };
-        if let Some(target) = target {
-            if target.is_none() {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "retain Inventor metadata value",
-                )?;
-                *target = Some(value.into());
-            } else if target.as_deref() != Some(value) {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(native_id.len()),
-                    "retain Inventor BOM property key",
-                )?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "retain Inventor BOM property value",
-                )?;
-                ctx.insert_btree_map(
-                    &mut self.bom_properties,
-                    native_id.into(),
-                    value.into(),
-                    "collect Inventor BOM property",
-                )?;
-            }
-            return Ok(());
-        }
-        if let Some(name) = name {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(name.len()),
-                "retain Inventor BOM property key",
-            )?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(value.len()),
-                "retain Inventor BOM property value",
-            )?;
-            ctx.insert_btree_map(
-                &mut self.bom_properties,
-                name.into(),
-                value.into(),
-                "collect Inventor BOM property",
-            )?;
-        } else {
-            self.unmapped += 1;
-        }
-        Ok(())
-    }
-
-    fn apply_attributes(
-        &self,
-        ctx: &DecodeContext<'_>,
-        attributes: &mut BTreeMap<String, String>,
-    ) -> Result<(), CodecError> {
-        for (name, value) in [
-            ("title", &self.title),
-            ("author", &self.author),
-            ("description", &self.description),
-            ("part_number", &self.part_number),
-        ] {
-            if let Some(value) = value {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(name.len()),
-                    "retain Inventor metadata attribute key",
-                )?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "retain Inventor metadata attribute value",
-                )?;
-                ctx.insert_btree_map(
-                    attributes,
-                    name.into(),
-                    value.clone(),
-                    "collect Inventor metadata attribute",
-                )?;
-            }
-        }
-        Ok(())
-    }
-}
-
 fn normalize_property_name(ctx: &DecodeContext<'_>, name: &str) -> Result<String, CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(name.len()),
@@ -2854,26 +2721,14 @@ fn property_set_name(
 
 fn known_property_set_fmtid(set_name: &str) -> Option<[u8; 16]> {
     match set_name {
-        "Design Tracking Control" => Some([
-            0x30, 0xfb, 0x61, 0xd8, 0x36, 0x31, 0xd1, 0x11, 0x9e, 0x92, 0x00, 0x60, 0xb0, 0x3c,
-            0x1c, 0xa6,
-        ]),
+        "Design Tracking Control" => Some(metadata::FMTID_DESIGN_TRACKING_CONTROL),
         "Inventor User Defined Properties" => Some([
             0xb8, 0xad, 0x29, 0x99, 0x07, 0x64, 0x3e, 0x41, 0xb3, 0xdc, 0xcb, 0x9a, 0xd2, 0xf5,
             0x64, 0xb7,
         ]),
-        "Inventor Summary Information" => Some([
-            0x39, 0xde, 0x38, 0x3d, 0x88, 0x05, 0x14, 0x4c, 0xbb, 0x37, 0x18, 0xf4, 0xd5, 0xdd,
-            0x31, 0xc7,
-        ]),
-        "Inventor Document Summary Information" => Some([
-            0x00, 0x80, 0xf5, 0x8c, 0x66, 0xda, 0xe6, 0x4a, 0x8f, 0xf0, 0x7b, 0x58, 0x40, 0x6f,
-            0xb0, 0x49,
-        ]),
-        "Design Tracking Properties" => Some([
-            0x0f, 0x3f, 0x85, 0x32, 0x44, 0x34, 0xd1, 0x11, 0x9e, 0x93, 0x00, 0x60, 0xb0, 0x3c,
-            0x1c, 0xa6,
-        ]),
+        "Inventor Summary Information" => Some(metadata::FMTID_INVENTOR_SUMMARY),
+        "Inventor Document Summary Information" => Some(metadata::FMTID_INVENTOR_DOCUMENT_SUMMARY),
+        "Design Tracking Properties" => Some(metadata::FMTID_DESIGN_TRACKING_PROPERTIES),
         "_Private Model Information" => Some([
             0x90, 0x69, 0x58, 0xbb, 0x3e, 0xaf, 0xd3, 0x11, 0x95, 0xa9, 0x00, 0xa0, 0xc9, 0xb6,
             0xe3, 0x7a,

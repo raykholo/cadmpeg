@@ -10,7 +10,10 @@ mod native_admission;
 mod presentation_admission;
 mod property_admission;
 
-use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
+use super::{
+    built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataKey,
+    MetadataProjection,
+};
 use crate::loss::InventorLossCode;
 use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
 use crate::property_set::PropertyValue;
@@ -41,49 +44,194 @@ fn built_in_properties_are_selected_by_embedded_set_identity() {
     assert!(built_in_property_name("Unknown Set", 5).is_none());
 }
 
+fn text(value: &str) -> PropertyValue<'static> {
+    PropertyValue::String {
+        type_code: 31,
+        value: value.into(),
+    }
+}
+
 #[test]
-fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
+fn metadata_projection_selects_keys_by_identity_and_precedence() {
+    use super::metadata::{
+        FMTID_DESIGN_TRACKING_CONTROL, FMTID_DESIGN_TRACKING_PROPERTIES, FMTID_INVENTOR_SUMMARY,
+        FMTID_SUMMARY_INFORMATION,
+    };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     let mut projection = MetadataProjection::default();
-    projection
-        .consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first")
-        .expect("first property");
-    projection
-        .consider(
-            &ctx,
-            &[0; 16],
-            5,
-            Some("Part Number"),
-            Some("P-2"),
-            "second",
-        )
-        .expect("second property");
-    projection
-        .consider(
-            &ctx,
-            &[0; 16],
-            29,
-            Some("Description"),
-            Some("Bracket"),
-            "desc",
-        )
-        .expect("description property");
-    assert_eq!(projection.part_number.as_deref(), Some("P-1"));
-    assert_eq!(projection.description.as_deref(), Some("Bracket"));
-    assert_eq!(
-        projection.bom_properties.get("second").map(String::as_str),
-        Some("P-2")
+    let mut consider =
+        |fmtid: &[u8; 16], id, name: Option<&str>, value: PropertyValue<'_>, native| {
+            let scalar = value.scalar_text(&ctx).expect("scalar text");
+            projection
+                .consider(&ctx, (fmtid, id), name, &value, scalar.as_deref(), native)
+                .expect("property admitted");
+        };
+    // The public SummaryInformation title arrives first but yields to the Inventor set.
+    consider(
+        &FMTID_SUMMARY_INFORMATION,
+        2,
+        None,
+        text("Public"),
+        "si-title",
     );
+    consider(
+        &FMTID_INVENTOR_SUMMARY,
+        2,
+        Some("Title"),
+        text("Bracket"),
+        "isi-title",
+    );
+    consider(
+        &FMTID_SUMMARY_INFORMATION,
+        3,
+        None,
+        text("Mounts"),
+        "si-subject",
+    );
+    consider(
+        &FMTID_INVENTOR_SUMMARY,
+        9,
+        Some("Revision"),
+        text("B"),
+        "isi-revision",
+    );
+    consider(
+        &FMTID_DESIGN_TRACKING_PROPERTIES,
+        7,
+        Some("Project"),
+        text("Rig"),
+        "project",
+    );
+    consider(
+        &FMTID_DESIGN_TRACKING_PROPERTIES,
+        5,
+        Some("Part Number"),
+        text("P-1"),
+        "pn",
+    );
+    consider(
+        &FMTID_DESIGN_TRACKING_PROPERTIES,
+        29,
+        Some("Description"),
+        text("Plate"),
+        "desc",
+    );
+    consider(
+        &FMTID_DESIGN_TRACKING_PROPERTIES,
+        17,
+        Some("User Status"),
+        text(""),
+        "status",
+    );
+    consider(
+        &FMTID_DESIGN_TRACKING_PROPERTIES,
+        4,
+        Some("Creation Date"),
+        PropertyValue::Filetime {
+            type_code: 64,
+            value: 116_444_736_000_000_000,
+        },
+        "created",
+    );
+    consider(
+        &FMTID_DESIGN_TRACKING_CONTROL,
+        17,
+        Some("Last Saved Date"),
+        PropertyValue::Filetime {
+            type_code: 64,
+            value: 0,
+        },
+        "saved",
+    );
+    // A matching name in an unrelated set never selects a neutral key.
+    consider(&[0; 16], 2, Some("Title"), text("User"), "user-title");
+    consider(&[0; 16], 5, Some("Part Number"), text("P-2"), "user-pn");
+    // A neutral identity with the wrong value form stays a native property.
+    consider(
+        &FMTID_DESIGN_TRACKING_PROPERTIES,
+        41,
+        Some("Designer"),
+        PropertyValue::Signed {
+            type_code: 3,
+            value: 7,
+        },
+        "designer",
+    );
+
+    assert_eq!(projection.get(MetadataKey::Title), Some("Bracket"));
+    assert_eq!(projection.get(MetadataKey::Subject), Some("Mounts"));
+    assert_eq!(projection.get(MetadataKey::Revision), Some("B"));
+    assert_eq!(projection.get(MetadataKey::Project), Some("Rig"));
+    assert_eq!(projection.get(MetadataKey::PartNumber), Some("P-1"));
+    assert_eq!(projection.get(MetadataKey::Description), Some("Plate"));
+    assert_eq!(
+        projection.get(MetadataKey::CreatedAt),
+        Some("1970-01-01T00:00:00Z")
+    );
+    assert_eq!(projection.get(MetadataKey::Status), None);
+    assert_eq!(projection.get(MetadataKey::SavedAt), None);
+    assert_eq!(projection.get(MetadataKey::Designer), None);
+    let bom = &projection.bom_properties;
+    assert_eq!(bom.get("si-title").map(String::as_str), Some("Public"));
+    assert_eq!(bom.get("Title").map(String::as_str), Some("User"));
+    assert_eq!(bom.get("Part Number").map(String::as_str), Some("P-2"));
+    assert_eq!(bom.get("Designer").map(String::as_str), Some("7"));
+    let mut attributes = std::collections::BTreeMap::new();
+    projection
+        .apply_attributes(&ctx, &mut attributes)
+        .expect("attributes admitted");
+    assert_eq!(
+        attributes.keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "created_at",
+            "description",
+            "part_number",
+            "project",
+            "revision",
+            "subject",
+            "title"
+        ]
+    );
+}
+
+#[test]
+fn filetime_writes_rfc3339_utc() {
+    use super::metadata::filetime_rfc3339;
+    assert_eq!(filetime_rfc3339(0), None);
+    assert_eq!(
+        filetime_rfc3339(1).as_deref(),
+        Some("1601-01-01T00:00:00.0000001Z")
+    );
+    assert_eq!(
+        filetime_rfc3339(116_444_736_000_000_000).as_deref(),
+        Some("1970-01-01T00:00:00Z")
+    );
+    // 2000-02-29T12:34:56.5Z: 946684800 s after 1970 plus 59 days, 45296.5 s.
+    assert_eq!(
+        filetime_rfc3339(116_444_736_000_000_000 + (951_782_400 + 45_296) * 10_000_000 + 5_000_000)
+            .as_deref(),
+        Some("2000-02-29T12:34:56.5Z")
+    );
+    assert_eq!(filetime_rfc3339(u64::MAX), None);
 }
 
 #[test]
 fn metadata_projection_refuses_retained_limits_before_normalized_name_and_value() {
     let arena = DecodeArena::new();
-    for (cap, operation) in [
-        (9, "retain Inventor normalized property name"),
-        (12, "retain Inventor metadata value"),
+    for (fmtid, cap, operation) in [
+        ([0; 16], 9, "retain Inventor normalized property name"),
+        (
+            super::metadata::FMTID_DESIGN_TRACKING_PROPERTIES,
+            2,
+            "retain Inventor metadata value",
+        ),
+        (
+            super::metadata::FMTID_DESIGN_TRACKING_PROPERTIES,
+            7,
+            "retain Inventor metadata identity",
+        ),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
@@ -91,11 +239,19 @@ fn metadata_projection_refuses_retained_limits_before_normalized_name_and_value(
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
         let mut projection = MetadataProjection::default();
         assert!(matches!(
-            projection.consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first"),
+            projection.consider(
+                &ctx,
+                (&fmtid, 5),
+                Some("Part Number"),
+                &text("P-1"),
+                Some("P-1"),
+                "first"
+            ),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == operation
         ));
+        assert_eq!(projection.get(MetadataKey::PartNumber), None);
     }
 }
 
@@ -107,7 +263,7 @@ fn metadata_bom_property_refuses_collection_limit_before_insert() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut projection = MetadataProjection::default();
     assert!(matches!(
-        projection.consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom"),
+        projection.consider(&ctx, (&[0; 16], 99), Some("Custom"), &text("value"), Some("value"), "custom"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor BOM property"
@@ -116,7 +272,14 @@ fn metadata_bom_property_refuses_collection_limit_before_insert() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     projection
-        .consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom")
+        .consider(
+            &ctx,
+            (&[0; 16], 99),
+            Some("Custom"),
+            &text("value"),
+            Some("value"),
+            "custom",
+        )
         .expect("admitted property");
     assert_eq!(
         projection.bom_properties.get("Custom").map(String::as_str),
@@ -130,10 +293,7 @@ fn metadata_attribute_refuses_collection_limit_before_insert() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let projection = MetadataProjection {
-        title: Some("Drawing".into()),
-        ..MetadataProjection::default()
-    };
+    let projection = MetadataProjection::with_value(MetadataKey::Title, "Drawing");
     let mut attributes = std::collections::BTreeMap::new();
     assert!(matches!(
         projection.apply_attributes(&ctx, &mut attributes),

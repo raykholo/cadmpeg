@@ -166,13 +166,13 @@ Section 9.4 projects the constraints with `solution` 0 into neutral joints. Cons
 
 **Note.** When a property section has no code-page property, LPSTR and dictionary strings are decoded as Windows-1252. The format model does not establish that an absent code page selects Windows-1252.
 
-### PR-02. Metadata property identity and conflict precedence
+### PR-02. Document kind and remaining property identities
 
-**Question.** Which OLE property-set identity and precedence rule select title, author, description, part number, and document kind when multiple sections expose matching names or built-in IDs?
+**Question.** Which property identity selects the document kind, and which Inventor Summary Information property IDs store the subject, keywords, creation time, and last-save time?
 
-**Known.** `MetadataProjection` accepts normalized names across property sets. It keeps the first nonempty title, author, description, or part number, but replaces the document kind whenever another parseable value is encountered. The traversal order is the only selection rule.
+**Known.** Section 6.1 settles the identity and precedence of fifteen neutral metadata keys. `MetadataProjection` still selects the document kind from a property whose normalized name is `documentkind` or `documenttype`, and it replaces the document kind whenever another parseable value occurs. Design Tracking Properties property 32 stores a document-type string, but its observed values do not name a part or an assembly. Inventor Summary Information properties 3, 5, 12, and 13 have no nonempty value in the inspected documents. Design Tracking Properties property 40 stores a signed design-status code, and its code-to-label map is not known.
 
-**Need.** A canonical FMTID/property identity and conflict rule are required before metadata can select document semantics or overwrite a neutral value.
+**Need.** The document kind requires one FMTID and property identity and a conflict rule before it can override the RSe document kind. The subject, keywords, creation-time, and save-time keys can admit Inventor Summary Information identities only after a document with a nonempty value proves each property ID.
 
 ### MA-01. Additional face appearance styles
 
