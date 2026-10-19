@@ -1532,11 +1532,30 @@ impl<'a> Builder<'a> {
             "SOLID_ANGLE_UNIT",
             "( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )",
         );
+        // The coincidence distance covers the tolerances of tolerant edges and vertices: their
+        // positions are consistent only to that distance.
+        let uncertainty = self
+            .ir
+            .model
+            .edges
+            .iter()
+            .filter_map(|edge| edge.tolerance)
+            .chain(
+                self.ir
+                    .model
+                    .vertices
+                    .iter()
+                    .filter_map(|vertex| vertex.tolerance),
+            )
+            .chain(self.ir.model.faces.iter().filter_map(|face| face.tolerance))
+            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .filter(|tolerance| tolerance.is_finite())
+            .fold(self.ir.tolerances.linear.get(), f64::max);
         let unc = self.emitter.emit(
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                self.emitter.real(self.ir.tolerances.linear.get()),
+                self.emitter.real(uncertainty),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
