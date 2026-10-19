@@ -344,10 +344,10 @@ fn validation_parameter() -> crate::records::parameters::DesignParameter {
         record_index: 1,
         source_ordinal: 0,
         source: DesignParameterSource::User {
-            family_discriminator: Located {
+            family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
                 offset: 122,
-            },
+            }),
         },
         expression: "-1 mm".into(),
         expression_offset: 140,

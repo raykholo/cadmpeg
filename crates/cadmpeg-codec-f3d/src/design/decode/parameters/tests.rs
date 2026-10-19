@@ -383,7 +383,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
         decode_parameters(&cadmpeg_test_support::service_decode_context(), scan)
     })
     .unwrap();
-    let [parameter] = parameters.as_slice() else {
+    let [parameter] = parameters.parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };
     assert_eq!(parameter.record_index, 71);
@@ -1669,3 +1669,5 @@ fn decoded_parameter_records_refuse_each_collection_limit() {
         }
     });
 }
+
+mod typed_references;

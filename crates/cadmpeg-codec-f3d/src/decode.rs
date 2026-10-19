@@ -2515,8 +2515,21 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_material_assignments =
             crate::materials::decode_design_assignments(ctx, scan)?;
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
-        self.native.design_parameters =
-            crate::design::decode::parameters::decode_parameters(ctx, scan)?;
+        let decoded_parameters = crate::design::decode::parameters::decode_parameters(ctx, scan)?;
+        self.native.design_parameters = decoded_parameters.parameters;
+        for unparsed in &decoded_parameters.unparsed {
+            push_loss_vec(
+                ctx,
+                &mut self.report.losses,
+                F3dLossCode::ParameterRecordUnparsed,
+                format_args!(
+                    "{} typed compact parameter frame(s) in {} match no parameter grammar and were not decoded.",
+                    unparsed.count, unparsed.stream
+                ),
+                "collect F3D parameter losses",
+                "retain F3D parameter loss",
+            )?;
+        }
         self.native.design_entity_headers =
             crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
