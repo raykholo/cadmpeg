@@ -524,6 +524,16 @@ impl Provenance<AnnotationLocation> {
     pub fn stream(&self) -> &str {
         self.location.stream.as_str()
     }
+
+    /// Borrow the shared stream name.
+    pub(crate) fn stream_handle(&self) -> &Arc<StreamName> {
+        &self.location.stream
+    }
+
+    /// Replace the shared stream name, keeping offset and tag.
+    pub(crate) fn set_stream_handle(&mut self, stream: Arc<StreamName>) {
+        self.location.stream = stream;
+    }
 }
 
 impl Provenance<SourceLocation> {

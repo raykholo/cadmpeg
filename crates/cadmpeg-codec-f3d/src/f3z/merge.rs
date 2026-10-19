@@ -3,7 +3,6 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::SourceFidelity;
@@ -380,16 +379,13 @@ fn rescope_fidelity(
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
-    annotations
-        .map_ids(
-            ctx,
-            |id| match rescope_charged(ctx, id, occurrence)? {
-                Some(id) => Ok(id),
-                None => ctx.format_retained(format_args!("{id}"), "copy F3Z annotation identity"),
-            },
-            "index remapped annotation identities",
-        )?
-        .map_err(CodecError::from)?;
+    // `rescope_charged` maps `f3d:{rest}` to `f3d:xref/{occurrence}/{rest}`.
+    // That one prefix replacement keeps the stored identity order, so the
+    // annotation tables rescope in one ordered pass.
+    let scope = ctx.format_retained(
+        format_args!("f3d:xref/{occurrence}/"),
+        "rescope F3Z identity",
+    )?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
     let owner = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
@@ -397,24 +393,16 @@ fn rescope_fidelity(
         "retain F3Z fidelity owner",
     )?)
     .map_err(CodecError::malformed)?;
-    let provenance = std::mem::take(&mut annotations.provenance);
-    let mut builder = AnnotationBuilder::resume(annotations);
-    for (id, provenance) in provenance {
-        let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
-            format_args!("{}{}", owner.as_str(), provenance.stream()),
-            "retain F3Z provenance stream",
-        )?)
-        .map_err(CodecError::malformed)?;
-        let stream = StreamHandle::new(ctx, stream, "allocate annotation stream handle")?;
-        builder.note(
+    annotations
+        .rescope_prefix(
             ctx,
-            &id,
-            &stream,
-            provenance.offset,
-            provenance.tag.as_deref(),
-        )?;
-    }
-    let mut rescoped = SourceFidelity::with_annotations(builder.build());
+            "f3d:",
+            &scope,
+            owner.as_str(),
+            "rescope F3Z annotation identities",
+        )?
+        .map_err(CodecError::from)?;
+    let mut rescoped = SourceFidelity::with_annotations(annotations);
     for (id, record) in records {
         let id_text = match rescope_charged(ctx, id.as_str(), occurrence)? {
             Some(id) => id,

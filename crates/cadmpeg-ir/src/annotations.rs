@@ -15,6 +15,7 @@ use cadmpeg_core::CodecError;
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
 mod identity_work;
+mod rescope;
 mod sparse;
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
@@ -1712,6 +1713,7 @@ mod tests {
 
     mod entity_exactness;
     mod identity_merges;
+    mod prefix_rescope;
     mod provenance;
     mod retention;
     mod stream_handles;

@@ -103,7 +103,7 @@ fn source_rescoping_refuses_annotation_collection_limit() {
     let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index remapped annotation identities")
+        if limit.operation == "rescope F3Z annotation identities")
     );
 }
 
@@ -153,12 +153,19 @@ fn source_rescoping_preserves_absent_provenance_tag() {
 
 #[test]
 fn source_rescoping_refuses_fidelity_owner_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rescope_fidelity(&ctx, SourceFidelity::default(), "part").unwrap_err();
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    // The occurrence scope is admitted first; refuse the owner after it.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "retain F3Z fidelity owner",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            rescope_fidelity(&ctx, SourceFidelity::default(), "part")
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3Z fidelity owner")
