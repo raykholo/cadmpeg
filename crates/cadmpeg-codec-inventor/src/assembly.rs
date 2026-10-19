@@ -16,6 +16,8 @@ use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+pub(crate) mod constraint;
+
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
 const INVENTOR_LENGTH_TO_MILLIMETRES: f64 = 10.0;
 

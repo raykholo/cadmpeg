@@ -140,6 +140,16 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Need.** We must find the field for each state, and prove each value with two documents that differ only in that state, before we set `visible` from a representation or emit a grounded state. A grounded occurrence can map to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence. The IR needs no addition for it.
 
+### AS-05. Assembly constraint operands and neutral joints
+
+**Question.** Which fields give the exact part geometry, the solution sense, and the remaining kind and state values of an assembly constraint, and how does a constraint become a neutral `AssemblyJoint`?
+
+**Known.** Section 9.1 frames every constraint record, its kind, its operand records, and its parameter roles. Each operand gives an occurrence and a geometry record. The geometry record type gives the plane, line, point, or direction class. Part-side geometry records reference an `e5ae5e37d111e6f46000e5b1f1bc87b0` document record, and records of types `564d8790d011f8d10008cabc0663dc09`, `f32cee1dd111efb26000c8b1f1bc87b0`, and `61b8480cd2110541600093b7b035c3b0` reference them. The `564d8790` record stores a counted UTF-16LE key of the form `PmDCSegment::<segment>:<revision>:<n>`. Assembly origin planes, axes, and the center point are the plane, line, and point records that the first `634d8790d011f8d10008cabc0663dc09` record of the segment lists before the occurrences.
+
+`state` is 0 on tangent constraints and -1 on the other kinds. `solution` stores 0, 1, 3, or 4. Kind 11 constraints have no browser entry and no parameter, and their geometry records have types `5f35cf76d511881c10000697994909b5`, `0a9476f0d41115f210000097994909b5`, `0b9476f0d41115f210000097994909b5`, and `2149d0ea714709f6e477c49b46f25ca8`. Insert operands use geometry type `6a71439ed211a50f600084b7b035c3b0`. One tangent operand uses geometry type `9eda1641d11197bf6000b2b801f31bb0`. A small number of operands select records of types `09fcae1ce64010d04d85b8aefb05d6f1` and `b861c7f2fd4979186a13dc91f4bc3124` instead of an operand record. Design Accelerator assemblies store constraints with no browser entry.
+
+**Need.** We must decode the part-side key into a face, edge, or work-feature identity of the referenced part, and prove the `solution` values (mate against flush sense, inside against outside tangency) with controlled saves, before we emit a neutral joint. A neutral `AssemblyJoint` needs connector frames. A mate or flush of two planes fixes one normal direction and one offset, not a full frame, so the IR has no exact image for it today. We must decide whether `PairedJointKind` gets plane, line, and point coincidence families with an offset, or whether the codec derives connector frames from the resolved part geometry. The limit order (which of high bytes 1 and 2 is the minimum) is unproven.
+
 ## 4. Properties, materials, and design intent
 
 ### PR-01. OLE property variants and code pages

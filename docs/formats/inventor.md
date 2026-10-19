@@ -127,6 +127,49 @@ A `UFRxDoc` occurrence joins the `AmDc` and `AmGraphics` records through `occurr
 
 Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
 
+### 9.1 Assembly constraints
+
+An `AmDc` record with type identifier `47f0864ed111c36c00085cbb0feddc09` stores one assembly constraint. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+context_reference u32
+source_index u32
+state i32
+owner_reference u32
+kind u8
+operands reference list, marker 2
+parameters reference list, marker 2
+solution u8
+name_index u32
+limit_state u32
+terminal u8 = 3
+```
+
+The record ends after `terminal`. The header has no version-dependent extension values. A reference list contains u16 values `2, 0x3000` and a u32 count. A nonempty list then stores the u32 count again, a u32 zero, and the counted references. An empty list ends after its count. Bit 31 of a reference is a qualifier, and bits 0 through 30 are a one-based record index in the same `AmDc` segment. The owner and operand references of a constraint are qualified. `owner_reference` selects the assembly constraint collection. `name_index` is the number in the default browser name of the constraint. It counts the constraints of one kind from 1.
+
+`kind` selects the constraint family:
+
+| `kind` | Family | Operands | Parameters |
+|---|---|---|---|
+| 1 | mate | 2 | value, or value and two limits |
+| 2 | flush | 2 | value, or value and two limits |
+| 3 | angle | 2, or 2 and a reference direction | value |
+| 4 | tangent | 2 | value |
+| 5 | insert | 2 | value |
+| 6 | rotation motion | 2 | value |
+| 11 | constraint without a browser entry | 2 | none |
+| 20 | symmetry | 3 | none |
+
+Other kind values are not defined. `limit_state` is 6 when the parameter list has three entries and 0 when it has one entry or none.
+
+An operand normally selects an `AmDc` operand record with type identifier `52ce1fb9514f5091de31edb420f04d7f`. Its 18-byte payload contains `header_value:u32`, `header_id:u16`, `occurrence_reference:u32`, `geometry_reference:u32`, and u32 zero. A null `occurrence_reference` selects geometry of the assembly itself. A non-null `occurrence_reference` selects an `AmDc` occurrence-instance record with type identifier `614d8790d011f8d10008cabc0663dc09`. The occurrence identity record whose `related_references` select that occurrence-instance record owns the operand geometry, and the operand joins the occurrence through its `occurrence_id`. `geometry_reference` selects the operand geometry, and its record type gives the geometry class: `42df52ced011d0d20008ccbc0663dc09` is a plane, `896cf08ed1113c0460007cb801f31bb0` is a line, `3edf52ced011d0d20008ccbc0663dc09` is a point, and `40df52ced011d0d20008ccbc0663dc09` is a direction.
+
+A parameter selects an `AmDc` parameter-role record with type identifier `e1c68e253d4f5330cc0627af509ee444`. Its 16-byte payload contains `header_value:u32`, `header_id:u16`, `role:u16`, `parameter_reference:u32`, and u32 zero. `parameter_reference` selects a numeric parameter record of section 11 in the same segment. The low byte of `role` is 3 for a length, 4 for an angle, and 5 for a ratio. A high byte of 0 selects the constraint value. High bytes 1 and 2 select the two limit parameters.
+
 ## 10. Part appearance assignments
 
 A `PmApp` record with type identifier `cdecfb11d1116b250008ebbb21eddc09` stores the document-default style references. For segment major versions above 19, its 55-byte payload contains:
