@@ -41,6 +41,7 @@ use crate::record_issue::RecordIssue;
 
 const ARENAS: &[&str] = &[
     "active_carrier",
+    "assembly_constraint_issues",
     "assembly_constraints",
     "assembly_occurrences",
     "assembly_placements",

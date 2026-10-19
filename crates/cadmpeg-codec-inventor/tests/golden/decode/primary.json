@@ -69,6 +69,7 @@
             "state": "selected"
           }
         ],
+        "assembly_constraint_issues": [],
         "assembly_constraints": [],
         "assembly_occurrences": [],
         "assembly_placements": [],
@@ -452,6 +453,7 @@
     "coverage": {
       "active_kernel_carriers": 1,
       "appearance_bindings_transferred": 0,
+      "assembly_constraint_issues": 0,
       "assembly_constraints": 0,
       "assembly_occurrences": 0,
       "assembly_occurrences_transferred": 0,

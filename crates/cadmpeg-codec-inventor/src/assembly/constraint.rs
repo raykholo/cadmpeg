@@ -50,6 +50,29 @@ const PARAMETER_ROLE_PAYLOAD_LEN: usize = 16;
 /// A constraint stores two or three operands and at most three parameters.
 const MAX_LIST_LEN: usize = 16;
 
+/// Whether selection keys and line, point, and direction geometry records
+/// store their version word at a segment major version (sections 9.2 and
+/// 9.3). Version 19 omits it and versions 23 and later store it. `None` means
+/// the form at that version is not established.
+pub(super) fn stores_version_word(major: u8) -> Option<bool> {
+    match major {
+        19 => Some(false),
+        23.. => Some(true),
+        _ => None,
+    }
+}
+
+/// The version-word form at an optional segment major version, or an error
+/// naming the version whose form is not established.
+pub(super) fn version_word(major: Option<u8>, record: &'static str) -> Result<bool, CodecError> {
+    major.and_then(stores_version_word).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "Inventor {record} form at segment major version {} is not established",
+            major.map_or_else(|| "unknown".to_owned(), |major| major.to_string())
+        ))
+    })
+}
+
 /// Constraint family selected by the record's `kind` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -113,6 +136,9 @@ pub(crate) struct ConstraintOperandRecord {
     pub(crate) geometry: Option<OperandGeometry>,
     /// The stored plane, line, point, or direction (section 9.3).
     pub(crate) stored_geometry: Option<OperandGeometryRecord>,
+    /// Why a geometry record of a known class did not decode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) geometry_issue: Option<String>,
     /// `occurrence_id` of the occurrence that owns the operand geometry.
     pub(crate) occurrence_id: Option<u32>,
     /// What the operand's selection key names (section 9.2).
@@ -190,6 +216,7 @@ pub(crate) fn inventory(
             continue;
         };
         let token = segment.pair.token.as_str();
+        let major = segment.registry.map(|registry| registry.version_major);
         let version = segment.registry.and_then(|registry| {
             crate::pmdc::content_header_extension_len(registry.version_major)
                 .map(|extension| (registry.version_major, extension))
@@ -197,9 +224,13 @@ pub(crate) fn inventory(
         let mut keys = Vec::new();
         for record in &table.records {
             let result = match record.type_id {
-                selection::FACE_KEY_TYPE => selection::parse_face_key(ctx, record, false),
-                selection::FACE_AXIS_KEY_TYPE => selection::parse_face_key(ctx, record, true),
-                selection::WORK_FEATURE_KEY_TYPE => selection::parse_work_feature_key(ctx, record),
+                selection::FACE_KEY_TYPE => selection::parse_face_key(ctx, record, false, major),
+                selection::FACE_AXIS_KEY_TYPE => {
+                    selection::parse_face_key(ctx, record, true, major)
+                }
+                selection::WORK_FEATURE_KEY_TYPE => {
+                    selection::parse_work_feature_key(ctx, record, major)
+                }
                 _ => continue,
             };
             ctx.charge_work(1, "scan Inventor constraint selection key")?;
@@ -237,6 +268,22 @@ pub(crate) fn inventory(
             });
             match result {
                 Ok(constraint) => {
+                    for operand in &constraint.operands {
+                        if let (Some(detail), Some(geometry)) = (
+                            &operand.geometry_issue,
+                            operand
+                                .geometry_reference
+                                .and_then(PmDcReference::record_ordinal),
+                        ) {
+                            push_issue(
+                                ctx,
+                                &mut issues,
+                                segment,
+                                geometry,
+                                CodecError::Malformed(detail.clone()),
+                            )?;
+                        }
+                    }
                     ctx.charge_collection_items(1, "admit Inventor assembly constraint")?;
                     constraints.push(constraint);
                 }
@@ -495,6 +542,7 @@ fn resolve_operand(
         geometry_type: None,
         geometry: None,
         stored_geometry: None,
+        geometry_issue: None,
         occurrence_id: None,
         projection_hint: None,
         selection: None,
@@ -530,8 +578,17 @@ fn resolve_operand(
         )?);
         operand.geometry = OperandGeometry::from_type(geometry.type_id);
         if let (Some(class), Some((major, extension))) = (operand.geometry, version) {
-            operand.stored_geometry =
-                Some(geometry::parse(geometry.payload, class, major, extension)?);
+            match geometry::parse(geometry.payload, class, major, extension) {
+                Ok(stored) => operand.stored_geometry = Some(stored),
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => {
+                    ctx.charge_formatted_retained(
+                        format_args!("{error}"),
+                        "retain Inventor operand geometry issue",
+                    )?;
+                    operand.geometry_issue = Some(crate::issue_detail(error)?);
+                }
+            }
         }
     }
     let instance = target(records, occurrence_reference)

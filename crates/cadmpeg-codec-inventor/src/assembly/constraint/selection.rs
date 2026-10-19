@@ -240,7 +240,9 @@ pub(super) fn parse_face_key(
     ctx: &DecodeContext<'_>,
     record: &RseRecordFrame<'_>,
     axis: bool,
+    major: Option<u8>,
 ) -> Result<SelectionKey, CodecError> {
+    let separated = super::version_word(major, "selection key")?;
     let mut view = record.payload;
     header(&mut view)?;
     expect_u16(&mut view, KEY_FORM, "selection key form")?;
@@ -250,7 +252,9 @@ pub(super) fn parse_face_key(
     let part = part_key(ctx, key, occurrence_key)?;
     expect_u16(&mut view, 1, "selection key value marker")?;
     let first = crate::reader::u32(&mut view, "selection key first value")?;
-    expect_u32(&mut view, 0, "selection key value separator")?;
+    if separated {
+        expect_u32(&mut view, 0, "selection key value separator")?;
+    }
     let second = crate::reader::u32(&mut view, "selection key second value")?;
     for _ in 0..2 {
         expect_u16(&mut view, EMPTY_LIST_MARKER, "selection key list marker")?;
@@ -292,7 +296,9 @@ pub(super) fn parse_face_key(
 pub(super) fn parse_work_feature_key(
     ctx: &DecodeContext<'_>,
     record: &RseRecordFrame<'_>,
+    major: Option<u8>,
 ) -> Result<SelectionKey, CodecError> {
+    let trailer = super::version_word(major, "work-feature key")?;
     let mut view = record.payload;
     header(&mut view)?;
     let geometry = crate::reader::pmdc_reference(&mut view, "work-feature key geometry")?;
@@ -304,7 +310,9 @@ pub(super) fn parse_work_feature_key(
                 crate::reader::pmdc_reference(&mut view, "work-feature key target")?;
             let target_source_index =
                 crate::reader::u32(&mut view, "work-feature key target source index")?;
-            expect_u32(&mut view, 0, "work-feature key trailer")?;
+            if trailer {
+                expect_u32(&mut view, 0, "work-feature key trailer")?;
+            }
             (
                 ProjectionHint::AssemblyGeometry,
                 OperandSelection::AssemblyGeometry {
@@ -321,7 +329,9 @@ pub(super) fn parse_work_feature_key(
             let part = part_key(ctx, key, occurrence_key)?;
             expect_u16(&mut view, 1, "work-feature key value marker")?;
             let source_index = crate::reader::u32(&mut view, "work-feature key source index")?;
-            expect_u32(&mut view, 0, "work-feature key trailer")?;
+            if trailer {
+                expect_u32(&mut view, 0, "work-feature key trailer")?;
+            }
             (
                 match part.segment_kind {
                     KeySegmentKind::Part => ProjectionHint::PartWorkFeature,

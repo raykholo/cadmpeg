@@ -89,6 +89,7 @@ fn face_operand(
             frame_marker: false,
             shape,
         }),
+        geometry_issue: None,
         occurrence_id: Some(occurrence),
         projection_hint: None,
         selection: Some(OperandSelection::Face {
