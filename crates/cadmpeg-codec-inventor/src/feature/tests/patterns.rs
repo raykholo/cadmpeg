@@ -119,6 +119,19 @@ fn project_mirror_fixture(
     translation: f64,
     groups: &[crate::feature::sheet_metal::PmDcSheetMetalGroup],
 ) -> Option<Feature> {
+    project_group_mirror(participants, slots, booleans, translation, groups, &[])
+}
+
+/// [`project_mirror_fixture`] where edge flanges include the bends at the
+/// record ordinals `included_bends`.
+fn project_group_mirror(
+    participants: &[u32],
+    slots: [u32; 13],
+    booleans: [bool; 2],
+    translation: f64,
+    groups: &[crate::feature::sheet_metal::PmDcSheetMetalGroup],
+    included_bends: &[u32],
+) -> Option<Feature> {
     let record = mirror_record(participants, slots);
     let properties = vec![
         boolean_property(2, booleans[0]),
@@ -178,8 +191,15 @@ fn project_mirror_fixture(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("projection context");
-    crate::feature::project_mirror(&ctx, &record, Some(&label), &index, &history)
-        .map(|projected| projected.expect("mirror projection").0)
+    crate::feature::project_mirror(
+        &ctx,
+        &record,
+        Some(&label),
+        &index,
+        &history,
+        &included_bends.iter().copied().collect(),
+    )
+    .map(|projected| projected.expect("mirror projection").0)
 }
 
 #[test]
@@ -288,6 +308,25 @@ fn mirror_of_a_sheet_metal_group_seeds_its_member_features() {
             "inventor:design:feature#generated-13"
         ]
     );
+    // An edge flange includes its group bend, which is then no separate seed.
+    let mirror = project_group_mirror(
+        &[15],
+        [61, 0, 0, 0, 0, 0, 3, 4, 0, 6, 0, 5, 41],
+        [false, false],
+        0.0,
+        std::slice::from_ref(&group),
+        &[13],
+    )
+    .expect("edge-flange mirror");
+    assert!(matches!(
+        mirror.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
+            if matches!(
+                seeds.as_slice(),
+                [cadmpeg_ir::features::patterns::PatternSeed::Feature(id)]
+                    if id.as_str() == "inventor:design:feature#generated-10"
+            )
+    ));
     // A group member that is not an earlier history node keeps the mirror native.
     let group = super::sheet_metal::group_fixture(14, &[11, 12]);
     assert!(project_mirror_fixture(

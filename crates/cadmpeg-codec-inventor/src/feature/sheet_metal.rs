@@ -19,7 +19,9 @@ use super::{
     PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcFeatureReferenceFamily,
     ProjectionIndex,
 };
-use crate::pmdc::{content_header, reference_list, Cursor, PmDcContentHeader, PmDcReferenceList};
+use crate::pmdc::{
+    content_header, reference_list, Cursor, PmDcContentHeader, PmDcReference, PmDcReferenceList,
+};
 use crate::record_identity::{Located, RecordPayload};
 
 /// Group record of one sheet-metal face.
@@ -48,6 +50,16 @@ pub(super) const CORNER_EDGES_TYPE: [u8; 16] = [
 pub(super) const CORNER_VALUE_TYPE: [u8; 16] = [
     0x05, 0x17, 0x72, 0xe5, 0xa7, 0x4f, 0x64, 0x1a, 0x01, 0x38, 0x6e, 0x8f, 0x3c, 0xc0, 0x22, 0x18,
 ];
+/// Flange definition of one flange plate.
+pub(super) const FLANGE_DEFINITION_TYPE: [u8; 16] = [
+    0xaa, 0xa0, 0xf0, 0x6b, 0xd3, 0x11, 0xa5, 0x97, 0x60, 0x00, 0xa7, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
+];
+/// Last segment major version whose flange definition has the known grammar.
+const FLANGE_DEFINITION_MAX_VERSION: u8 = 22;
+/// Width extent that spans the complete flange edge.
+const FULL_EDGE_WIDTH: u32 = 3;
+/// Reference of the bend definition that names the bend radius.
+const BEND_DEFINITION_RADIUS_REFERENCE: usize = 5;
 
 /// Feature-label class of a sheet-metal bend.
 pub(super) const BEND_CLASS_ID: ClassId = ClassId(NativeBytes::new([
@@ -160,6 +172,126 @@ sheet_metal_parser!(parse_bend_definition, BEND_DEFINITION_TYPE);
 sheet_metal_parser!(parse_bend_relief, BEND_RELIEF_TYPE);
 sheet_metal_parser!(parse_bend_settings, BEND_SETTINGS_TYPE);
 sheet_metal_parser!(parse_corner_definition, CORNER_DEFINITION_TYPE);
+
+/// Flange definition of one flange plate: the flange height, angle, edge,
+/// bend radius, height datum, and bend position.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmDcFlangeDefinition {
+    pub(crate) width_extent: u32,
+    pub(crate) height: PmDcReference,
+    pub(crate) angle: PmDcReference,
+    pub(crate) thickness: PmDcReference,
+    first_flag: PmDcReference,
+    length: PmDcReference,
+    pub(crate) edge_item: PmDcReference,
+    body: PmDcReference,
+    plane: PmDcReference,
+    value: u32,
+    points: PmDcReferenceList,
+    auxiliary: PmDcReference,
+    pub(crate) bend_radius: PmDcReference,
+    second_flag: PmDcReference,
+    pub(crate) bend_position: u32,
+    pub(crate) height_datum: u32,
+    state: u8,
+    pub(crate) corner_edges: PmDcReference,
+    pub(crate) direction: PmDcReference,
+    pub(crate) region_selection: PmDcReference,
+    values: [u32; 2],
+    pub(crate) flip: PmDcReference,
+}
+
+impl PmDcFlangeDefinition {
+    /// Every record reference, for link validation.
+    pub(crate) fn references(&self) -> impl Iterator<Item = u32> + '_ {
+        [
+            self.height,
+            self.angle,
+            self.thickness,
+            self.first_flag,
+            self.length,
+            self.edge_item,
+            self.body,
+            self.plane,
+            self.auxiliary,
+            self.bend_radius,
+            self.second_flag,
+            self.corner_edges,
+            self.direction,
+            self.region_selection,
+            self.flip,
+        ]
+        .into_iter()
+        .chain(self.points.references().iter().copied())
+        .map(PmDcReference::index)
+    }
+}
+
+/// Parse a flange definition.
+pub(super) fn parse_flange_definition(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    if version > FLANGE_DEFINITION_MAX_VERSION {
+        return Err(CodecError::NotImplemented(format!(
+            "Inventor PmDc flange definition at segment major version {version}"
+        )));
+    }
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, 0)?;
+    let width_extent = cursor.u32("flange width extent")?;
+    let height = cursor.reference("flange height")?;
+    let angle = cursor.reference("flange angle")?;
+    let thickness = cursor.reference("flange thickness")?;
+    let first_flag = cursor.reference("flange first flag")?;
+    let length = cursor.reference("flange length")?;
+    let edge_item = cursor.reference("flange edge item")?;
+    let body = cursor.reference("flange body")?;
+    let plane = cursor.reference("flange plane")?;
+    let value = cursor.u32("flange value")?;
+    let points = reference_list(ctx, &mut cursor, 2, "flange profile points")?;
+    let auxiliary = cursor.reference("flange auxiliary record")?;
+    let bend_radius = cursor.reference("flange bend radius")?;
+    let second_flag = cursor.reference("flange second flag")?;
+    let bend_position = cursor.u32("flange bend position")?;
+    let height_datum = cursor.u32("flange height datum")?;
+    let state = cursor.u8("flange state")?;
+    let corner_edges = cursor.reference("flange corner edges")?;
+    let direction = cursor.reference("flange direction")?;
+    let region_selection = cursor.reference("flange region selection")?;
+    let values = [cursor.u32("flange value 0")?, cursor.u32("flange value 1")?];
+    let flip = cursor.reference("flange flip")?;
+    cursor.finish("flange definition")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::FlangeDefinition(Box::new(PmDcFlangeDefinition {
+            width_extent,
+            height,
+            angle,
+            thickness,
+            first_flag,
+            length,
+            edge_item,
+            body,
+            plane,
+            value,
+            points,
+            auxiliary,
+            bend_radius,
+            second_flag,
+            bend_position,
+            height_datum,
+            state,
+            corner_edges,
+            direction,
+            region_selection,
+            values,
+            flip,
+        })),
+    ))
+}
 
 /// Browser form of a sheet-metal group record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -351,6 +483,7 @@ pub(super) fn project_plate(
                 .is_some_and(|reference| reference.index() == 0)
         })
     };
+    let mut flange = None;
     match (group.form, features) {
         (PmDcSheetMetalGroupForm::Face, [_]) => {
             if references.get(4)?.index() != 0 || !null_from(9) {
@@ -397,6 +530,7 @@ pub(super) fn project_plate(
             {
                 return None;
             }
+            flange = flange_operation(source, index);
         }
         _ => return None,
     }
@@ -442,11 +576,13 @@ pub(super) fn project_plate(
         source_text: None,
         source_content: FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-                profile,
-                thickness,
-                side,
-            }),
+            FeatureDefinition::Operation(flange.unwrap_or(
+                FeatureOperation::SheetMetalBaseFlange {
+                    profile,
+                    thickness,
+                    side,
+                },
+            )),
         ),
         native_ref: Some(source.id()),
     };
@@ -456,4 +592,124 @@ pub(super) fn project_plate(
         return Some(Err(error));
     }
     Some(Ok((feature, result)))
+}
+
+/// The flange definition of a flange plate: the one definition whose region
+/// selection, direction, flip, thickness, and corner edges are plate slots 0,
+/// 1, 2, 3, and 12.
+fn plate_flange_definition<'a>(
+    source: &PmDcFeature,
+    index: &'a ProjectionIndex<'a>,
+) -> Option<&'a PmDcFlangeDefinition> {
+    let token = source.identity.segment_token.as_str();
+    let references = source.properties.references();
+    let region = references.first()?;
+    let property = index
+        .flange_definitions
+        .get(&(token, region.record_ordinal()?))
+        .and_then(Option::as_ref)?;
+    let PmDcFeaturePropertyKind::FlangeDefinition(definition) = &property.kind else {
+        return None;
+    };
+    [
+        (definition.region_selection, 0),
+        (definition.direction, 1),
+        (definition.flip, 2),
+        (definition.thickness, 3),
+        (definition.corner_edges, 12),
+    ]
+    .into_iter()
+    .all(|(reference, slot)| {
+        reference.index() != 0
+            && references
+                .get(slot)
+                .is_some_and(|plate| plate.index() == reference.index())
+    })
+    .then_some(&**definition)
+}
+
+/// The edge flange that a flange plate and its bend define, when every
+/// operand is exact.
+fn flange_operation(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> Option<FeatureOperation> {
+    use cadmpeg_ir::features::{
+        EdgeSelection, SheetMetalBendPosition, SheetMetalFlangeHeight, SheetMetalFlangeWidth,
+        SheetMetalHeightDatum,
+    };
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let token = source.identity.segment_token.as_str();
+    let definition = plate_flange_definition(source, index)?;
+    let bend = slot_property(source, 4, index)?;
+    let PmDcFeaturePropertyKind::SheetMetal {
+        family: PmDcSheetMetalFamily::BendDefinition,
+        references: bend_references,
+        ..
+    } = &bend.kind
+    else {
+        return None;
+    };
+    if definition.bend_radius.index() == 0
+        || bend_references
+            .get(BEND_DEFINITION_RADIUS_REFERENCE)?
+            .index()
+            != definition.bend_radius.index()
+    {
+        return None;
+    }
+    let height_datum = match definition.height_datum {
+        1 => SheetMetalHeightDatum::InnerFaces,
+        2 => SheetMetalHeightDatum::OuterFaces,
+        _ => return None,
+    };
+    let bend_position = match definition.bend_position {
+        1 => SheetMetalBendPosition::Outside,
+        3 => SheetMetalBendPosition::Adjacent,
+        _ => return None,
+    };
+    if definition.width_extent != FULL_EDGE_WIDTH {
+        return None;
+    }
+    let height = PositiveLength::try_from(super::length_reference(
+        token,
+        definition.height.index(),
+        index,
+    )?)
+    .ok()?;
+    let bend_radius = PositiveLength::try_from(super::length_reference(
+        token,
+        definition.bend_radius.index(),
+        index,
+    )?)
+    .ok()?;
+    let angle = super::angle_reference(token, definition.angle.index(), index)?;
+    let edge = super::resolve_property(token, definition.edge_item.index(), index)?;
+    if !matches!(edge.kind, PmDcFeaturePropertyKind::EdgeItem { .. }) {
+        return None;
+    }
+    Some(FeatureOperation::SheetMetalEdgeFlange {
+        edges: EdgeSelection::Native(edge.id()),
+        height: SheetMetalFlangeHeight::Distance(height),
+        angle,
+        height_datum,
+        bend_position,
+        width: SheetMetalFlangeWidth::FullEdge,
+        bend_radius,
+    })
+}
+
+/// The bend member that a flange plate's edge flange includes.
+pub(super) fn included_bend(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> Option<u32> {
+    let token = source.identity.segment_token.as_str();
+    let wrapper = index
+        .containing_labels
+        .get(&(token, source.identity.record_ordinal))
+        .and_then(Option::as_ref)?;
+    let group = index
+        .sheet_metal_groups
+        .get(&(token, wrapper.header.owner.record_ordinal()?))
+        .and_then(Option::as_ref)?;
+    match (group.form, group.members.references()) {
+        (PmDcSheetMetalGroupForm::Flange, [_, bend, _]) => bend.record_ordinal(),
+        _ => None,
+    }
 }

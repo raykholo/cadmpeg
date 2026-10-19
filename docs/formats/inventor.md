@@ -690,6 +690,39 @@ The bend repeats plate slots 4, 7, 3, and 6 in its slots 3, 0, 2, and 5. In a fl
 
 The plate thickness lies along the normal of the group sketch, which is the direction record of that sketch. With a false flip Boolean, the thickness lies along the sketch normal from the sketch plane. With a true flip Boolean, it lies opposite the sketch normal. In a face group, plate slot 1 is the sketch direction record. In a flange group, plate slot 1 is a different direction record.
 
+Type `aaa0f06bd311a5976000a7a99dccefb0` is a flange definition. For segment major versions 15 through 22 it stores, after the 22-byte content header:
+
+```text
+width_extent u32
+height_reference u32
+angle_reference u32
+thickness_reference u32
+first_flag_reference u32
+length_reference u32
+edge_item_reference u32
+body_reference u32
+plane_reference u32
+value u32
+points type-2 reference list
+auxiliary_reference u32
+bend_radius_reference u32
+second_flag_reference u32
+bend_position u32
+height_datum u32
+state u8
+corner_edges_reference u32
+direction_reference u32
+region_selection_reference u32
+values u32[2]
+flip_reference u32
+```
+
+The record ends after `flip_reference`. No feature or group record references a flange definition. The flange definition of a flange plate is the one flange definition whose region-selection, direction, flip, thickness, and corner-edge references equal plate slots 0, 1, 2, 3, and 12. Its bend-radius reference equals reference 5 of the plate's bend definition. The height and bend-radius references select length parameters, and the angle reference selects an angle parameter. The angle is the angle between the flange wall and the base face. The edge-item reference selects the edge item of the flange edge. The points list holds the corner points of the flange profile.
+
+Height datum 1 measures the flange height from the intersection of the inner faces of the base and the flange wall. Height datum 2 measures it from the intersection of the outer faces. Bend position 1 puts the inner face of the flange wall on the flange edge, so that the wall lies outside the base face extents. Bend position 3 starts the bend at the flange edge, so that the inner face of the wall is one bend radius outside the edge. Width extent 3 spans the complete flange edge.
+
+A flange plate with a flange definition of width extent 3, height datum 1 or 2, bend position 1 or 3, and a positive height and bend radius projects as one edge flange. The edge flange includes the bend of its group, so the bend member does not project separately. The corner member remains a separate record.
+
 The sheet-metal property records store fixed reference tuples after the content header and then end:
 
 - `92596ba9d311efa86000b3a99dccefb0`: bend definition, ten references, three u8 states, and one reference;
