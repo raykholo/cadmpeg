@@ -1016,6 +1016,9 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             } => {
                 references.extend(items.iter().map(|reference| reference.index()));
             }
+            PmDcFeaturePropertyKind::FlangeDefinition(definition) => {
+                references.extend(definition.references());
+            }
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
                 fourth_reference,

@@ -244,11 +244,11 @@ Section 9.4 projects the constraints with `solution` 0 into neutral joints. Cons
 
 ### DE-06. Sheet-metal bends, corners, and flange definitions
 
-**Question.** Which fields of the bend, bend-relief, bend-settings, corner, and corner-edge records define the bend radius, the bend and corner reliefs, and the bend and corner edges, what does plate slot 1 of a flange plate encode, and which record defines the flange height, angle, and edge?
+**Question.** Which fields of the bend, bend-relief, bend-settings, corner, and corner-edge records define the bend radius, the bend and corner reliefs, and the bend and corner edges, what does plate slot 1 of a flange plate encode, and what do the remaining flange-definition values select?
 
-**Known.** Face and flange group records list their plate, bend, and corner members. The plate projects to its wall. The bend and corner members share the plate's bend, relief, settings, corner, and corner-edge records. The bend edge collection of a plate is empty. A flange plate's slot-1 direction record is parallel to its sketch plane. Record `aaa0f06bd311a5976000a7a99dccefb0` references the flange parameters, an edge item, the flange sketch points, and the plate's region selection, direction, and flip Boolean; no feature or group record references it.
+**Known.** Face and flange group records list their plate, bend, and corner members. A face plate projects to its wall. The bend and corner members share the plate's bend, relief, settings, corner, and corner-edge records. The bend edge collection of a plate is empty. A flange plate's slot-1 direction record is parallel to its sketch plane. The flange definition grammar, height, angle, bend radius, height datums 1 and 2, bend positions 1 and 3, and width extent 3 are exact. Corner-definition references 1, 2, and 6 select the length parameters whose expressions are the document `GapSize`, `CornerReliefSize`, and `JacobiRadiusSize` parameters.
 
-**Need.** The bend and corner features stay native until their geometry has exact operands. A flange can transfer as one edge flange only when its height, angle, edge, height datum, bend position, and width are exact.
+**Need.** Face-group bends and corners stay native until their geometry has exact operands. Height datum 3, bend positions 2 and 4, width extents other than 3, the flange-definition flag, length, auxiliary, and state fields, and the corner relief shape require controlled saves that change one flange or corner option at a time. A corner transfers only when the neutral model has a corner relief and gap.
 
 ### DE-07. Edge-item and region-selection model joins
 

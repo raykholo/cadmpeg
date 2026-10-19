@@ -689,6 +689,7 @@ fn test_projection_index<'a>(
         features: std::collections::HashMap::new(),
         owner_labels: std::collections::HashMap::new(),
         sheet_metal_groups: std::collections::HashMap::new(),
+        flange_definitions: std::collections::HashMap::new(),
     }
 }
 

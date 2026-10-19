@@ -250,6 +250,7 @@ pub(crate) enum PmDcFeaturePropertyKind {
         references: Vec<crate::pmdc::PmDcReference>,
         states: NativeBytes,
     },
+    FlangeDefinition(Box<sheet_metal::PmDcFlangeDefinition>),
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
         /// The fourth reference that segment major versions 23 and later store.
@@ -940,6 +941,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         sheet_metal::CORNER_DEFINITION_TYPE => Some(sheet_metal::parse_corner_definition),
         sheet_metal::CORNER_EDGES_TYPE => Some(parse_corner_edges),
         sheet_metal::CORNER_VALUE_TYPE => Some(parse_value),
+        sheet_metal::FLANGE_DEFINITION_TYPE => Some(sheet_metal::parse_flange_definition),
         _ => None,
     }
 }
@@ -1790,6 +1792,8 @@ struct ProjectionIndex<'a> {
     features: HashMap<(&'a str, u32), Option<&'a PmDcFeature>>,
     owner_labels: HashMap<(&'a str, Option<u32>), Option<&'a PmDcFeatureLabel>>,
     sheet_metal_groups: HashMap<(&'a str, u32), Option<&'a sheet_metal::PmDcSheetMetalGroup>>,
+    /// Flange definitions by the record ordinal of their region selection.
+    flange_definitions: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
 }
 
 pub(crate) fn project(
@@ -2057,6 +2061,29 @@ pub(crate) fn project(
         },
         "index Inventor sheet-metal groups",
     )?;
+    let (unique_flange_definitions, _flange_definitions_storage) = ctx.unique_index(
+        inventory
+            .properties
+            .iter()
+            .filter_map(|record| match &record.kind {
+                PmDcFeaturePropertyKind::FlangeDefinition(definition) => Some((
+                    (
+                        record.identity.segment_token.as_str(),
+                        definition.region_selection.record_ordinal()?,
+                    ),
+                    record,
+                )),
+                _ => None,
+            }),
+        |key| {
+            cadmpeg_core::decode::u64_from_index(key.0.len())
+                .checked_add(5)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("index Inventor flange definitions", 0, u64::MAX)
+                })
+        },
+        "index Inventor flange definitions",
+    )?;
     let index = ProjectionIndex {
         properties: unique_properties,
         parameters: unique_parameters,
@@ -2132,6 +2159,7 @@ pub(crate) fn project(
         features: unique_features,
         owner_labels: labels,
         sheet_metal_groups: unique_groups,
+        flange_definitions: unique_flange_definitions,
     };
     let token = feature_tokens.iter().next().copied();
     let history = match token {
@@ -2149,6 +2177,7 @@ pub(crate) fn project(
     };
     let mut projected = Vec::new();
     let mut neutral = 0_usize;
+    let mut included_bends = HashSet::new();
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
         let value = match label.and_then(|label| {
@@ -2175,6 +2204,18 @@ pub(crate) fn project(
         match value {
             Some((projected_feature, result)) => {
                 neutral += 1;
+                if matches!(
+                    projected_feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { .. })
+                ) {
+                    if let Some(bend) = sheet_metal::included_bend(feature, &index) {
+                        ctx.insert_hash_set(
+                            &mut included_bends,
+                            bend,
+                            "index Inventor edge-flange bends",
+                        )?;
+                    }
+                }
                 projected.push(HistoryItem {
                     record: feature.identity.record_ordinal,
                     kind: history::HistoryNodeKind::Feature,
@@ -2197,6 +2238,10 @@ pub(crate) fn project(
             None => {}
         }
     }
+    // The edge flange of a flange group includes the group's bend.
+    projected.retain(|item| {
+        item.kind != history::HistoryNodeKind::Feature || !included_bends.contains(&item.record)
+    });
     for pattern in &inventory.pattern_features {
         if history.placement(pattern.identity.record_ordinal).is_none() {
             continue;
@@ -2204,7 +2249,9 @@ pub(crate) fn project(
         let label = label_of(pattern.identity.record_ordinal);
         ctx.charge_collection_items(1, "project Inventor pattern feature")?;
         let (feature, result) =
-            match project_mirror(ctx, pattern, label, &index, &history).transpose()? {
+            match project_mirror(ctx, pattern, label, &index, &history, &included_bends)
+                .transpose()?
+            {
                 Some((feature, result)) => {
                     neutral += 1;
                     (feature, Some(result))
@@ -3337,6 +3384,7 @@ fn project_mirror(
     label: Option<&PmDcFeatureLabel>,
     index: &ProjectionIndex<'_>,
     history: &history::History,
+    included_bends: &HashSet<u32>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let label = label?;
     if pattern.family != PmDcPatternFamily::Mirror || label.class_id() != MIRROR_CLASS_ID {
@@ -3414,6 +3462,8 @@ fn project_mirror(
             None => participants.push(ordinal),
         }
     }
+    // An edge flange includes the bend of its group.
+    participants.retain(|ordinal| !included_bends.contains(ordinal));
     for ordinal in participants {
         let seed = history.placement(ordinal)?;
         if seed.kind == history::HistoryNodeKind::Sketch || seed.ordinal >= placement.ordinal {
@@ -4334,13 +4384,17 @@ fn angle_parameter(
     slot: usize,
     index: &ProjectionIndex<'_>,
 ) -> Option<Angle> {
-    let reference = source.properties.references().get(slot)?;
+    angle_reference(
+        source.identity.segment_token.as_str(),
+        source.properties.references().get(slot)?.index(),
+        index,
+    )
+}
+
+fn angle_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) -> Option<Angle> {
     let parameter = index
         .parameters
-        .get(&(
-            source.identity.segment_token.as_str(),
-            reference.index().checked_sub(1)?,
-        ))
+        .get(&(token, reference.checked_sub(1)?))
         .and_then(Option::as_ref)?;
     match index.parameter_values.get(parameter.id().as_str())? {
         ParameterValue::Angle(value) => Some(*value),

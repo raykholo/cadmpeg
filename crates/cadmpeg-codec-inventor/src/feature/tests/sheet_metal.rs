@@ -6,6 +6,10 @@ use crate::feature::sheet_metal::{
     BEND_RELIEF_TYPE, BEND_SETTINGS_TYPE, CORNER_CLASS_ID, CORNER_DEFINITION_TYPE, FACE_GROUP_TYPE,
     FLANGE_GROUP_TYPE,
 };
+use cadmpeg_ir::features::{
+    EdgeSelection, SheetMetalBendPosition, SheetMetalFlangeHeight, SheetMetalFlangeWidth,
+    SheetMetalHeightDatum,
+};
 
 /// A sheet-metal group record at `ordinal` with one-based member references.
 pub(super) fn group_fixture(ordinal: u32, members: &[u32]) -> PmDcSheetMetalGroup {
@@ -169,6 +173,65 @@ struct PlateFixture {
     bend_slots: Vec<(usize, u32)>,
     corner_slots: Vec<(usize, u32)>,
     bend_class: ClassId,
+    definition: Option<DefinitionFixture>,
+}
+
+/// Flange definition #11 of a flange plate fixture. Parameters #72, #74, and
+/// #76 are the height, angle, and bend radius; #12 is the edge item.
+#[derive(Clone, Copy)]
+struct DefinitionFixture {
+    width_extent: u32,
+    bend_position: u32,
+    height_datum: u32,
+    /// Record ordinal of the region selection the definition names.
+    region: u32,
+    /// The bend definition names the flange bend radius.
+    shared_radius: bool,
+}
+
+impl DefinitionFixture {
+    const EXACT: Self = Self {
+        width_extent: 3,
+        bend_position: 1,
+        height_datum: 2,
+        region: 1,
+        shared_radius: true,
+    };
+
+    /// Record bytes; references are one-based record ordinals.
+    fn bytes(self) -> Vec<u8> {
+        let qualified = |ordinal: u32| (ordinal + 1) | 0x8000_0000;
+        let mut bytes = content(11);
+        bytes.extend_from_slice(&self.width_extent.to_le_bytes());
+        // Height, angle, thickness, first flag, length, edge item, body, plane.
+        for ordinal in [72, 74, 70, 2, 70, 12, 3, 40] {
+            bytes.extend_from_slice(&qualified(ordinal).to_le_bytes());
+        }
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&references(&[41, 42, 43, 44].map(qualified)));
+        // Auxiliary record, bend radius, second flag.
+        for ordinal in [45, 76, 2] {
+            bytes.extend_from_slice(&qualified(ordinal).to_le_bytes());
+        }
+        bytes.extend_from_slice(&self.bend_position.to_le_bytes());
+        bytes.extend_from_slice(&self.height_datum.to_le_bytes());
+        bytes.push(1);
+        // Corner edges, direction, region selection.
+        for ordinal in [9, 62, self.region] {
+            bytes.extend_from_slice(&qualified(ordinal).to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&qualified(2).to_le_bytes());
+        bytes
+    }
+
+    fn kind(self) -> PmDcFeaturePropertyKind {
+        parse(&self.bytes(), |ctx, source| {
+            crate::feature::sheet_metal::parse_flange_definition(ctx, source, 19)
+                .expect("flange definition")
+        })
+        .kind
+    }
 }
 
 impl PlateFixture {
@@ -181,6 +244,7 @@ impl PlateFixture {
             bend_slots: Vec::new(),
             corner_slots: Vec::new(),
             bend_class: BEND_CLASS_ID,
+            definition: None,
         }
     }
 
@@ -221,12 +285,34 @@ impl PlateFixture {
         slots
     }
 
+    fn edge_flange(definition: DefinitionFixture) -> Self {
+        Self {
+            definition: Some(definition),
+            ..Self::flange()
+        }
+    }
+
     fn project(&self) -> Option<Feature> {
-        let raw_thickness = raw_parameter(70);
-        let neutral_thickness = neutral_parameter(
-            &raw_thickness,
+        self.project_with_bend().0
+    }
+
+    /// The projected plate and the bend member its projection includes.
+    fn project_with_bend(&self) -> (Option<Feature>, Option<u32>) {
+        let raw_parameters = [70, 72, 74, 76].map(raw_parameter);
+        let neutral_parameters = [
             ParameterValue::Length(Length::new(3.048).expect("finite length fixture")),
-        );
+            ParameterValue::Length(Length::new(20.0).expect("finite length fixture")),
+            ParameterValue::Angle(
+                cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2)
+                    .expect("finite angle fixture"),
+            ),
+            ParameterValue::Length(Length::new(3.048).expect("finite length fixture")),
+        ];
+        let neutral_parameters = raw_parameters
+            .iter()
+            .zip(neutral_parameters)
+            .map(|(raw, value)| neutral_parameter(raw, value))
+            .collect::<Vec<_>>();
         let raw_sketch = Located::new(
             crate::sketch::PmDcSketchPayload {
                 save_version_major: 19,
@@ -331,7 +417,21 @@ impl PlateFixture {
                     items: reference_list(&[]),
                 },
             ),
-            sheet_metal(5, PmDcSheetMetalFamily::BendDefinition, 11),
+            test_property(
+                5,
+                PmDcFeaturePropertyKind::SheetMetal {
+                    family: PmDcSheetMetalFamily::BendDefinition,
+                    references: (0..11)
+                        .map(|position| {
+                            let shared = self
+                                .definition
+                                .is_some_and(|definition| definition.shared_radius);
+                            reference(if position == 5 && shared { 77 } else { 0 })
+                        })
+                        .collect(),
+                    states: cadmpeg_ir::native::bytes::NativeBytes::default(),
+                },
+            ),
             sheet_metal(6, PmDcSheetMetalFamily::CornerDefinition, 9),
             sheet_metal(7, PmDcSheetMetalFamily::BendRelief, 6),
             sheet_metal(8, PmDcSheetMetalFamily::BendSettings, 3),
@@ -343,7 +443,26 @@ impl PlateFixture {
                 },
             ),
             test_property(10, PmDcFeaturePropertyKind::Value { value: 0 }),
-        ];
+            test_property(
+                12,
+                PmDcFeaturePropertyKind::EdgeItem {
+                    index_references: crate::pmdc::PmDcU32List::new(
+                        2,
+                        Some(crate::pmdc::PmDcListMetadata::U32([1, 0x1000_0000])),
+                        vec![7],
+                    )
+                    .expect("test list metadata matches length"),
+                    index_reference_value: 0,
+                    value: 0,
+                },
+            ),
+        ]
+        .into_iter()
+        .chain(
+            self.definition
+                .map(|definition| test_property(11, definition.kind())),
+        )
+        .collect::<Vec<_>>();
         let plate = test_feature(100, 15, &self.plate_slots());
         let bend = test_feature(101, 9, &self.bend_slots);
         let corner = test_feature(102, 6, &self.corner_slots);
@@ -361,8 +480,8 @@ impl PlateFixture {
         let group = group_record(200, self.form, &self.members);
         let mut index = test_projection_index(
             &properties,
-            std::slice::from_ref(&raw_thickness),
-            std::slice::from_ref(&neutral_thickness),
+            &raw_parameters,
+            &neutral_parameters,
             std::slice::from_ref(&raw_sketch),
             std::slice::from_ref(&neutral_sketch),
             std::slice::from_ref(&direction),
@@ -376,6 +495,16 @@ impl PlateFixture {
         index
             .sheet_metal_groups
             .insert(("generated", 200), Some(&group));
+        if let (Some(definition), Some(property)) = (
+            self.definition,
+            properties
+                .iter()
+                .find(|property| property.identity.record_ordinal == 11),
+        ) {
+            index
+                .flange_definitions
+                .insert(("generated", definition.region), Some(property));
+        }
         for (record, record_label) in [
             (&plate, &label),
             (&bend, &bend_label),
@@ -390,8 +519,11 @@ impl PlateFixture {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("projection context");
-        crate::feature::sheet_metal::project_plate(&ctx, &plate, &label, &index)
-            .map(|projected| projected.expect("plate projection").0)
+        (
+            crate::feature::sheet_metal::project_plate(&ctx, &plate, &label, &index)
+                .map(|projected| projected.expect("plate projection").0),
+            crate::feature::sheet_metal::included_bend(&plate, &index),
+        )
     }
 }
 
@@ -764,4 +896,123 @@ fn an_edge_item_without_an_edge_reference_carries_flag_bit_2() {
     // At least one item references an edge.
     assert!(corner_round_with_items(0x4, true, true).is_none());
     assert!(corner_round_with_items(0, false, true).is_some());
+}
+
+#[test]
+fn flange_definition_record_has_a_fixed_grammar() {
+    let bytes = DefinitionFixture::EXACT.bytes();
+    let PmDcFeaturePropertyKind::FlangeDefinition(definition) = DefinitionFixture::EXACT.kind()
+    else {
+        panic!("not a flange definition");
+    };
+    assert_eq!(definition.width_extent, 3);
+    assert_eq!(definition.height.index(), 73);
+    assert_eq!(definition.angle.index(), 75);
+    assert_eq!(definition.thickness.index(), 71);
+    assert_eq!(definition.edge_item.index(), 13);
+    assert_eq!(definition.bend_radius.index(), 77);
+    assert_eq!(definition.bend_position, 1);
+    assert_eq!(definition.height_datum, 2);
+    assert_eq!(definition.corner_edges.index(), 10);
+    assert_eq!(definition.direction.index(), 63);
+    assert_eq!(definition.region_selection.index(), 2);
+    assert_eq!(definition.flip.index(), 3);
+    assert_eq!(definition.references().count(), 19);
+    let parse_at = |bytes: &[u8], version| {
+        parse(bytes, |ctx, source| {
+            crate::feature::sheet_metal::parse_flange_definition(ctx, source, version).is_ok()
+        })
+    };
+    let mut long = bytes.clone();
+    long.push(0);
+    assert!(!parse_at(&long, 19));
+    assert!(!parse_at(&bytes[..bytes.len() - 1], 19));
+    // Later segment versions have no known flange-definition grammar.
+    assert!(!parse_at(&bytes, 23));
+}
+
+fn edge_flange(fixture: &PlateFixture) -> Option<FeatureOperation> {
+    if let FeatureDefinition::Operation(operation) = fixture.project()?.evaluation.definition() {
+        Some(operation.clone())
+    } else {
+        None
+    }
+}
+
+#[test]
+fn flange_plate_with_an_exact_definition_projects_one_edge_flange() {
+    let fixture = PlateFixture::edge_flange(DefinitionFixture::EXACT);
+    let Some(FeatureOperation::SheetMetalEdgeFlange {
+        edges,
+        height,
+        angle,
+        height_datum,
+        bend_position,
+        width,
+        bend_radius,
+    }) = edge_flange(&fixture)
+    else {
+        panic!("not an edge flange");
+    };
+    assert_eq!(
+        edges,
+        EdgeSelection::Native(format!("inventor:pmdc:feature-property#{}-12", segment()))
+    );
+    assert!(matches!(height, SheetMetalFlangeHeight::Distance(value) if value.get() == 20.0));
+    assert_eq!(angle.get(), std::f64::consts::FRAC_PI_2);
+    assert_eq!(height_datum, SheetMetalHeightDatum::OuterFaces);
+    assert_eq!(bend_position, SheetMetalBendPosition::Outside);
+    assert_eq!(width, SheetMetalFlangeWidth::FullEdge);
+    assert_eq!(bend_radius.get(), 3.048);
+    // The edge flange includes the group bend.
+    assert_eq!(fixture.project_with_bend().1, Some(101));
+    let inner_adjacent = PlateFixture::edge_flange(DefinitionFixture {
+        bend_position: 3,
+        height_datum: 1,
+        ..DefinitionFixture::EXACT
+    });
+    assert!(matches!(
+        edge_flange(&inner_adjacent),
+        Some(FeatureOperation::SheetMetalEdgeFlange {
+            height_datum: SheetMetalHeightDatum::InnerFaces,
+            bend_position: SheetMetalBendPosition::Adjacent,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn unproven_flange_definitions_keep_the_plate_wall() {
+    for definition in [
+        DefinitionFixture {
+            height_datum: 3,
+            ..DefinitionFixture::EXACT
+        },
+        DefinitionFixture {
+            bend_position: 2,
+            ..DefinitionFixture::EXACT
+        },
+        DefinitionFixture {
+            bend_position: 4,
+            ..DefinitionFixture::EXACT
+        },
+        DefinitionFixture {
+            width_extent: 2,
+            ..DefinitionFixture::EXACT
+        },
+        DefinitionFixture {
+            shared_radius: false,
+            ..DefinitionFixture::EXACT
+        },
+        // The definition names a different region selection.
+        DefinitionFixture {
+            region: 9,
+            ..DefinitionFixture::EXACT
+        },
+    ] {
+        let fixture = PlateFixture::edge_flange(definition);
+        assert_base_flange(&fixture.project().expect("flange wall"), "flange");
+    }
+    // A face group has no flange definition.
+    assert_eq!(PlateFixture::face_with_bend().project_with_bend().1, None);
 }
