@@ -486,6 +486,7 @@ fn validate_parameter_scopes(
     };
     let table_type = crate::pmdc::type_id_string(crate::design::scope::PARAMETER_TABLE_TYPE);
     let root_type = crate::pmdc::type_id_string(crate::design::scope::MODEL_ROOT_TYPE);
+    let assembly_root_type = crate::pmdc::type_id_string(crate::design::scope::ASSEMBLY_ROOT_TYPE);
     unique(
         findings,
         data.pm_dc_parameter_tables.iter().map(|record| {
@@ -512,7 +513,8 @@ fn validate_parameter_scopes(
             == Some(table.identity.type_id.as_str())
             && table.identity.type_id.as_str() == table_type;
         let references_resolve = resolves(token, table.next.index(), None)
-            && resolves(token, table.context.index(), Some(&root_type))
+            && (resolves(token, table.context.index(), Some(&root_type))
+                || resolves(token, table.context.index(), Some(&assembly_root_type)))
             && table
                 .members
                 .references()
@@ -2481,6 +2483,30 @@ fn validate_assembly(
         findings.push(finding(
             Check::NativeLinks,
             "Inventor neutral occurrences do not match the typed assembly records".into(),
+            None,
+        ));
+    }
+    let projected_joints = crate::assembly::constraint::project_joints(
+        ctx,
+        &data.assembly_constraints,
+        &ir.model.occurrences,
+        &ir.model.parameters,
+    )?
+    .joints;
+    let mut joints = projected_joints.iter().collect::<Vec<_>>();
+    let mut neutral_joints = ir.model.assembly_joints.iter().collect::<Vec<_>>();
+    for list in [&mut joints, &mut neutral_joints] {
+        ctx.stable_sort_by(
+            list,
+            |left, right| left.id.as_str().cmp(right.id.as_str()),
+            |item| item.id.as_str().len(),
+            "Inventor projected joint sort",
+        )?;
+    }
+    if neutral_joints != joints {
+        findings.push(finding(
+            Check::NativeLinks,
+            "Inventor neutral assembly joints do not match the typed constraint records".into(),
             None,
         ));
     }

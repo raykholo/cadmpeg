@@ -585,6 +585,14 @@ fn decode_container<'a>(
         &assembly_placements,
     )?;
     ir.model.occurrences = assembly_projection.occurrences;
+    let joint_projection = crate::assembly::constraint::project_joints(
+        ctx,
+        &assembly_constraints,
+        &ir.model.occurrences,
+        &ir.model.parameters,
+    )?;
+    let native_constraints = joint_projection.native;
+    ir.model.assembly_joints = joint_projection.joints;
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
@@ -1127,6 +1135,15 @@ fn decode_container<'a>(
                         format_args!(
                             "Retained {} unresolved external component reference(s).",
                             external_references.len()
+                        ),
+                    )?);
+                }
+                if native_constraints != 0 {
+                    losses.push(admitted_loss(
+                        ctx,
+                        InventorLossCode::AssemblyConstraintNotTransferred,
+                        format_args!(
+                            "Retained {native_constraints} assembly constraint(s) as native records without a neutral joint."
                         ),
                     )?);
                 }

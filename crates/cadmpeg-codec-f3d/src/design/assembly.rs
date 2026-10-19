@@ -1565,7 +1565,10 @@ mod tests {
 
             assert_eq!(
                 operands[0].container,
-                cadmpeg_ir::OperandContainer::Occurrence { occurrence }
+                cadmpeg_ir::OperandContainer::Occurrence {
+                    occurrence,
+                    occurrence_path: Vec::new(),
+                }
             );
             assert!(operands[0]
                 .object

@@ -55,6 +55,7 @@ fn feature_projection_refuses_collection_limit_before_token_index() {
         units: Vec::new(),
         parameter_tables: Vec::new(),
         model_roots: Vec::new(),
+        assembly_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
     };

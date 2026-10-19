@@ -230,6 +230,7 @@ fn projection_orders_history_and_marks_suppression() {
         units: Vec::new(),
         parameter_tables: Vec::new(),
         model_roots: Vec::new(),
+        assembly_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
     };

@@ -77,6 +77,8 @@ pub(crate) struct DesignInventory {
     pub(crate) units: Vec<PmDcUnit>,
     pub(crate) parameter_tables: Vec<scope::PmDcParameterTable>,
     pub(crate) model_roots: Vec<scope::PmDcModelRoot>,
+    /// Assembly document roots of the `AmDc` segments.
+    pub(crate) assembly_roots: Vec<scope::AssemblyRoot>,
     pub(crate) brep_segments: Vec<BrepSegmentName>,
     pub(crate) issues: Vec<RecordIssue>,
 }
@@ -341,6 +343,7 @@ pub(crate) fn inventory(
         units: Vec::new(),
         parameter_tables: Vec::new(),
         model_roots: Vec::new(),
+        assembly_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
     };
@@ -361,9 +364,11 @@ pub(crate) fn inventory(
         });
     }
     for segment in &document.segments {
-        if segment.kind != SegmentKind::PmDc {
-            continue;
-        }
+        let assembly = match segment.kind {
+            SegmentKind::PmDc => false,
+            SegmentKind::AmDc => true,
+            _ => continue,
+        };
         let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
@@ -378,6 +383,18 @@ pub(crate) fn inventory(
         };
         for record in &table.records {
             ctx.charge_work(1, "scan Inventor PmDc design record")?;
+            if assembly && record.type_id == scope::ASSEMBLY_ROOT_TYPE {
+                ctx.charge_collection_items(1, "admit Inventor assembly root")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
+                    "retain Inventor assembly root segment token",
+                )?;
+                inventory.assembly_roots.push(scope::AssemblyRoot {
+                    segment_token: segment.pair.token.as_str().to_owned(),
+                    record_ordinal: record.ordinal,
+                });
+                continue;
+            }
             let result = if record.type_id == PARAMETER_FULL_TYPE {
                 parse_parameter(ctx, record.payload, version).and_then(|value| {
                     push_record(
@@ -426,7 +443,7 @@ pub(crate) fn inventory(
                         "admit Inventor PmDc parameter table record",
                     )
                 })
-            } else if record.type_id == scope::MODEL_ROOT_TYPE {
+            } else if !assembly && record.type_id == scope::MODEL_ROOT_TYPE {
                 scope::parse_model_root(ctx, record.payload, version).and_then(|value| {
                     push_record(
                         ctx,
@@ -536,6 +553,7 @@ pub(crate) fn parameter_scopes(
     scope::resolve_scopes(
         ctx,
         &inventory.model_roots,
+        &inventory.assembly_roots,
         &inventory.parameter_tables,
         &inventory.brep_segments,
     )
@@ -2313,6 +2331,7 @@ mod tests {
             units: vec![base, unit],
             parameter_tables: Vec::new(),
             model_roots: Vec::new(),
+            assembly_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
         };
@@ -2463,6 +2482,7 @@ mod tests {
             units: vec![base, unit],
             parameter_tables: Vec::new(),
             model_roots: Vec::new(),
+            assembly_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
         }

@@ -247,6 +247,28 @@ direction (40df52ce): value u32 = 0, vector f64[3]
 
 Each record ends after its last field, and every stored f64 is finite. For an operand that selects a part face, the plane origin lies on the face's plane and `u_axis × v_axis` is the face's outward normal: the surface normal, reversed when the face is reversed. For an operand that selects a face axis, the line lies on the axis of the face's cylinder and its direction is parallel to that axis. For a part work-feature operand, the plane equals the work plane's origin and axes. A line operand that is an assembly origin axis stores a direction of length 2.
 
+### 9.4 Neutral assembly joints
+
+A constraint with `solution` 0 is satisfied by the stored placements. Its operand geometry, carried into assembly coordinates through the owning occurrence path, meets the relation that its kind and value parameter state:
+
+| Kind | Operands | Relation |
+|---|---|---|
+| mate | plane, plane | `n₁ = −n₀` and `(o₁ − o₀) · n₀ = value` |
+| flush | plane, plane | `n₁ = n₀` and `(o₁ − o₀) · n₀ = value` |
+| mate | line, line, `value` = 0 | the lines are the same line; the directions are parallel in either sense |
+| mate | point, line | the distance from the point to the line equals `value` |
+| angle | direction, direction | the angle between the directions equals `value` |
+
+`n` is the plane normal `u_axis × v_axis`, `o` is the stored plane origin, and the operand order is the stored order. The `solution` value 0 does not encode the plane sense: the kind selects it.
+
+The occurrence key of a selection key (section 9.2) is the owning occurrence path: colon-separated ASCII decimal occurrence identifiers, outermost first. The first identifier is the operand's `occurrence_id` in the current assembly. Each later identifier is an occurrence identifier in the document that the previous occurrence references. The operand geometry is in the coordinates of the document at the end of the path, and the placements of the nested occurrences are stored in the referenced subassembly documents.
+
+A constraint is a neutral `AssemblyJoint` when `solution` is 0, `limit_state` is 0, the parameter list has exactly one value parameter whose role matches the relation (3 for a length, 4 for an angle), the value parameter is a neutral document parameter (section 11), both operands store their geometry and a selection key, and the kind and operand classes are one row of the table. The joint id is `inventor:assembly:joint#<segment>-<ordinal>` with the constraint record's segment token and ordinal, `native_ref` is the constraint id, and `driving_parameter` is the value parameter. The joint families are `plane_coincidence` with `sense` `opposed` (mate) or `aligned` (flush) and `offset` equal to the value in millimetres, `axis_coincidence`, `point_on_axis` with `distance` equal to the value in millimetres, and `angle` with `angle` equal to the value in radians.
+
+Each operand becomes one connector. A face or work-feature selection of an occurrence operand has an occurrence container whose `occurrence` is the neutral occurrence of `occurrence_id` and whose `occurrence_path` is the remaining identifiers of the occurrence key. Its object is the selection key string, and its one subelement is `face:<name_key>` or `work_feature:<source_index>`. An assembly-geometry selection has the root container, the object `AmDcSegment::<segment>`, and the subelement `assembly_geometry:<target_source_index>`. The connector frame is in the coordinates of the document at the end of the path, in millimetres: its origin is the plane origin, line origin, or point position multiplied by 10, or zero for a direction. Its z axis is `u_axis × v_axis` for a plane and the stored direction for a line or a direction. Its x axis is `u_axis` for a plane. For a line or a direction, the x axis is the unit component of the coordinate axis least aligned with z that is perpendicular to z, and for a point the frame axes are the coordinate axes. The y axis is `z × x`. Stored axes must have unit length and the plane axes must be perpendicular, each within `1e-6`.
+
+Every other constraint remains a native record and produces an assembly-constraint loss.
+
 ## 10. Part appearance assignments
 
 A `PmApp` record with type identifier `cdecfb11d1116b250008ebbb21eddc09` stores the document-default style references. For segment major versions above 19, its 55-byte payload contains:
@@ -438,6 +460,8 @@ terminal_value u32
 The payload ends after `terminal_value`. Value 3 is the PmDc reference to the root's parameter table. Value 9 is null or the same reference. `brep_segment` is the display name of the segment that stores the model's body. The document model root names the `PmBrepSegmentType` segment. The flat-pattern model root names the `MbBrepSegmentType` segment; the flat-pattern model and its `MbBrepSegmentType` and `MbGRxSegmentType` segments are present only when the part has a flat pattern.
 
 Parameter ownership requires exactly one document model root in the segment, exactly one segment with the display name the root names, and a name-map entry that references the parameter record under the parameter's own name. Parameters in a table whose context is the document model root are document parameters. Parameters in the parameter table of a flat-pattern model root belong to that flat-pattern model, which is one native feature after every document feature. The flat-pattern table repeats the names of the document sheet-metal parameters. Parameters in a table with a null context, or in a table whose model root does not resolve, have no established owner and remain native.
+
+An `AmDc` segment stores the parameters of an assembly document with the same parameter, expression, unit, and parameter-table grammars. Its parameter tables have no model root. A table whose `context_reference` selects the segment's assembly root record, type identifier `464d8790d011f8d10008cabc0663dc09`, holds document parameters. Ownership requires exactly one assembly root in the segment and the same name-map entry as above. The values and limits of assembly constraints (section 9.1) are document parameters of this kind.
 
 ## 12. Planar sketches
 

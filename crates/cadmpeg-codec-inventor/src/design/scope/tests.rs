@@ -4,7 +4,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use super::{
-    parse_model_root, parse_parameter_table, project_model_features, resolve_scopes,
+    parse_model_root, parse_parameter_table, project_model_features, resolve_scopes, AssemblyRoot,
     BrepSegmentName, BrepSegmentRole, ParameterScope, PmDcModelRoot, PmDcModelRootPayload,
     PmDcParameterTable, PmDcParameterTablePayload, FLAT_PATTERN_KIND, MODEL_ROOT_TYPE,
     PARAMETER_TABLE_TYPE,
@@ -216,7 +216,8 @@ fn tables_take_the_scope_of_the_model_root_that_owns_them() {
     ];
     let tables = vec![table(2, 0x8000_0001), table(11, 0x8000_000b), table(20, 0)];
     with_view(&[], |ctx, _| {
-        let scopes = resolve_scopes(ctx, &roots, &tables, &segments()).expect("scopes resolve");
+        let scopes =
+            resolve_scopes(ctx, &roots, &[], &tables, &segments()).expect("scopes resolve");
         assert_eq!(
             scopes.of(
                 "segment",
@@ -278,7 +279,8 @@ fn scopes_require_one_document_model_root() {
     ];
     let tables = vec![table(2, 0x8000_0001)];
     with_view(&[], |ctx, _| {
-        let scopes = resolve_scopes(ctx, &roots, &tables, &segments()).expect("scopes resolve");
+        let scopes =
+            resolve_scopes(ctx, &roots, &[], &tables, &segments()).expect("scopes resolve");
         assert_eq!(
             scopes.of(
                 "segment",
@@ -302,7 +304,8 @@ fn a_root_naming_an_unknown_segment_has_no_scope() {
     ];
     let tables = vec![table(11, 0x8000_000b)];
     with_view(&[], |ctx, _| {
-        let scopes = resolve_scopes(ctx, &roots, &tables, &segments()).expect("scopes resolve");
+        let scopes =
+            resolve_scopes(ctx, &roots, &[], &tables, &segments()).expect("scopes resolve");
         assert_eq!(
             scopes.of(
                 "segment",
@@ -339,5 +342,35 @@ fn flat_pattern_roots_project_native_features_after_the_document_features() {
             FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters })
                 if kind.as_str() == FLAT_PATTERN_KIND && parameters.is_empty()
         ));
+    });
+}
+
+#[test]
+fn an_assembly_root_owns_the_document_parameter_table() {
+    let assembly_root = |record_ordinal| AssemblyRoot {
+        segment_token: "segment".into(),
+        record_ordinal,
+    };
+    let tables = vec![table(2, 0x8000_0001), table(5, 0x8000_0004)];
+    let reference = |table: u32| PmDcReference::from_packed(0x8000_0000 | (table + 1));
+    with_view(&[], |ctx, _| {
+        let scopes = resolve_scopes(ctx, &[], &[assembly_root(0)], &tables, &segments())
+            .expect("scopes resolve");
+        assert_eq!(
+            scopes.of("segment", reference(2), 15, "Thickness"),
+            Some(&ParameterScope::Document)
+        );
+        assert_eq!(scopes.of("segment", reference(5), 15, "Thickness"), None);
+        assert_eq!(scopes.of("segment", reference(2), 15, "Other"), None);
+
+        let ambiguous = resolve_scopes(
+            ctx,
+            &[],
+            &[assembly_root(0), assembly_root(3)],
+            &tables,
+            &segments(),
+        )
+        .expect("scopes resolve");
+        assert_eq!(ambiguous.of("segment", reference(2), 15, "Thickness"), None);
     });
 }
