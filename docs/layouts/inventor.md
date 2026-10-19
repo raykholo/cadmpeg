@@ -102,9 +102,11 @@ Spec §13 · layout: byte offsets · size: 26 B
 
 Spec §13 · layout: byte offsets · size: 26 B
 
+Offsets and size are for segment major versions 15 through 22, whose extended content header has no extension values; versions 23 and 25 shift the fields by 4 and 8 bytes.
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 22 | `content_header` | `bytes[22]` | little | spec | same 22-byte content header |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | Feature property records use the extended content header |
 | 22 | 2 | `type_value` | `i16` | little | spec | type_value:i16 |
 | 24 | 2 | `value` | `u16` | little | spec | value:u16 |
 
