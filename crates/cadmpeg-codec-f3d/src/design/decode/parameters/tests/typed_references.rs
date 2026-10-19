@@ -347,3 +347,32 @@ fn typed_owner_presence_must_agree_with_the_document_source_kind() {
     );
     assert!(parse_design_parameter_record(&owned_document).is_none());
 }
+
+#[test]
+fn typed_companion_prefix_moves_the_timestamp_after_the_wide_owner_reference() {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&3u32.to_le_bytes());
+    frame.extend_from_slice(b"408");
+    frame.extend_from_slice(&538u32.to_le_bytes());
+    frame.extend_from_slice(&[0; 20]);
+    typed_reference(&mut frame, 536, OWNER_TYPE);
+    frame.extend_from_slice(&1_500_000_000_000_000u64.to_le_bytes());
+    frame.extend_from_slice(&[0; 8]);
+    assert_eq!(frame.len(), 98);
+    frame.extend_from_slice(&[7; 12]);
+    let parsed = super::super::parse_parameter_companion(&frame).expect("typed companion");
+    assert_eq!(parsed.record_index, 538);
+    assert_eq!(parsed.owner_record_index, 536);
+    assert_eq!(parsed.timestamp_micros.get(), 1_500_000_000_000_000);
+    let companion = cadmpeg_test_support::service_decode_context();
+    let record = parsed
+        .into_record(&companion, STREAM, 1000)
+        .unwrap()
+        .expect("typed companion record");
+    assert_eq!(record.timestamp_micros_offset(), 1082);
+    assert_eq!(record.payload_byte_offset(), Some(1098));
+
+    // A nonzero byte in the zero run after the timestamp is not a prefix.
+    frame[95] = 1;
+    assert!(super::super::parse_parameter_companion(&frame).is_none());
+}

@@ -1308,7 +1308,8 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         22,
         21,
         std::num::NonZeroU64::new(1).unwrap(),
-        50,
+        // The timestamp sits 42 bytes into the plain companion prefix.
+        52,
     );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
