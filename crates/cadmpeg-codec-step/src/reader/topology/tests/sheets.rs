@@ -453,3 +453,51 @@ pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
         .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+/// A ring of one curveless edge that starts and ends at one vertex (a cone apex or sphere pole
+/// kept as a collapsed edge) bounds its face at that vertex: it is written as a vertex loop, so
+/// the face keeps a bound.
+#[test]
+pub(crate) fn write_collapsed_curveless_rings_as_vertex_loops() {
+    let bytes = include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode vertex loops");
+    let mut doc = serde_json::to_value(result.ir()).unwrap();
+    let loops = doc["model"]["loops"].as_array().unwrap().clone();
+    let mut coedges = doc["model"]["coedges"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut edges = doc["model"]["edges"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut rings = Vec::new();
+    for (k, lp) in loops.iter().enumerate() {
+        let vertex = lp["boundary"]["vertex"].clone();
+        assert!(vertex.is_string(), "{lp}");
+        let (edge, coedge) = (
+            format!("test:model:collapsed-edge#{k}"),
+            format!("test:model:collapsed-coedge#{k}"),
+        );
+        edges.push(serde_json::json!({"id": edge, "carrier": {}, "start": vertex, "end": vertex}));
+        coedges.push(serde_json::json!({"id": coedge, "owner_loop": lp["id"], "edge": edge, "radial_next": coedge, "sense": "forward"}));
+        rings.push(serde_json::json!({"id": lp["id"], "face": lp["face"], "boundary": {"kind": "ring", "coedges": [coedge]}}));
+    }
+    doc["model"]["loops"] = serde_json::Value::Array(rings);
+    doc["model"]["coedges"] = serde_json::Value::Array(coedges);
+    doc["model"]["edges"] = serde_json::Value::Array(edges);
+    let ir: cadmpeg_ir::CadIr = serde_json::from_value(doc).expect("collapsed-ring document");
+    let mut encoded = Vec::new();
+    write_step(
+        &ir,
+        &mut encoded,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write collapsed rings");
+    let text = String::from_utf8(encoded).unwrap();
+    assert_eq!(text.matches("VERTEX_LOOP").count(), 2, "{text}");
+    assert_eq!(text.matches("EDGE_LOOP").count(), 0);
+}

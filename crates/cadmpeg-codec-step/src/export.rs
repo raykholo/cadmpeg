@@ -2447,6 +2447,19 @@ impl<'a> Builder<'a> {
             };
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
+        // A ring of curveless edges collapsed to one vertex (a cone apex or sphere pole) bounds
+        // its face at that point.
+        if let Some(vertex_id) = self.collapsed_ring_vertex(lp) {
+            let Some(vertex) = self.emit_vertex(&vertex_id) else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:vertex:{vertex_id}"),
+                    StepLossCode::LoopVertexMissing,
+                    format!("loop {loop_id} was omitted because vertex {vertex_id} is missing"),
+                );
+                return None;
+            };
+            return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
+        }
         let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
         let mut oe_refs = Vec::new();
         for cid in &coedge_ids {
@@ -2488,6 +2501,24 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
         )
+    }
+
+    /// The one vertex of a ring whose every edge has no curve and starts and ends at that vertex.
+    fn collapsed_ring_vertex(&self, lp: &Loop) -> Option<String> {
+        let mut vertex: Option<&str> = None;
+        for coedge_id in lp.coedges() {
+            let coedge = self.coedges.get(coedge_id.as_str()).copied()?;
+            let edge = self.edges.get(coedge.edge.as_str()).copied()?;
+            if edge.curve().is_some() || edge.start != edge.end {
+                return None;
+            }
+            match vertex {
+                None => vertex = Some(edge.start.as_str()),
+                Some(v) if v == edge.start.as_str() => {}
+                Some(_) => return None,
+            }
+        }
+        vertex.map(str::to_owned)
     }
 
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
