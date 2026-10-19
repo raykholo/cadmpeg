@@ -233,7 +233,7 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
         .unwrap_or_else(|| panic!("exact curve pcurve at width {int_width}"));
         assert_eq!(
             pcurve.control_points()[1],
-            cadmpeg_ir::math::Point2::new(10.0, 10.0)
+            cadmpeg_ir::math::Point2::new(10.0, -10.0)
         );
         assert!(crate::nurbs::proc_curve::pcurve_for_selector_with_chart(
             &asm_decode_ctx,

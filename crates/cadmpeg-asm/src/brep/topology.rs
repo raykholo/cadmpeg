@@ -487,6 +487,7 @@ pub(super) fn walk_reachable_topology(
                                                 ctx,
                                                 surface.head(),
                                                 &surface.tokens,
+                                                token_table.pcurve_charts(),
                                                 &mut decoded,
                                             ).transpose()? else { return Ok(None); };
                                         }

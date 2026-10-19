@@ -6008,11 +6008,9 @@ fn native_support_pcurve_for_range(
     let mut poles = native.pole_rows().to_raw();
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            // The generated plane is `forward_v`: its second chart coordinate runs along
-            // `normal × u_dir`.
             poles.edit_points(|point| {
                 point.u /= LEN_TO_MM;
-                point.v /= LEN_TO_MM;
+                point.v /= -LEN_TO_MM;
                 Ok(())
             })?;
         }
@@ -6045,18 +6043,6 @@ fn native_support_pcurve_for_range(
             poles.edit_points(|point| {
                 let neutral = *point;
                 point.u = neutral.v / axial_scale;
-                point.v = neutral.u;
-                Ok(())
-            })?;
-        }
-        // The native sphere and torus charts store the latitude or tube angle first and the
-        // azimuth second.
-        SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_),
-        ) => {
-            poles.edit_points(|point| {
-                let neutral = *point;
-                point.u = neutral.v;
                 point.v = neutral.u;
                 Ok(())
             })?;

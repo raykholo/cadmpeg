@@ -576,6 +576,41 @@ pub fn decode_with_header(
     format: IdFormat,
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    decode_with_header_and_charts(
+        ctx,
+        records,
+        bytes,
+        header,
+        stream,
+        format,
+        CarrierReading {
+            purpose,
+            charts: nurbs::proc_curve::PcurveCharts::Standard,
+        },
+    )
+}
+
+/// How [`decode_with_header_and_charts`] reads a carrier: what the decode is for and which
+/// analytic pcurve charts the embedding format's carriers store.
+#[derive(Clone, Copy)]
+pub struct CarrierReading {
+    /// What the decode is for.
+    pub purpose: DecodePurpose,
+    /// The analytic pcurve charts of the carriers.
+    pub charts: nurbs::proc_curve::PcurveCharts,
+}
+
+/// [`decode_with_header`] for a format whose carriers store `reading.charts` pcurve charts.
+pub fn decode_with_header_and_charts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    header: Option<&crate::kernel_header::KernelHeader>,
+    stream: &str,
+    format: IdFormat,
+    reading: CarrierReading,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let CarrierReading { purpose, charts } = reading;
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
@@ -640,7 +675,8 @@ pub fn decode_with_header(
     let _subtype_index_reservation =
         ctx.reserve_scoped(definition_bytes, "index ASM subtype definitions")?;
     let token_table = nurbs::toks::SubtypeTable::from_records(ctx, records)?
-        .with_save_format_version(header.and_then(|header| header.save_format_version));
+        .with_save_format_version(header.and_then(|header| header.save_format_version))
+        .with_pcurve_charts(charts);
     nurbs::toks::admit_subtype_references(ctx, records, &token_table)?;
     let save_format_major = header.and_then(crate::kernel_header::KernelHeader::save_format_major);
     let saved_entity_limit = header

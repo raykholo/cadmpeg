@@ -152,6 +152,14 @@ Optional side ranges, locations, and other doubles can occur after the actual of
 
 **Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:79-164`; the synthetic tests are at `:3111-3145`. A test that supplies tokens constructed by the same rule is counter-evidence only for arithmetic consistency, not for the native rule.
 
+### GC-38. Plane, sphere, and torus pcurve charts outside Inventor carriers
+
+**Question.** Which plane v sense and which sphere and torus coordinate order do F3D and standalone SAT/SAB carriers use for embedded and face-bound pcurves?
+
+**Known.** Inventor part carriers store the plane's second coordinate along `normal × u_deriv` on `forward_v` planes and store sphere and torus pcurves with the azimuth second; every plane, sphere, and torus pcurve of those carriers maps onto its vertices to vertex tolerance under that chart, and none under the other. The decoder reads other carriers with the second plane coordinate negated and sphere and torus pcurves in `(azimuth, angle)` order, and the F3D writer emits that chart.
+
+**Need.** An F3D or SAT/SAB carrier with a plane, sphere, or torus pcurve and known vertex positions must settle its chart before the Inventor chart applies to it.
+
 ### GC-34. Pcurve interval eligibility tolerance
 
 **Question.** What tolerance applies when an edge-use interval is compared with a pcurve knot domain?
