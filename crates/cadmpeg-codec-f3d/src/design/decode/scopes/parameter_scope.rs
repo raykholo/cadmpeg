@@ -545,6 +545,34 @@ fn copy_sketch_entity_id(
     crate::records::identity::DesignEntityId::try_from(text).map_err(CodecError::NotImplemented)
 }
 
+/// Byte offsets of the primary record frames that each Design stream's
+/// `MetaStream` record index names, keyed by native stream scope.
+pub(crate) fn design_primary_frame_offsets(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &crate::container::ContainerScan,
+) -> Result<std::collections::HashSet<(String, u64)>, CodecError> {
+    let mut out = std::collections::HashSet::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        scan.is_design_stream(entry, cadmpeg_core::container::ContainerRole::Bulkstream)
+    }) {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) =
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
+        else {
+            continue;
+        };
+        let scope = crate::design::decode::sketch::native_scope_charged(ctx, &entry.name)?;
+        for frame in crate::metastream::primary_record_frames(ctx, &meta, bytes.len())? {
+            ctx.insert_hash_set(
+                &mut out,
+                (scope.clone(), u64_from_index(frame.start)),
+                "f3d primary frame offsets",
+            )?;
+        }
+    }
+    Ok(out)
+}
+
 /// Admit one envelope for every logical scope identity.
 ///
 /// Some Design streams retain more than one complete envelope for one record
@@ -555,6 +583,7 @@ pub(crate) fn admit_history_bound_scope_variants(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
+    primary_frames: &std::collections::HashSet<(String, u64)>,
 ) -> Result<(), CodecError> {
     let (mut admitted, _admitted_storage) =
         ctx.temporary_vec(scopes.len(), "f3d scope admission")?;
@@ -611,6 +640,18 @@ pub(crate) fn admit_history_bound_scope_variants(
                 }
             }
         }
+        // Without a history binding, the envelope that the stream's primary
+        // record index names is the live one when it is unique in the group.
+        let mut primary = indices.iter().copied().filter(|index| {
+            let scope = &scopes[*index];
+            native_stream(&scope.id).is_some_and(|stream| {
+                primary_frames.contains(&(stream.to_owned(), scope.byte_offset()))
+            })
+        });
+        let primary_indexed = match (primary.next(), primary.next()) {
+            (Some(index), None) => Some(index),
+            _ => None,
+        };
         let keep = match (history_bound, multiple_history_bounds) {
             (Some(keep), false) => keep,
             (None, false) if equivalent_payload => {
@@ -622,6 +663,7 @@ pub(crate) fn admit_history_bound_scope_variants(
                     }
                 })
             }
+            (None, false) if primary_indexed.is_some() => primary_indexed.unwrap_or(*first),
             _ => {
                 return Err(CodecError::Malformed(
                     "Design scope record identity has unresolved duplicate envelopes".into(),
@@ -927,6 +969,34 @@ pub(crate) fn parameter_scope_previous_history_offset(
 enum ScopeTailForm {
     Fixed,
     Named,
+    /// The 76-byte fixed tail with its three references in the typed spelling.
+    TypedFixed,
+}
+
+/// Length of the typed-reference spelling of the 76-byte fixed scope tail.
+pub(crate) const TYPED_FIXED_SCOPE_TAIL_LEN: usize = 196;
+
+/// Tail offset of the preceding history-state identity in the typed tail.
+pub(crate) const TYPED_FIXED_SCOPE_PREVIOUS_HISTORY_OFFSET: usize = 70;
+
+/// Whether `bytes[kind_end..paired_at]` is the typed-reference 196-byte tail:
+/// u32 ordinal, fifteen zero bytes, a typed reference, the preceding
+/// history-state identity, u32 + f64 + u32, a typed reference, two zero
+/// bytes, a typed reference, and two zero bytes.
+fn typed_fixed_scope_tail_is_valid(bytes: &[u8], kind_end: usize, paired_at: usize) -> bool {
+    use crate::bytes::typed_local_reference_target as target;
+    (|| {
+        let tail = bytes.get(kind_end..paired_at)?;
+        (tail.len() == TYPED_FIXED_SCOPE_TAIL_LEN
+            && tail.get(4..19)? == [0; 15]
+            && target(tail, 19).is_some()
+            && target(tail, 90).is_some()
+            && tail.get(141..143)? == [0; 2]
+            && target(tail, 143).is_some()
+            && tail.get(194..196)? == [0; 2])
+            .then_some(())
+    })()
+    .is_some()
 }
 
 fn parameter_scope_previous_history_offset_for_form(
@@ -934,8 +1004,10 @@ fn parameter_scope_previous_history_offset_for_form(
     tail_length: usize,
     tail_form: ScopeTailForm,
 ) -> Option<usize> {
-    if tail_form == ScopeTailForm::Named {
-        return None;
+    match tail_form {
+        ScopeTailForm::Named => return None,
+        ScopeTailForm::TypedFixed => return Some(TYPED_FIXED_SCOPE_PREVIOUS_HISTORY_OFFSET),
+        ScopeTailForm::Fixed => {}
     }
     match (kind, tail_length) {
         ("CopyPasteBodies", 110) => Some(53),
@@ -993,6 +1065,14 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 && parameter_scope_tail_length_is_valid(&kind, tail_length)
                 && fixed_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Fixed))
+                    .is_some()
+            {
+                fixed_ambiguous = true;
+            }
+            if tail_length == TYPED_FIXED_SCOPE_TAIL_LEN
+                && typed_fixed_scope_tail_is_valid(bytes, kind_end, paired_at)
+                && fixed_candidate
+                    .replace((at, kind_end, tail_length, ScopeTailForm::TypedFixed))
                     .is_some()
             {
                 fixed_ambiguous = true;
@@ -1076,13 +1156,21 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 state_id => Some(i64::from(state_id)),
             }
         });
+        // Every reference in one scope frame uses one spelling; the typed
+        // tail selects the 51-byte typed reference-table entries.
+        let typed_references = tail_form == ScopeTailForm::TypedFixed;
+        let stride = if typed_references {
+            crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+        } else {
+            11
+        };
         let mut reference_table = None;
         for count_at in start + 11..reference_table_end {
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
             if count == 0
                 || count_at
                     .checked_add(4)?
-                    .checked_add(count.checked_mul(11)?)?
+                    .checked_add(count.checked_mul(stride)?)?
                     != reference_table_end
             {
                 continue;
@@ -1103,12 +1191,21 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 return Some(Err(error));
             }
             for ordinal in 0..count {
-                let marker = first.checked_add(ordinal.checked_mul(11)?)?;
-                if bytes.get(marker) != Some(&1) || bytes.get(marker + 5..marker + 11)? != [0; 6] {
+                let marker = first.checked_add(ordinal.checked_mul(stride)?)?;
+                let member = if typed_references {
+                    crate::bytes::typed_local_reference_target(bytes, marker)
+                } else if bytes.get(marker) == Some(&1)
+                    && bytes.get(marker + 5..marker + 11)? == [0; 6]
+                {
+                    View::u32_le_at(bytes, marker + 1)
+                } else {
+                    None
+                };
+                let Some(member) = member else {
                     members.clear();
                     break;
-                }
-                members.push(View::u32_le_at(bytes, marker + 1)?);
+                };
+                members.push(member);
                 offsets.push(u64::try_from(marker + 1).ok()?);
             }
             if members.len() == count
