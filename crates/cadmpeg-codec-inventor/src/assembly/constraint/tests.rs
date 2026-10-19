@@ -435,7 +435,7 @@ fn face_keys_follow_the_name_map_to_an_imported_face_name() {
         test_frame(3, IMPORTED_FACE_NAME_TYPE, View::over_retained(&name)),
         test_frame(4, [0; 16], View::over_retained(&empty)),
     ];
-    let mut parsed = parse_face_key(&ctx, &records[0], false).expect("face key");
+    let mut parsed = parse_face_key(&ctx, &records[0], false, Some(25)).expect("face key");
     assert_eq!(parsed.geometry_ordinal, Some(1));
     assert_eq!(parsed.hint, ProjectionHint::PartFace);
     name_face_key(&ctx, &mut parsed, &records).expect("named face key");
@@ -470,7 +470,7 @@ fn face_keys_follow_the_name_map_to_an_imported_face_name() {
 
     let axis = face_key_bytes(true, QUALIFIED | 2, QUALIFIED | 3, 7);
     let frame = test_frame(0, FACE_AXIS_KEY_TYPE, View::over_retained(&axis));
-    let mut parsed = parse_face_key(&ctx, &frame, true).expect("axis key");
+    let mut parsed = parse_face_key(&ctx, &frame, true, Some(25)).expect("axis key");
     assert_eq!(parsed.hint, ProjectionHint::PartFaceAxis);
     name_face_key(&ctx, &mut parsed, &records).expect("named axis key");
     let OperandSelection::Face {
@@ -492,7 +492,7 @@ fn work_feature_keys_name_part_subassembly_or_local_geometry() {
     let ctx = context(&arena);
     let part = work_feature_part_bytes(QUALIFIED | 5, "PmDCSegment::seg:rev:9", 4);
     let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&part));
-    let parsed = parse_work_feature_key(&ctx, &frame).expect("part work feature");
+    let parsed = parse_work_feature_key(&ctx, &frame, Some(25)).expect("part work feature");
     assert_eq!(parsed.geometry_ordinal, Some(4));
     assert_eq!(parsed.hint, ProjectionHint::PartWorkFeature);
     assert!(matches!(
@@ -505,12 +505,12 @@ fn work_feature_keys_name_part_subassembly_or_local_geometry() {
 
     let sub = work_feature_part_bytes(QUALIFIED | 5, "AmDcSegment::seg:rev:12", 2);
     let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&sub));
-    let parsed = parse_work_feature_key(&ctx, &frame).expect("subassembly work feature");
+    let parsed = parse_work_feature_key(&ctx, &frame, Some(25)).expect("subassembly work feature");
     assert_eq!(parsed.hint, ProjectionHint::SubassemblyWorkFeature);
 
     let local = work_feature_local_bytes(QUALIFIED | 5, QUALIFIED | 0x27, 0x40);
     let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&local));
-    let parsed = parse_work_feature_key(&ctx, &frame).expect("assembly geometry");
+    let parsed = parse_work_feature_key(&ctx, &frame, Some(25)).expect("assembly geometry");
     assert_eq!(parsed.hint, ProjectionHint::AssemblyGeometry);
     let OperandSelection::AssemblyGeometry {
         target_reference,
@@ -530,21 +530,21 @@ fn selection_keys_refuse_broken_grammar() {
     let ctx = context(&arena);
     let other = work_feature_part_bytes(QUALIFIED | 5, "PmXXSegment::seg:rev:9", 4);
     let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&other));
-    assert!(displayed(parse_work_feature_key(&ctx, &frame)).contains("design segment"));
+    assert!(displayed(parse_work_feature_key(&ctx, &frame, Some(25))).contains("design segment"));
 
     let short = work_feature_part_bytes(QUALIFIED | 5, "PmDCSegment::seg:rev", 4);
     let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&short));
-    assert!(displayed(parse_work_feature_key(&ctx, &frame)).contains("three components"));
+    assert!(displayed(parse_work_feature_key(&ctx, &frame, Some(25))).contains("three components"));
 
     let mut form = work_feature_local_bytes(QUALIFIED | 5, QUALIFIED | 0x27, 0x40);
     form[30] = 2;
     let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&form));
-    assert!(displayed(parse_work_feature_key(&ctx, &frame)).contains("form is 2"));
+    assert!(displayed(parse_work_feature_key(&ctx, &frame, Some(25))).contains("form is 2"));
 
     let mut trailing = face_key_bytes(false, QUALIFIED | 2, QUALIFIED | 3, 8);
     trailing.push(0);
     let frame = test_frame(0, FACE_KEY_TYPE, View::over_retained(&trailing));
-    assert!(displayed(parse_face_key(&ctx, &frame, false)).contains("trailing bytes"));
+    assert!(displayed(parse_face_key(&ctx, &frame, false, Some(25))).contains("trailing bytes"));
 
     let descending = name_map_bytes(&[(8, QUALIFIED | 4), (7, QUALIFIED | 5)]);
     assert!(
@@ -572,7 +572,7 @@ fn operands_take_the_selection_key_of_their_geometry() {
         test_frame(2, PLANE_TYPE, View::over_retained(&empty)),
         test_frame(3, WORK_FEATURE_KEY_TYPE, View::over_retained(&local)),
     ];
-    let key = parse_work_feature_key(&ctx, &records[3]).expect("assembly geometry");
+    let key = parse_work_feature_key(&ctx, &records[3], Some(25)).expect("assembly geometry");
     let payload = parse(&ctx, records[0].payload).expect("mate record");
     let record =
         resolve(&ctx, segment(&records, &[], &[key], None), 0, &payload).expect("resolved");
@@ -775,4 +775,181 @@ fn operands_store_their_geometry_at_a_supported_version() {
         .operands
         .iter()
         .all(|operand| operand.stored_geometry.is_none()));
+}
+
+/// The byte offset of the face-key value separator in `face_key_bytes`.
+fn face_key_separator_offset() -> usize {
+    26 + 2 + 4 + (4 + 2 * PART_KEY.len()) + (4 + 2 * 2) + 2 + 4
+}
+
+#[test]
+fn selection_keys_at_version_19_store_no_separator_or_trailer() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let mut face = face_key_bytes(false, QUALIFIED | 2, QUALIFIED | 3, 8);
+    let separator = face_key_separator_offset();
+    assert_eq!(&face[separator..separator + 4], &[0; 4]);
+    face.drain(separator..separator + 4);
+    let frame = test_frame(0, FACE_KEY_TYPE, View::over_retained(&face));
+    let parsed = parse_face_key(&ctx, &frame, false, Some(19)).expect("version 19 face key");
+    let OperandSelection::Face { values, .. } = parsed.selection else {
+        panic!("face selection");
+    };
+    assert_eq!(values, [2, 2]);
+    assert!(displayed(parse_face_key(&ctx, &frame, false, Some(25))).contains("separator is 2"));
+
+    for mut bytes in [
+        work_feature_part_bytes(QUALIFIED | 5, PART_KEY, 4),
+        work_feature_local_bytes(QUALIFIED | 5, QUALIFIED | 0x27, 0x40),
+    ] {
+        bytes.truncate(bytes.len() - 4);
+        let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&bytes));
+        parse_work_feature_key(&ctx, &frame, Some(19)).expect("version 19 work-feature key");
+        assert!(displayed(parse_work_feature_key(&ctx, &frame, Some(25))).contains("trailer"));
+    }
+
+    for version in [Some(21), Some(15), None] {
+        let frame = test_frame(0, FACE_KEY_TYPE, View::over_retained(&face));
+        assert!(
+            displayed(parse_face_key(&ctx, &frame, false, version)).contains("not established"),
+            "{version:?}"
+        );
+        let local = work_feature_local_bytes(QUALIFIED | 5, QUALIFIED | 0x27, 0x40);
+        let frame = test_frame(0, WORK_FEATURE_KEY_TYPE, View::over_retained(&local));
+        assert!(
+            displayed(parse_work_feature_key(&ctx, &frame, version)).contains("not established"),
+            "{version:?}"
+        );
+    }
+}
+
+#[test]
+fn line_point_and_direction_geometry_at_version_19_store_no_value_word() {
+    let mut line = geometry_prefix(0);
+    push_list(&mut line, &[]);
+    push_f64s(&mut line, &[0.5, 0.25, 0.0, 0.0, 0.0, -1.0]);
+    line.push(0);
+    assert_eq!(line.len(), 91);
+    let record =
+        geometry::parse(View::over_retained(&line), OperandGeometry::Line, 19, 0).expect("line");
+    assert_eq!(
+        record.shape,
+        GeometryShape::Line {
+            origin: [0.5, 0.25, 0.0],
+            direction: [0.0, 0.0, -1.0],
+        }
+    );
+    assert!(displayed(geometry::parse(
+        View::over_retained(&line),
+        OperandGeometry::Line,
+        21,
+        0
+    ))
+    .contains("not established"));
+
+    let mut point = geometry_prefix(0);
+    push_f64s(&mut point, &[7.5, -11.0, 14.0]);
+    push_list(&mut point, &[]);
+    push_list(&mut point, &[]);
+    assert_eq!(point.len(), 74);
+    let record =
+        geometry::parse(View::over_retained(&point), OperandGeometry::Point, 19, 0).expect("point");
+    assert_eq!(
+        record.shape,
+        GeometryShape::Point {
+            position: [7.5, -11.0, 14.0]
+        }
+    );
+
+    let mut direction = geometry_prefix(0);
+    push_f64s(&mut direction, &[0.0, 0.0, -1.0]);
+    assert_eq!(direction.len(), 58);
+    let record = geometry::parse(
+        View::over_retained(&direction),
+        OperandGeometry::Direction,
+        19,
+        0,
+    )
+    .expect("direction");
+    assert_eq!(
+        record.shape,
+        GeometryShape::Direction {
+            vector: [0.0, 0.0, -1.0]
+        }
+    );
+}
+
+#[test]
+fn an_undecoded_operand_geometry_keeps_its_constraint() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let constraint = constraint_bytes(1, &[QUALIFIED | 2], &[], 0);
+    let operand = operand_bytes(0, QUALIFIED | 3);
+    let mut line = geometry_prefix(0);
+    push_list(&mut line, &[]);
+    push_f64s(&mut line, &[0.0; 6]);
+    line.push(0);
+    let records = [
+        test_frame(0, CONSTRAINT_TYPE, View::over_retained(&constraint)),
+        test_frame(1, OPERAND_TYPE, View::over_retained(&operand)),
+        test_frame(2, LINE_TYPE, View::over_retained(&line)),
+    ];
+    let payload = parse(&ctx, records[0].payload).expect("mate record");
+    let record = resolve(
+        &ctx,
+        segment(&records, &[], &[], Some((21, 0))),
+        0,
+        &payload,
+    )
+    .expect("the constraint resolves without its geometry");
+    let [operand] = record.operands.as_slice() else {
+        panic!("one operand");
+    };
+    assert!(operand.stored_geometry.is_none());
+    assert!(operand
+        .geometry_issue
+        .as_deref()
+        .is_some_and(|detail| detail.contains("not established")));
+}
+
+fn occurrence_context_bytes(label: &str, key: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 0x39);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 0x0400);
+    push_u32(&mut bytes, 0);
+    push_text(&mut bytes, label);
+    push_text(&mut bytes, key);
+    push_u16(&mut bytes, 1);
+    push_u32(&mut bytes, 0x77);
+    push_u32(&mut bytes, QUALIFIED | 0xa);
+    push_u32(&mut bytes, 0);
+    push_u16(&mut bytes, 2);
+    push_u16(&mut bytes, 0x3000);
+    push_u32(&mut bytes, 0);
+    bytes.push(1);
+    bytes
+}
+
+#[test]
+fn occurrence_context_records_name_the_occurrence_path() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let key = |label: &str, key: &str| {
+        let bytes = occurrence_context_bytes(label, key);
+        super::selection::occurrence_context_key(&ctx, View::over_retained(&bytes))
+            .expect("occurrence context prefix")
+    };
+    assert_eq!(key("DCx", "1").as_deref(), Some("1"));
+    assert_eq!(key("DCx", "97:11:2").as_deref(), Some("97:11:2"));
+    assert_eq!(key("DCy", "1"), None);
+    assert_eq!(key("DCx", "1::2"), None);
+    assert_eq!(key("DCx", ""), None);
+    assert_eq!(
+        super::selection::occurrence_context_key(&ctx, View::over_retained(&[0; 6]))
+            .expect("short occurrence context"),
+        None
+    );
 }

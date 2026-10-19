@@ -2,9 +2,9 @@
 //! Neutral assembly joints from typed assembly constraints (specification section 9.4).
 //!
 //! A constraint becomes a joint when its solution state is 0, it stores no
-//! limits, both operands carry stored geometry and a selection key, and its
-//! family and geometry pair have a neutral joint family. Every other
-//! constraint stays a native record.
+//! limits, both operands carry stored geometry and a known owning occurrence
+//! path, and its family and geometry pair have a neutral joint family. Every
+//! other constraint stays a native record.
 
 use std::collections::{HashMap, HashSet};
 
@@ -224,7 +224,7 @@ fn joint_kind(
             Direction { .. },
             ROLE_ANGLE,
             ParameterValue::Angle(angle),
-        ) => Some(PairedJointKind::Angle {
+        ) if (0.0..=std::f64::consts::PI).contains(&angle.get()) => Some(PairedJointKind::Angle {
             angle: Some(FiniteReal::new(angle.get())?),
         }),
         _ => None,
@@ -242,11 +242,15 @@ fn connector(
     let Some(frame) = frame(shape) else {
         return Ok(None);
     };
-    let Some(selection) = &operand.selection else {
-        return Ok(None);
-    };
-    let operand = match (selection, operand.occurrence_id) {
-        (OperandSelection::Face { part, name_key, .. }, Some(occurrence)) => {
+    let context_key = operand.context_key.as_deref();
+    // A selection key and the occurrence-context record name the same path.
+    let agrees = |occurrence_key: &str| context_key.is_none_or(|key| key == occurrence_key);
+    let operand = match (&operand.selection, operand.occurrence_id) {
+        (
+            Some(OperandSelection::Face { part, .. } | OperandSelection::WorkFeature { part, .. }),
+            Some(_),
+        ) if !agrees(&part.occurrence_key) => None,
+        (Some(OperandSelection::Face { part, name_key, .. }), Some(occurrence)) => {
             let subelement =
                 ctx.format_retained(format_args!("face:{name_key}"), "Inventor joint face key")?;
             nested_operand(
@@ -259,9 +263,9 @@ fn connector(
             )?
         }
         (
-            OperandSelection::WorkFeature {
+            Some(OperandSelection::WorkFeature {
                 part, source_index, ..
-            },
+            }),
             Some(occurrence),
         ) => {
             let subelement = ctx.format_retained(
@@ -278,10 +282,10 @@ fn connector(
             )?
         }
         (
-            OperandSelection::AssemblyGeometry {
+            Some(OperandSelection::AssemblyGeometry {
                 target_source_index,
                 ..
-            },
+            }),
             None,
         ) => {
             let object = ctx.format_retained(
@@ -293,6 +297,28 @@ fn connector(
                 "Inventor joint assembly geometry key",
             )?;
             Some(JointOperand::root(object, vec![subelement]))
+        }
+        (None, Some(occurrence)) => {
+            // Without a selection key the occurrence-context record gives the
+            // owning occurrence path, and the stored geometry record is the
+            // referenced object.
+            let (Some(key), Some(geometry)) = (
+                context_key,
+                operand
+                    .geometry_reference
+                    .and_then(crate::pmdc::PmDcReference::record_ordinal),
+            ) else {
+                return Ok(None);
+            };
+            let object = ctx.format_retained(
+                format_args!("AmDcSegment::{}", constraint.segment_token),
+                "Inventor joint stored-geometry object",
+            )?;
+            let subelement = ctx.format_retained(
+                format_args!("stored_geometry:{geometry}"),
+                "Inventor joint stored-geometry key",
+            )?;
+            nested_operand(ctx, occurrence, key, &object, subelement, occurrence_ids)?
         }
         _ => None,
     };

@@ -131,6 +131,50 @@ fn header(view: &mut View<'_>) -> Result<(), CodecError> {
     Ok(())
 }
 
+/// Type identifier of the occurrence-context record of a referenced document.
+pub(super) const OCCURRENCE_CONTEXT_TYPE: [u8; 16] = [
+    0xe5, 0xae, 0x5e, 0x37, 0xd1, 0x11, 0xe6, 0xf4, 0x60, 0x00, 0xe5, 0xb1, 0xf1, 0xbc, 0x87, 0xb0,
+];
+/// Form word of the occurrence-context identity.
+const OCCURRENCE_CONTEXT_FORM: u16 = 0x0400;
+/// Label that starts the occurrence-context identity.
+const OCCURRENCE_CONTEXT_LABEL: &str = "DCx";
+
+/// The occurrence key of an occurrence-context record: colon-separated
+/// decimal occurrence identifiers, outermost first. `None` when the
+/// record prefix does not have that form.
+pub(super) fn occurrence_context_key(
+    ctx: &DecodeContext<'_>,
+    payload: View<'_>,
+) -> Result<Option<String>, CodecError> {
+    let mut view = payload;
+    let prefix = (|| {
+        crate::reader::u32(&mut view, "occurrence context header value")?;
+        crate::reader::u16(&mut view, "occurrence context header id")?;
+        crate::reader::pmdc_reference(&mut view, "occurrence context next reference")?;
+        crate::reader::u32(&mut view, "occurrence context flags")?;
+        expect_u16(
+            &mut view,
+            OCCURRENCE_CONTEXT_FORM,
+            "occurrence context form",
+        )?;
+        expect_u32(&mut view, 0, "occurrence context reserved word")?;
+        let label = counted_text(ctx, &mut view, "occurrence context label")?;
+        let key = counted_text(ctx, &mut view, "occurrence context key")?;
+        Ok::<_, CodecError>((label, key))
+    })();
+    let (label, key) = match prefix {
+        Ok(prefix) => prefix,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    let decimal_path = !key.is_empty()
+        && key
+            .split(':')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
+    Ok((label == OCCURRENCE_CONTEXT_LABEL && decimal_path).then_some(key))
+}
+
 fn counted_text(
     ctx: &DecodeContext<'_>,
     view: &mut View<'_>,
@@ -240,7 +284,9 @@ pub(super) fn parse_face_key(
     ctx: &DecodeContext<'_>,
     record: &RseRecordFrame<'_>,
     axis: bool,
+    major: Option<u8>,
 ) -> Result<SelectionKey, CodecError> {
+    let separated = super::version_word(major, "selection key")?;
     let mut view = record.payload;
     header(&mut view)?;
     expect_u16(&mut view, KEY_FORM, "selection key form")?;
@@ -250,7 +296,9 @@ pub(super) fn parse_face_key(
     let part = part_key(ctx, key, occurrence_key)?;
     expect_u16(&mut view, 1, "selection key value marker")?;
     let first = crate::reader::u32(&mut view, "selection key first value")?;
-    expect_u32(&mut view, 0, "selection key value separator")?;
+    if separated {
+        expect_u32(&mut view, 0, "selection key value separator")?;
+    }
     let second = crate::reader::u32(&mut view, "selection key second value")?;
     for _ in 0..2 {
         expect_u16(&mut view, EMPTY_LIST_MARKER, "selection key list marker")?;
@@ -292,7 +340,9 @@ pub(super) fn parse_face_key(
 pub(super) fn parse_work_feature_key(
     ctx: &DecodeContext<'_>,
     record: &RseRecordFrame<'_>,
+    major: Option<u8>,
 ) -> Result<SelectionKey, CodecError> {
+    let trailer = super::version_word(major, "work-feature key")?;
     let mut view = record.payload;
     header(&mut view)?;
     let geometry = crate::reader::pmdc_reference(&mut view, "work-feature key geometry")?;
@@ -304,7 +354,9 @@ pub(super) fn parse_work_feature_key(
                 crate::reader::pmdc_reference(&mut view, "work-feature key target")?;
             let target_source_index =
                 crate::reader::u32(&mut view, "work-feature key target source index")?;
-            expect_u32(&mut view, 0, "work-feature key trailer")?;
+            if trailer {
+                expect_u32(&mut view, 0, "work-feature key trailer")?;
+            }
             (
                 ProjectionHint::AssemblyGeometry,
                 OperandSelection::AssemblyGeometry {
@@ -321,7 +373,9 @@ pub(super) fn parse_work_feature_key(
             let part = part_key(ctx, key, occurrence_key)?;
             expect_u16(&mut view, 1, "work-feature key value marker")?;
             let source_index = crate::reader::u32(&mut view, "work-feature key source index")?;
-            expect_u32(&mut view, 0, "work-feature key trailer")?;
+            if trailer {
+                expect_u32(&mut view, 0, "work-feature key trailer")?;
+            }
             (
                 match part.segment_kind {
                     KeySegmentKind::Part => ProjectionHint::PartWorkFeature,

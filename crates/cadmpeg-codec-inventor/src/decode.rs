@@ -73,7 +73,6 @@ fn decode_container<'a>(
         &container.rse,
         &assembly_inventory.occurrences,
     )?;
-    assembly_inventory.issues.extend(constraint_issues);
     let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let mut sheet_metal_inventory =
         crate::presentation::sheet_metal::inventory(ctx, &container.rse)?;
@@ -614,6 +613,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "assembly_constraints", &assembly_constraints)?;
     namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
     namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
+    namespace.set_arena(ctx, "assembly_constraint_issues", &constraint_issues)?;
     namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
     namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;
     namespace.set_arena(ctx, "pm_graphics_faces", &pm_graphics_faces)?;
@@ -987,6 +987,12 @@ fn decode_container<'a>(
         if unresolved_feature_states != 0 {
             losses.push(admitted_loss(ctx, InventorLossCode::FeatureStateUnresolved, format_args!(
                 "Transferred {unresolved_feature_states} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state."
+            ))?);
+        }
+        if !constraint_issues.is_empty() {
+            losses.push(admitted_loss(ctx, InventorLossCode::AssemblyConstraintNotTransferred, format_args!(
+                "Retained {} assembly constraint, selection-key, or operand-geometry record(s) whose grammar did not decode; their constraints remain native.",
+                constraint_issues.len()
             ))?);
         }
         if unscoped_design_parameters != 0 {
@@ -1426,6 +1432,10 @@ fn decode_container<'a>(
         (
             crate::coverage::ASSEMBLY_RECORD_ISSUES,
             assembly_inventory.issues.len(),
+        ),
+        (
+            crate::coverage::ASSEMBLY_CONSTRAINT_ISSUES,
+            constraint_issues.len(),
         ),
         (
             crate::coverage::ACTIVE_KERNEL_CARRIERS,

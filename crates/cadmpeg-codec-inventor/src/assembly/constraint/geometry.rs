@@ -133,7 +133,9 @@ pub(super) fn parse(
             }
         }
         OperandGeometry::Line => {
-            zero(&mut view, "operand line value")?;
+            if super::version_word(Some(version), "operand line")? {
+                zero(&mut view, "operand line value")?;
+            }
             empty_list(&mut view, "operand line list")?;
             let origin = triple(&mut view, "operand line origin")?;
             let direction = triple(&mut view, "operand line direction")?;
@@ -146,14 +148,18 @@ pub(super) fn parse(
             GeometryShape::Line { origin, direction }
         }
         OperandGeometry::Point => {
-            zero(&mut view, "operand point value")?;
+            if super::version_word(Some(version), "operand point")? {
+                zero(&mut view, "operand point value")?;
+            }
             let position = triple(&mut view, "operand point position")?;
             empty_list(&mut view, "operand point list")?;
             empty_list(&mut view, "operand point list")?;
             GeometryShape::Point { position }
         }
         OperandGeometry::Direction => {
-            zero(&mut view, "operand direction value")?;
+            if super::version_word(Some(version), "operand direction")? {
+                zero(&mut view, "operand direction value")?;
+            }
             GeometryShape::Direction {
                 vector: triple(&mut view, "operand direction vector")?,
             }

@@ -223,7 +223,9 @@ reserved u32 = 0
 key counted UTF-16LE
 occurrence_key counted UTF-16LE
 value_marker u16 = 1
-values u32, u32 = 0, u32
+first_value u32
+separator u32 = 0                  segment major versions 23 and later
+second_value u32
 empty list u16 8, u16 0x3000, u32 0
 empty list u16 8, u16 0x3000, u32 0
 state u8 = 0
@@ -257,7 +259,7 @@ terminator u32 = 0
 
 `width` is at least 2. The record ends after the terminator. The face it names is the face of the referenced part whose `NMx_Import_Brep_tag` naming-matching attribute stores the same group count, groups, separators, and terminator after its leading `15, -1` values. Other naming-record types (`205fa956d111af49000887ba32a3dc09`, `a5c245062846bbe61da9eda12072ce35`, `7a260eaed211715d60007eb71269f1b0`, `341b896fc649bafd4aaecf8eec120897`, `1974ba075a47ca63be91488d91a45491`) name faces and edges of modeled parts; their grammars are not established.
 
-A record with type identifier `61b8480cd2110541600093b7b035c3b0` selects a work feature. After the prefix it contains `geometry_reference:u32`, `local:u8`, and `tag:u8 = 5`. When `local` is 1, `target_reference:u32` selects a geometry record of the current assembly, `target_source_index:u32` equals that record's `source_index`, and u32 zero ends the record. When `local` is 0, the record continues with u32 zero, a key string, an occurrence key, u16 1, `source_index:u32`, and u32 zero, which ends the record. The key's `<kind>` is `PmDC` for a part work feature and `AmDc` for a subassembly work feature, and `source_index` equals the `source_index` of the work-feature record in that design segment.
+A record with type identifier `61b8480cd2110541600093b7b035c3b0` selects a work feature. After the prefix it contains `geometry_reference:u32`, `local:u8`, and `tag:u8 = 5`. When `local` is 1, `target_reference:u32` selects a geometry record of the current assembly, `target_source_index:u32` equals that record's `source_index`, and a u32 zero trailer ends the record. When `local` is 0, the record continues with u32 zero, a key string, an occurrence key, u16 1, `source_index:u32`, and a u32 zero trailer, which ends the record. Segment major version 19 stores neither the face-key separator nor the work-feature trailer; segment major versions 23 and later store both. The key's `<kind>` is `PmDC` for a part work feature and `AmDc` for a subassembly work feature, and `source_index` equals the `source_index` of the work-feature record in that design segment.
 
 
 ### 9.3 Constraint operand geometry
@@ -270,19 +272,34 @@ document_reference u32
 reserved u32 = 0
 ```
 
-`document_reference` selects the `e5ae5e37d111e6f46000e5b1f1bc87b0` occurrence-context record of the referenced document, and is null for assembly geometry. The class-specific fields follow:
+`document_reference` selects the `e5ae5e37d111e6f46000e5b1f1bc87b0` occurrence-context record of the referenced document, and is null for assembly geometry. The occurrence-context record starts with:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+form u16 = 0x0400
+reserved u32 = 0
+label counted UTF-16LE = "DCx"
+occurrence_key counted UTF-16LE
+```
+
+`occurrence_key` is the owning occurrence path of section 9.4, the same text as the occurrence key of the operand's selection key. The fields that follow it are retained. The class-specific fields follow:
 
 ```text
 plane (42df52ce):     value u32 = 0 for segment major versions above 21,
                       optional frame marker u32 = 0x203,
                       value u32 = 0,
                       origin f64[3], u_axis f64[3], v_axis f64[3]
-line (896cf08e):      value u32 = 0, empty reference list (u16 2, u16 0x3000, u32 0),
+line (896cf08e):      value u32 = 0 (version word), empty reference list (u16 2, u16 0x3000, u32 0),
                       origin f64[3], direction f64[3], state u8 = 0
-point (3edf52ce):     value u32 = 0, position f64[3],
+point (3edf52ce):     value u32 = 0 (version word), position f64[3],
                       two empty reference lists
-direction (40df52ce): value u32 = 0, vector f64[3]
+direction (40df52ce): value u32 = 0 (version word), vector f64[3]
 ```
+
+The version word is present at segment major versions 23 and later and absent at segment major version 19.
 
 Each record ends after its last field, and every stored f64 is finite. For an operand that selects a part face, the plane origin lies on the face's plane and `u_axis × v_axis` is the face's outward normal: the surface normal, reversed when the face is reversed. For an operand that selects a face axis, the line lies on the axis of the face's cylinder and its direction is parallel to that axis. For a part work-feature operand, the plane equals the work plane's origin and axes. A line operand that is an assembly origin axis stores a direction of length 2.
 
@@ -296,17 +313,17 @@ A constraint with `solution` 0 is satisfied by the stored placements. Its operan
 | flush | plane, plane | `n₁ = n₀` and `(o₁ − o₀) · n₀ = value` |
 | mate | line, line, `value` = 0 | the lines are the same line; the directions are parallel in either sense |
 | mate | point, line | the distance from the point to the line equals `value` |
-| angle | direction, direction | the angle between the directions equals `value` |
+| angle | direction, direction, `value` in [0, π] | the angle between the directions equals `value` |
 
 `n` is the plane normal `u_axis × v_axis`, `o` is the stored plane origin, and the operand order is the stored order. The `solution` value 0 does not encode the plane sense: the kind selects it.
 
 The occurrence key of a selection key (section 9.2) is the owning occurrence path: colon-separated ASCII decimal occurrence identifiers, outermost first. The first identifier is the operand's `occurrence_id` in the current assembly. Each later identifier is an occurrence identifier in the document that the previous occurrence references. The operand geometry is in the coordinates of the document at the end of the path, and the placements of the nested occurrences are stored in the referenced subassembly documents.
 
-A constraint is a neutral `AssemblyJoint` when `solution` is 0, `limit_state` is 0, the parameter list has exactly one value parameter whose role matches the relation (3 for a length, 4 for an angle), the value parameter is a neutral document parameter (section 11), both operands store their geometry and a selection key, and the kind and operand classes are one row of the table. The joint id is `inventor:assembly:joint#<segment>-<ordinal>` with the constraint record's segment token and ordinal, `native_ref` is the constraint id, and `driving_parameter` is the value parameter. The joint families are `plane_coincidence` with `sense` `opposed` (mate) or `aligned` (flush) and `offset` equal to the value in millimetres, `axis_coincidence`, `point_on_axis` with `distance` equal to the value in millimetres, and `angle` with `angle` equal to the value in radians.
+A constraint is a neutral `AssemblyJoint` when `solution` is 0, `limit_state` is 0, the parameter list has exactly one value parameter whose role matches the relation (3 for a length, 4 for an angle), the value parameter is a neutral document parameter (section 11), both operands store their geometry, each operand's owning occurrence path is known, and the kind and operand classes are one row of the table. An occurrence operand's path is the occurrence key of its selection key or, without a selection key, the occurrence key of its occurrence-context record; when both exist they are equal. An operand of the assembly itself needs an assembly-geometry selection key. The joint id is `inventor:assembly:joint#<segment>-<ordinal>` with the constraint record's segment token and ordinal, `native_ref` is the constraint id, and `driving_parameter` is the value parameter. The joint families are `plane_coincidence` with `sense` `opposed` (mate) or `aligned` (flush) and `offset` equal to the value in millimetres, `axis_coincidence`, `point_on_axis` with `distance` equal to the value in millimetres, and `angle` with `angle` equal to the value in radians.
 
-Each operand becomes one connector. A face or work-feature selection of an occurrence operand has an occurrence container whose `occurrence` is the neutral occurrence of `occurrence_id` and whose `occurrence_path` is the remaining identifiers of the occurrence key. Its object is the selection key string, and its one subelement is `face:<name_key>` or `work_feature:<source_index>`. An assembly-geometry selection has the root container, the object `AmDcSegment::<segment>`, and the subelement `assembly_geometry:<target_source_index>`. The connector frame is in the coordinates of the document at the end of the path, in millimetres: its origin is the plane origin, line origin, or point position multiplied by 10, or zero for a direction. Its z axis is `u_axis × v_axis` for a plane and the stored direction for a line or a direction. Its x axis is `u_axis` for a plane. For a line or a direction, the x axis is the unit component of the coordinate axis least aligned with z that is perpendicular to z, and for a point the frame axes are the coordinate axes. The y axis is `z × x`. Stored axes must have unit length and the plane axes must be perpendicular, each within `1e-6`.
+Each operand becomes one connector. A face or work-feature selection of an occurrence operand has an occurrence container whose `occurrence` is the neutral occurrence of `occurrence_id` and whose `occurrence_path` is the remaining identifiers of the occurrence key. Its object is the selection key string, and its one subelement is `face:<name_key>` or `work_feature:<source_index>`. An occurrence operand without a selection key has the same occurrence container, the object `AmDcSegment::<segment>`, and the subelement `stored_geometry:<ordinal>` with the record ordinal of its geometry record. An assembly-geometry selection has the root container, the object `AmDcSegment::<segment>`, and the subelement `assembly_geometry:<target_source_index>`. The connector frame is in the coordinates of the document at the end of the path, in millimetres: its origin is the plane origin, line origin, or point position multiplied by 10, or zero for a direction. Its z axis is `u_axis × v_axis` for a plane and the stored direction for a line or a direction. Its x axis is `u_axis` for a plane. For a line or a direction, the x axis is the unit component of the coordinate axis least aligned with z that is perpendicular to z, and for a point the frame axes are the coordinate axes. The y axis is `z × x`. Stored axes must have unit length and the plane axes must be perpendicular, each within `1e-6`.
 
-Every other constraint remains a native record and produces an assembly-constraint loss.
+Every other constraint remains a native record and produces an assembly-constraint loss. A constraint, selection-key, or operand-geometry record that does not decode is retained as an assembly-constraint issue. Its constraint remains native, and an operand whose geometry does not decode keeps its other fields.
 
 ## 10. Part appearance assignments
 
@@ -500,7 +517,7 @@ The payload ends after `terminal_value`. Value 3 is the PmDc reference to the ro
 
 Parameter ownership requires exactly one document model root in the segment, exactly one segment with the display name the root names, and a name-map entry that references the parameter record under the parameter's own name. Parameters in a table whose context is the document model root are document parameters. Parameters in the parameter table of a flat-pattern model root belong to that flat-pattern model, which is one native feature after every document feature. The flat-pattern table repeats the names of the document sheet-metal parameters. Parameters in a table with a null context, or in a table whose model root does not resolve, have no established owner and remain native.
 
-An `AmDc` segment stores the parameters of an assembly document with the same parameter, expression, unit, and parameter-table grammars. Its parameter tables have no model root. A table whose `context_reference` selects the segment's assembly root record, type identifier `464d8790d011f8d10008cabc0663dc09`, holds document parameters. Ownership requires exactly one assembly root in the segment and the same name-map entry as above. The values and limits of assembly constraints (section 9.1) are document parameters of this kind.
+An `AmDc` segment stores the parameters of an assembly document with the same parameter, expression, unit, and parameter-table grammars. Its parameter tables have no model root. A table whose `context_reference` selects the segment's assembly root record, type identifier `464d8790d011f8d10008cabc0663dc09`, holds document parameters. Ownership requires exactly one assembly root in the segment and the same name-map entry as above. A table whose `context_reference` selects another record of the segment, such as a weldment record, has no established owner, and its parameters remain native. The values and limits of assembly constraints (section 9.1) are document parameters of this kind.
 
 ## 12. Planar sketches
 
