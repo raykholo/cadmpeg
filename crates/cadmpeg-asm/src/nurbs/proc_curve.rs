@@ -177,8 +177,34 @@ impl EmbeddedSurfaceCurve {
 #[derive(Clone, Copy)]
 enum NativeSupportChart {
     Canonical,
-    PlaneLengths,
-    Cone { axial_scale: f64 },
+    /// A plane chart: `u` along the stored `u_deriv` and `v` opposite `normal × u_deriv`, both
+    /// in multiples of the `u_deriv` length (`scale`, in millimetres).
+    PlaneLengths {
+        scale: f64,
+    },
+    Cone {
+        axial_scale: f64,
+    },
+    /// A sphere or torus chart: latitude or tube angle first, azimuth second.
+    AnglesAzimuthSecond,
+}
+
+/// The plane chart of a plane's stored fields: the position, the normal, and the
+/// length-bearing `u_deriv`.
+fn plane_chart(toks: &[Token]) -> Option<NativeSupportChart> {
+    let start = toks
+        .iter()
+        .position(|token| matches!(token, Token::Position(_)))?;
+    let (Some(Token::Vector3(_)), Some(Token::Vector3(u_deriv))) =
+        (toks.get(start + 1), toks.get(start + 2))
+    else {
+        return None;
+    };
+    let length =
+        (u_deriv[0] * u_deriv[0] + u_deriv[1] * u_deriv[1] + u_deriv[2] * u_deriv[2]).sqrt();
+    (length.is_finite() && length > f64::EPSILON).then_some(NativeSupportChart::PlaneLengths {
+        scale: length * LEN_TO_MM,
+    })
 }
 
 fn cone_axial_scale(sine: f64, cosine: f64, u_scale: f64) -> f64 {
@@ -193,7 +219,9 @@ fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
         return NativeSupportChart::Canonical;
     };
     match kind {
-        "plane" => NativeSupportChart::PlaneLengths,
+        "plane" => plane_chart(toks.get(position..).unwrap_or_default())
+            .unwrap_or(NativeSupportChart::Canonical),
+        "sphere" | "torus" => NativeSupportChart::AnglesAzimuthSecond,
         "cone" => {
             let parsed = (|| {
                 cur.take_position()?;
@@ -222,13 +250,26 @@ fn normalize_support_pcurve(
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
     match chart {
         NativeSupportChart::Canonical => {}
-        NativeSupportChart::PlaneLengths => {
+        NativeSupportChart::PlaneLengths { scale } => {
             propagate_resource!(pcurve.try_map_control_points(
                 |_, point| {
                     let point = point.get();
                     cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
-                        point.u * LEN_TO_MM,
-                        point.v * -LEN_TO_MM,
+                        point.u * scale,
+                        point.v * -scale,
+                    ))
+                    .ok_or(())
+                },
+                ctx
+            ))
+            .ok()?;
+        }
+        NativeSupportChart::AnglesAzimuthSecond => {
+            propagate_resource!(pcurve.try_map_control_points(
+                |_, point| {
+                    let native = point.get();
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                        native.v, native.u,
                     ))
                     .ok_or(())
                 },
@@ -263,7 +304,14 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     pcurve: &mut PcurveNurbs,
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
     let chart = match surface_head {
-        "plane" => NativeSupportChart::PlaneLengths,
+        "plane" => {
+            propagate_resource!(ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(surface_tokens.len()),
+                "ASM surface chart tokens"
+            ));
+            plane_chart(surface_tokens)?
+        }
+        "sphere" | "torus" => NativeSupportChart::AnglesAzimuthSecond,
         "cone" => {
             propagate_resource!(ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(surface_tokens.len()),
@@ -3894,7 +3942,13 @@ mod cache_form_tests {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("root");
             let Some(Err(cadmpeg_core::CodecError::ResourceLimit(limit))) =
-                normalize_support_pcurve(&ctx, NativeSupportChart::PlaneLengths, &mut pcurve)
+                normalize_support_pcurve(
+                    &ctx,
+                    NativeSupportChart::PlaneLengths {
+                        scale: crate::nurbs::reader::LEN_TO_MM,
+                    },
+                    &mut pcurve,
+                )
             else {
                 panic!("resource refusal stays in the result");
             };
@@ -3936,7 +3990,9 @@ mod cache_form_tests {
         let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
         normalize_support_pcurve(
             &cadmpeg_test_support::service_decode_context(),
-            NativeSupportChart::PlaneLengths,
+            NativeSupportChart::PlaneLengths {
+                scale: crate::nurbs::reader::LEN_TO_MM,
+            },
             &mut plane,
         )
         .transpose()
@@ -3965,7 +4021,9 @@ mod cache_form_tests {
     #[test]
     fn support_chart_overflow_refuses_projection_without_changing_the_pcurve() {
         for chart in [
-            NativeSupportChart::PlaneLengths,
+            NativeSupportChart::PlaneLengths {
+                scale: crate::nurbs::reader::LEN_TO_MM,
+            },
             NativeSupportChart::Cone { axial_scale: 2.0 },
         ] {
             let mut pcurve = linear_pcurve([Point2::new(f64::MAX, 0.0), Point2::new(1.0, 1.0)]);
@@ -3979,6 +4037,65 @@ mod cache_form_tests {
             .expect("support pole edit admission")
             .is_none());
             assert_eq!(pcurve, original);
+        }
+    }
+
+    #[test]
+    fn plane_chart_scales_by_the_stored_u_derivative_length() {
+        for (length, scale) in [(1.0, 10.0), (0.1, 1.0)] {
+            let tokens = [
+                Token::Ident("plane".into()),
+                Token::Position([2.5, 0.0, 0.0]),
+                Token::Vector3([1.0, 0.0, 0.0]),
+                Token::Vector3([0.0, 0.0, -length]),
+                Token::False,
+            ];
+            let NativeSupportChart::PlaneLengths { scale: actual } =
+                native_support_chart(&tokens, 0)
+            else {
+                panic!("plane tokens select a plane chart");
+            };
+            assert!((actual - scale).abs() < 1e-12, "{actual} for {length}");
+            let mut pcurve = linear_pcurve([Point2::new(-5.0, 1.0), Point2::new(2.0, 0.5)]);
+            normalize_pcurve_for_surface_record(
+                &cadmpeg_test_support::service_decode_context(),
+                "plane",
+                &tokens[1..],
+                &mut pcurve,
+            )
+            .transpose()
+            .expect("support pole edit admission")
+            .unwrap();
+            let first = pcurve.control_points()[0];
+            assert!((first.u - -5.0 * scale).abs() < 1e-9 && (first.v - -scale).abs() < 1e-9);
+        }
+        // A plane without a u derivative has no chart.
+        let tokens = [Token::Position([0.0; 3]), Token::Vector3([0.0, 0.0, 1.0])];
+        assert!(super::plane_chart(&tokens).is_none());
+    }
+
+    #[test]
+    fn sphere_and_torus_charts_put_the_azimuth_second() {
+        for head in ["sphere", "torus"] {
+            let tokens = [Token::Ident(head.into())];
+            assert!(matches!(
+                native_support_chart(&tokens, 0),
+                NativeSupportChart::AnglesAzimuthSecond
+            ));
+            let mut pcurve = linear_pcurve([Point2::new(0.25, -1.5), Point2::new(0.5, 2.0)]);
+            normalize_pcurve_for_surface_record(
+                &cadmpeg_test_support::service_decode_context(),
+                head,
+                &[],
+                &mut pcurve,
+            )
+            .transpose()
+            .expect("support pole edit admission")
+            .unwrap();
+            assert_eq!(
+                pcurve.control_points(),
+                [Point2::new(-1.5, 0.25), Point2::new(2.0, 0.5)]
+            );
         }
     }
 
