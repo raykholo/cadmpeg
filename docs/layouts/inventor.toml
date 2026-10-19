@@ -256,13 +256,14 @@ kind = "byte"
 section = "13"
 anchor = "enumeration records add"
 size = 26
+note = "Offsets and size are for segment major versions 15 through 22, whose extended content header has no extension values; versions 23 and 25 shift the fields by 4 and 8 bytes."
 
 [[record.field]]
 name = "content_header"
 offset = 0
 type = "bytes[22]"
 source = "spec"
-anchor = "same 22-byte content header"
+anchor = "Feature property records use the extended content header"
 
 [[record.field]]
 name = "type_value"
