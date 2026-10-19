@@ -749,15 +749,6 @@ impl ExternalReferenceRecord {
         }
     }
 
-    /// The file name of the persisted path without its extension.
-    fn path_stem(&self) -> Option<&str> {
-        let ExternalReferenceIdentity::Path { path, .. } = &self.identity else {
-            return None;
-        };
-        let name = path.as_str().rsplit(['\\', '/']).next()?;
-        Some(name.rsplit_once('.').map_or(name, |(stem, _)| stem))
-    }
-
     pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocument {
         use cadmpeg_ir::products::ExternalDocument;
         match &self.identity {
@@ -864,7 +855,7 @@ impl TryFrom<EmbeddedReferenceRecordWire> for EmbeddedReferenceRecord {
 pub(crate) struct UfrxOccurrenceRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
-    end_string_flag: u32,
+    reference_id: u32,
     pub(crate) occurrence_id: u32,
     pub(crate) occurrence_key: u32,
     header_value: u32,
@@ -881,7 +872,7 @@ impl Serialize for UfrxOccurrenceRecord {
         let mut fields = serializer.serialize_struct("UfrxOccurrenceRecordWire", 12)?;
         fields.serialize_field("id", &self.id)?;
         fields.serialize_field("ordinal", &self.ordinal)?;
-        fields.serialize_field("end_string_flag", &self.end_string_flag)?;
+        fields.serialize_field("reference_id", &self.reference_id)?;
         fields.serialize_field("occurrence_id", &self.occurrence_id)?;
         fields.serialize_field("occurrence_key", &self.occurrence_key)?;
         fields.serialize_field("header_value", &self.header_value)?;
@@ -905,7 +896,7 @@ impl Serialize for UfrxOccurrenceRecord {
 pub(crate) struct UfrxOccurrenceRecordWire {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
-    pub(crate) end_string_flag: u32,
+    pub(crate) reference_id: u32,
     pub(crate) occurrence_id: u32,
     pub(crate) occurrence_key: u32,
     pub(crate) header_value: u32,
@@ -921,36 +912,31 @@ pub(crate) struct UfrxOccurrenceRecordWire {
 
 /// Resolves the external reference that an occurrence instantiates.
 ///
-/// The occurrence's prototype document identifier selects the references
-/// with that document identifier. Copies of one file share a document
-/// identifier, so several candidates are narrowed to the one whose path stem
-/// equals the occurrence's component name. Anything other than exactly one
-/// remaining candidate is unresolved.
+/// The occurrence's `reference_id` selects the external reference with the
+/// same `reference_id`. When the occurrence also stores a prototype document
+/// identifier, the selected reference must store the same identifier.
+/// Anything other than exactly one such reference is unresolved.
 pub(crate) fn resolve_occurrence_reference<'r>(
     occurrence: &UfrxOccurrenceRecord,
     references: &'r [ExternalReferenceRecord],
 ) -> Option<&'r ExternalReferenceRecord> {
-    let document = hex_id(occurrence.prototype_document_id.as_ref()?);
-    let mut candidates = references.iter().filter(|reference| {
-        reference
+    let mut candidates = references
+        .iter()
+        .filter(|reference| reference.reference_id == occurrence.reference_id);
+    let found = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    if let Some(document) = occurrence.prototype_document_id.as_ref() {
+        let document = hex_id(document);
+        if !found
             .document_id()
             .is_some_and(|id| id.eq_ignore_ascii_case(&document))
-    });
-    let first = candidates.next()?;
-    let Some(second) = candidates.next() else {
-        return Some(first);
-    };
-    let name = occurrence.component_name.as_deref()?.to_lowercase();
-    let mut named = [first, second]
-        .into_iter()
-        .chain(candidates)
-        .filter(|reference| {
-            reference
-                .path_stem()
-                .is_some_and(|stem| stem.to_lowercase() == name)
-        });
-    let found = named.next()?;
-    named.next().is_none().then_some(found)
+        {
+            return None;
+        }
+    }
+    Some(found)
 }
 
 fn hex_id(id: &[u8; 16]) -> String {
@@ -972,7 +958,7 @@ impl TryFrom<UfrxOccurrenceRecordWire> for UfrxOccurrenceRecord {
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
-            end_string_flag: wire.end_string_flag,
+            reference_id: wire.reference_id,
             occurrence_id: wire.occurrence_id,
             occurrence_key: wire.occurrence_key,
             header_value: wire.header_value,
@@ -1136,7 +1122,7 @@ mod tests {
     fn ufrx_occurrence_streams_once_with_retained_limit() {
         let expected = serde_json::json!({
             "id": "inventor:ufrx:occurrence#0", "ordinal": 0,
-            "end_string_flag": 0, "occurrence_id": 1,
+            "reference_id": 0, "occurrence_id": 1,
             "occurrence_key": 1, "header_value": 0, "title": null,
             "header_padding_words": 8, "record_len": 1,
             "record_sha256": "a".repeat(64)
@@ -1286,7 +1272,7 @@ mod tests {
     #[test]
     fn reference_framing_admission_rejects_invalid_wire_values() {
         let occurrence = serde_json::json!({
-            "id": "occurrence", "ordinal": 0, "end_string_flag": 0,
+            "id": "occurrence", "ordinal": 0, "reference_id": 0,
             "occurrence_id": 1, "occurrence_key": 1, "header_value": 0,
             "title": null, "header_padding_words": 8, "record_len": 1,
             "record_sha256": "a".repeat(64)

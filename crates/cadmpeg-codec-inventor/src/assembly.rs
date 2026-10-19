@@ -1074,7 +1074,7 @@ mod tests {
     }
 
     #[test]
-    fn copies_sharing_a_document_id_are_told_apart_by_component_name() {
+    fn copies_sharing_a_document_id_are_told_apart_by_reference_id() {
         let copies = [
             external_reference_with_document_id(5, "b/other.ipt", [0, 0], &fixture_document_id(4)),
             external_reference_with_document_id(4, "a\\Part.ipt", [0, 0], &fixture_document_id(4)),
@@ -1086,7 +1086,7 @@ mod tests {
             &[assembly_placement(7)],
         );
         let [projected] = projection.occurrences.as_slice() else {
-            panic!("the named copy must be projected");
+            panic!("the referenced copy must be projected");
         };
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the prototype must remain external");
@@ -1106,6 +1106,23 @@ mod tests {
         let projection = project_under_service(
             &[ufrx_occurrence(4, 7, 0)],
             &unnamed,
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        );
+        assert!(projection.occurrences.is_empty());
+        assert_eq!(
+            projection.unresolved_placements,
+            BTreeMap::from([(super::UnresolvedCause::ExternalReference, NonZeroUsize::MIN)])
+        );
+    }
+
+    #[test]
+    fn a_reference_with_another_document_id_does_not_resolve() {
+        let reference =
+            external_reference_with_document_id(4, "a/part.ipt", [0, 0], &fixture_document_id(5));
+        let projection = project_under_service(
+            &[ufrx_occurrence(4, 7, 0)],
+            &[reference],
             &[assembly_occurrence(7)],
             &[assembly_placement(7)],
         );
@@ -1234,7 +1251,7 @@ mod tests {
         UfrxOccurrenceRecord::try_from(crate::native::ufrx::UfrxOccurrenceRecordWire {
             id: format!("inventor:ufrx:occurrence#{ordinal}"),
             ordinal,
-            end_string_flag: 0,
+            reference_id,
             occurrence_id,
             occurrence_key: ordinal + 1,
             header_value: 0,

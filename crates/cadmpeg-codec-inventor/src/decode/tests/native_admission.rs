@@ -1199,7 +1199,7 @@ fn ufrx_occurrence_refuses_id_limit_before_creation() {
     let (_, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("source context");
     let occurrence = UfrxOccurrence {
-        end_string_flag: 0,
+        reference_id: 0,
         occurrence_id: 0,
         occurrence_key: 0,
         header_value: 0,
@@ -1775,7 +1775,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
             source,
         }],
         occurrences: vec![UfrxOccurrence {
-            end_string_flag: 0,
+            reference_id: 0,
             occurrence_id: 7,
             occurrence_key: 42,
             header_value: 0,

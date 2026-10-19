@@ -2274,7 +2274,7 @@ fn project_ufrx_occurrence(
             "retain Inventor UFRx occurrence id",
         )?,
         ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx occurrence ordinal")?,
-        end_string_flag: occurrence.end_string_flag,
+        reference_id: occurrence.reference_id,
         occurrence_id: occurrence.occurrence_id,
         occurrence_key: occurrence.occurrence_key,
         header_value: occurrence.header_value,
