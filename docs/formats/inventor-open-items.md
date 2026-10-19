@@ -180,9 +180,7 @@ Section 9.2 decodes the selection keys: a part face, a part face axis, a part or
 
 **Need.** Each additional style family requires an exact owner path, channel semantics, and precedence before transfer.
 
-**Note.** The implementation selects `PmGraphicsPrimaryColorStyle.colors[1]` as the diffuse face color without a record discriminator for the four color slots. The slot role remains part of the open channel-semantics question.
-
-**Note.** A current rendering style without a catalog asset supplies its inline diffuse color as the body default. Some rendering styles that no body selects store a 191-byte suffix with `style_values[0] = 1` whose inline colors do not follow the style label. Whether that form marks an unmaterialized library style, and so whether its inline colors are valid when a face or body selects it, is unknown. The fields after the inline lighting block, the role of the ambient, specular, and emissive vectors, and the `PmGraphics` style-collection members that reference neither a primary-color style nor a rendering style are also unknown.
+**Note.** The implementation selects `PmGraphicsPrimaryColorStyle.colors[1]` as the diffuse face color without a record discriminator for the four color slots. The slot role remains part of the open channel-semantics question. A current rendering style without a catalog asset supplies its inline diffuse color as the body default. Some rendering styles that no body selects store a 191-byte suffix with `style_values[0] = 1` whose inline colors do not follow the style label. Whether that form marks an unmaterialized library style, and so whether its inline colors are valid when a face or body selects it, is unknown. The fields after the inline lighting block, the role of the ambient, specular, and emissive vectors, and the `PmGraphics` style-collection members that reference neither a primary-color style nor a rendering style are also unknown.
 
 ### MA-02. Protein material-property identity and precedence
 
