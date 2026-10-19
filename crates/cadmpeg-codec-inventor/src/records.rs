@@ -147,6 +147,20 @@ pub(crate) struct RseRecordFrame<'a> {
     pub(crate) trailer: View<'a>,
 }
 
+/// A frame with an empty trailer, for tests that build a record table.
+#[cfg(test)]
+pub(crate) fn test_frame(ordinal: u32, type_id: [u8; 16], payload: View<'_>) -> RseRecordFrame<'_> {
+    RseRecordFrame {
+        ordinal,
+        selector: 0,
+        type_id,
+        payload_offset: 0,
+        payload,
+        trailing_length_written: false,
+        trailer: View::over_retained(&[]),
+    }
+}
+
 impl RseRecordFrame<'_> {
     pub(crate) fn type_index(&self) -> Result<u8, CodecError> {
         u8::try_from(self.selector & 0xff)

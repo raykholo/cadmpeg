@@ -66,6 +66,12 @@ fn decode_container<'a>(
     let matched = recovery.classify(ctx)?;
     let dialects = crate::dialect::layers(ctx, &matched, &container.rse.active_carrier)?;
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
+    let (assembly_constraints, constraint_issues) = crate::assembly::constraint::inventory(
+        ctx,
+        &container.rse,
+        &assembly_inventory.occurrences,
+    )?;
+    assembly_inventory.issues.extend(constraint_issues);
     let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let mut sheet_metal_inventory =
         crate::presentation::sheet_metal::inventory(ctx, &container.rse)?;
@@ -595,6 +601,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
     namespace.set_arena(ctx, "assembly_occurrences", &assembly_occurrences)?;
+    namespace.set_arena(ctx, "assembly_constraints", &assembly_constraints)?;
     namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
     namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
     namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
@@ -1380,6 +1387,10 @@ fn decode_container<'a>(
         (
             crate::coverage::ASSEMBLY_OCCURRENCES,
             assembly_occurrences.len(),
+        ),
+        (
+            crate::coverage::ASSEMBLY_CONSTRAINTS,
+            assembly_constraints.len(),
         ),
         (
             crate::coverage::ASSEMBLY_PLACEMENTS,

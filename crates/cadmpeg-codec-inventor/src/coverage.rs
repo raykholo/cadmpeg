@@ -76,6 +76,7 @@ pub(crate) const EMBEDDED_REFERENCES: CoverageKey = CoverageKey::new("embedded_r
 pub(crate) const UFRX_MODEL_STATES: CoverageKey = CoverageKey::new("ufrx_model_states");
 pub(crate) const UFRX_OCCURRENCES: CoverageKey = CoverageKey::new("ufrx_occurrences");
 pub(crate) const ASSEMBLY_OCCURRENCES: CoverageKey = CoverageKey::new("assembly_occurrences");
+pub(crate) const ASSEMBLY_CONSTRAINTS: CoverageKey = CoverageKey::new("assembly_constraints");
 pub(crate) const ASSEMBLY_PLACEMENTS: CoverageKey = CoverageKey::new("assembly_placements");
 pub(crate) const ASSEMBLY_OCCURRENCES_TRANSFERRED: CoverageKey =
     CoverageKey::new("assembly_occurrences_transferred");

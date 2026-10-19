@@ -41,6 +41,7 @@ use crate::record_issue::RecordIssue;
 
 const ARENAS: &[&str] = &[
     "active_carrier",
+    "assembly_constraints",
     "assembly_occurrences",
     "assembly_placements",
     "assembly_record_issues",
@@ -1688,6 +1689,7 @@ struct NativeData {
     protein_assets: Vec<ProteinAssetRecord>,
     protein_rejections: Vec<ProteinRejectionRecord>,
     ufrx: UfrxRecord,
+    assembly_constraints: Vec<crate::assembly::constraint::AssemblyConstraintRecord>,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
     assembly_record_issues: Vec<RecordIssue>,
@@ -1760,6 +1762,7 @@ impl NativeData {
             protein_assets: namespace.arena_as_for_decode(ctx, "protein_assets")?,
             protein_rejections: namespace.arena_as_for_decode(ctx, "protein_rejections")?,
             ufrx: UfrxRecord::read(ctx, namespace)?,
+            assembly_constraints: namespace.arena_as_for_decode(ctx, "assembly_constraints")?,
             assembly_occurrences: namespace.arena_as_for_decode(ctx, "assembly_occurrences")?,
             assembly_placements: namespace.arena_as_for_decode(ctx, "assembly_placements")?,
             assembly_record_issues: namespace.arena_as_for_decode(ctx, "assembly_record_issues")?,
@@ -2403,6 +2406,27 @@ fn validate_assembly(
         .iter()
         .map(|record| record.occurrence_id)
         .collect::<HashSet<_>>();
+    unique(
+        findings,
+        data.assembly_constraints
+            .iter()
+            .map(|record| record.id.as_str()),
+        "assembly constraint id",
+    );
+    for constraint in &data.assembly_constraints {
+        let dangling = constraint.operands.iter().any(|operand| {
+            operand
+                .occurrence_id
+                .is_some_and(|occurrence_id| !occurrence_ids.contains(&occurrence_id))
+        });
+        if dangling {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor assembly constraint operand names an absent occurrence".into(),
+                Some(constraint.id.clone()),
+            ));
+        }
+    }
     for placement in &data.assembly_placements {
         if !occurrence_ids.contains(&placement.occurrence_id) {
             findings.push(finding(

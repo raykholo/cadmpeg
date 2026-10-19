@@ -64,6 +64,7 @@
             "state": "not_applicable"
           }
         ],
+        "assembly_constraints": [],
         "assembly_occurrences": [],
         "assembly_placements": [],
         "assembly_record_issues": [],
@@ -213,6 +214,7 @@
     "coverage": {
       "active_kernel_carriers": 0,
       "appearance_bindings_transferred": 0,
+      "assembly_constraints": 0,
       "assembly_occurrences": 0,
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
