@@ -2,7 +2,7 @@
 //! Cubic B-spline restatement of a procedural helix.
 //!
 //! STEP has no helix entity. A helix `C(t)=center+s(t)·(major·cos t+minor·sin t)+pitch·q(t)`
-//! with `q=(t-t0)/(2π)` and `s=1+apex_factor·q` is transcendental in `t`, so no
+//! with `q=t/(2π)` and `s=1+apex_factor·q` is transcendental in `t`, so no
 //! B-spline states it exactly. The restatement interpolates the helix and its
 //! first derivative at uniform knots over the stored interval `[t0,t1]`
 //! (piecewise cubic Hermite interpolation). The B-spline parameter equals the
@@ -124,9 +124,10 @@ fn translated(point: Point3, direction: Vector3, scale: f64) -> Point3 {
 }
 
 /// Revolution fraction `q` of the pitch and apex terms at angle `t`.
-fn revolution_fraction(helix: &HelixCurveConstruction, t: f64) -> f64 {
-    let [start, _] = helix.angle_range().get();
-    (t - start) / std::f64::consts::TAU
+///
+/// `q` is measured from angle zero, not from the interval start.
+fn revolution_fraction(t: f64) -> f64 {
+    t / std::f64::consts::TAU
 }
 
 /// Radial scale `s=1+apex_factor·q` at angle `t`.
@@ -134,7 +135,7 @@ fn radial_scale(helix: &HelixCurveConstruction, t: f64) -> f64 {
     helix
         .apex_factor()
         .get()
-        .mul_add(revolution_fraction(helix, t), 1.0)
+        .mul_add(revolution_fraction(t), 1.0)
 }
 
 /// Point and first derivative of the helix at angle `t`.
@@ -145,7 +146,7 @@ pub(crate) fn helix_point_tangent(helix: &HelixCurveConstruction, t: f64) -> (Po
     let pitch = helix.pitch().get();
     let apex_factor = helix.apex_factor().get();
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
-    let fraction = revolution_fraction(helix, t);
+    let fraction = revolution_fraction(t);
     let scale = radial_scale(helix, t);
     let (sin, cos) = t.sin_cos();
     let radial = Vector3::new(

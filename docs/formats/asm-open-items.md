@@ -219,6 +219,14 @@ identity that does not own the admitted carrier.
 **Note.** Do not use first-definition order as construction identity. Reject an ambiguous owner when
 the record grammar does not identify one construction.
 
+### GC-39. Origin of the `helix_int_cur` apex term
+
+**Question.** Does the apex factor of a `helix_int_cur` scale the radius by the revolution fraction from angle zero, as the pitch term does, or from the interval start?
+
+**Known.** `asm.md` §6.3 `helix_int_cur` gives one revolution fraction `q=t/(2π)` for the pitch term and the apex term. Edge vertices of cache-less helices with a zero apex factor lie at `C(t0)` and `C(t1)` with that `q`; with `q=(t-t0)/(2π)` they do not. No cache-less helix with a nonzero apex factor is available.
+
+**Need.** A tapered cache-less helix is its own exact carrier. A wrong apex origin scales its radius by `1+apex_factor·t0/(2π)` everywhere, so its edges miss their vertices.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution
