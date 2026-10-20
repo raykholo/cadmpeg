@@ -745,6 +745,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
         native_ref: Some(placement.id.clone()),
     }];
     let resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: &curves,
@@ -850,6 +851,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         );
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: &curves,
@@ -886,6 +888,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         })
         .unwrap();
     let ambiguous_resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: &curves,
@@ -944,6 +947,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         .unwrap();
     let operands = [operand(10, 0, 100)];
     let resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: std::slice::from_ref(&curve),

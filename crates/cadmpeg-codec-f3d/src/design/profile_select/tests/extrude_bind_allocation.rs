@@ -211,6 +211,7 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let mut feature = binder_feature(&scope, profile.clone());
                 let curve_resolution = SketchCurveSelectionResolution {
+                    profile_curves: &[],
                     scopes: &[],
                     groups: &[],
                     operands: &[],

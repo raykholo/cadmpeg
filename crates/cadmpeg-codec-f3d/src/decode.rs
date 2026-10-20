@@ -2844,6 +2844,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -2859,6 +2860,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -2874,6 +2876,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -2930,6 +2933,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.sketches,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -5324,6 +5328,13 @@ fn extend_related_design_records(
         )?;
     native.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
+            ctx,
+            scan,
+            &native.design_construction_operand_groups,
+            &native.design_record_headers,
+        )?;
+    native.design_profile_curve_selections =
+        crate::design::decode::operands::decode_profile_curve_selections(
             ctx,
             scan,
             &native.design_construction_operand_groups,

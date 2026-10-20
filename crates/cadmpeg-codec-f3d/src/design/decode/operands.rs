@@ -6679,3 +6679,230 @@ pub(crate) fn construction_operand_group_is_retained(
 
 #[cfg(test)]
 mod tests;
+
+/// Prefix of the chain record at a typed profile selection's index plus one:
+/// fourteen zero bytes and `01 01 01 00 00 00`, followed by the typed Sketch
+/// scope reference at offset 31.
+const TYPED_PROFILE_SCOPE_RECORD_PREFIX: [u8; 20] =
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0];
+
+/// Decode the typed-reference profile selections named by construction
+/// operand groups: a selection prefix, a chain record naming the owning
+/// Sketch scope, and an identity record listing curve loops.
+pub(crate) fn decode_profile_curve_selections(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>, CodecError>
+{
+    let headers = indexed_operand_headers(ctx, headers)?;
+    let mut records_by_stream = HashMap::new();
+    let mut out = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .enumerate()
+        {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            let Ok(start) = usize::try_from(header.byte_offset) else {
+                continue;
+            };
+            // Only a typed selection prefix selects this form.
+            if crate::bytes::typed_local_reference_target(bytes, start + 21).is_none() {
+                continue;
+            }
+            if !records_by_stream.contains_key(stream) {
+                ctx.reserve_map(&mut records_by_stream, 1, "f3d profile selection streams")?;
+                records_by_stream.insert(stream, IndexedRecordOffsets::build(ctx, bytes)?);
+            }
+            let Some(records) = records_by_stream.get(stream) else {
+                continue;
+            };
+            let Some(mut selection) =
+                parse_typed_profile_curve_selection(ctx, bytes, records, group, ordinal, header)?
+            else {
+                continue;
+            };
+            selection.id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-profile-curve-selection#",
+                header.byte_offset,
+                "f3d profile curve selection ID",
+            )?;
+            ctx.reserve_vec(&mut out, 1, "f3d profile curve selection output")?;
+            out.push(selection);
+        }
+    }
+    ctx.stable_sort_by(
+        &mut out[..],
+        |a, b| a.id.cmp(&b.id),
+        |value| value.id.as_str().len(),
+        "sort f3d profile curve selections",
+    )?;
+    Ok(out)
+}
+
+/// Parse one typed profile selection and its chain records.
+fn parse_typed_profile_curve_selection(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Result<
+    Option<crate::records::topology::entity_selection::DesignProfileCurveSelection>,
+    CodecError,
+> {
+    use crate::bytes::typed_local_reference_target as target;
+    use crate::records::topology::entity_selection::{
+        DesignProfileCurveEntry, DesignProfileCurveSelection,
+    };
+    let Ok(start) = usize::try_from(header.byte_offset) else {
+        return Ok(None);
+    };
+    let record_index = header.record_index;
+    let (Some(scope_index), Some(identity_index)) =
+        (record_index.checked_add(1), record_index.checked_add(3))
+    else {
+        return Ok(None);
+    };
+    // Selection prefix: ten zero bytes, a typed reference to the identity
+    // record, u32 1, the LP-UTF16 asset GUID, and the LP-UTF16 decimal
+    // owner text.
+    if bytes.get(start + 11..start + 21) != Some(&[0; 10][..])
+        || target(bytes, start + 21) != Some(identity_index)
+        || View::u32_le_at(bytes, start + 72) != Some(1)
+    {
+        return Ok(None);
+    }
+    let Some((_, after_asset)) =
+        lp_utf16_bounded_charged(ctx, bytes, start + 76, 36..=36, "f3d Design UTF-16 text")?
+    else {
+        return Ok(None);
+    };
+    let Some((owner_text, _)) =
+        lp_utf16_bounded_charged(ctx, bytes, after_asset, 1..=20, "f3d Design UTF-16 text")?
+    else {
+        return Ok(None);
+    };
+    if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Ok(None);
+    }
+    // Chain record at index plus one names the owning Sketch scope.
+    let Some(&scope_at) = records.offsets(scope_index).first() else {
+        return Ok(None);
+    };
+    if bytes.get(scope_at + 11..scope_at + 31) != Some(&TYPED_PROFILE_SCOPE_RECORD_PREFIX[..]) {
+        return Ok(None);
+    }
+    let Some(sketch_scope_record_index) = target(bytes, scope_at + 31) else {
+        return Ok(None);
+    };
+    // Identity record at index plus three: ten zero bytes, a typed reference
+    // to the selection record, then two counted loop lists.
+    let Some(&identity_at) = records.offsets(identity_index).first() else {
+        return Ok(None);
+    };
+    if bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10][..])
+        || target(bytes, identity_at + 21) != Some(record_index)
+    {
+        return Ok(None);
+    }
+    let Some(identity_end) = next_indexed_record_offset(bytes, identity_at + 11) else {
+        return Ok(None);
+    };
+    let mut cursor = identity_at + 72;
+    let mut loops = Vec::new();
+    for list in 0..2 {
+        let Some(loop_count) = View::u32_le_at(bytes, cursor).and_then(|n| usize::try_from(n).ok())
+        else {
+            return Ok(None);
+        };
+        // The first list holds at least one loop; every loop and entry
+        // consumes bytes, so a count the frame cannot supply is corrupt.
+        let Some(remaining) = identity_end.checked_sub(cursor) else {
+            return Ok(None);
+        };
+        if (list == 0 && loop_count == 0) || loop_count > remaining / 49 {
+            return Ok(None);
+        }
+        cursor += 4;
+        ctx.reserve_vec(&mut loops, loop_count, "f3d profile curve loops")?;
+        for _ in 0..loop_count {
+            let Some(entry_count) = (View::u32_le_at(bytes, cursor) == Some(1))
+                .then(|| View::u32_le_at(bytes, cursor + 4))
+                .flatten()
+                .and_then(|n| usize::try_from(n).ok())
+            else {
+                return Ok(None);
+            };
+            let Some(remaining) = identity_end.checked_sub(cursor) else {
+                return Ok(None);
+            };
+            if entry_count == 0 || entry_count > remaining / 40 {
+                return Ok(None);
+            }
+            cursor += 8;
+            let mut entries = Vec::new();
+            ctx.reserve_vec(&mut entries, entry_count, "f3d profile curve entries")?;
+            for _ in 0..entry_count {
+                let (Some(2), Some(primary_id), Some(secondary_id)) = (
+                    View::u32_le_at(bytes, cursor),
+                    View::u64_le_at(bytes, cursor + 4),
+                    View::u64_le_at(bytes, cursor + 12),
+                ) else {
+                    return Ok(None);
+                };
+                if bytes.get(cursor + 32..cursor + 40) != Some(&[0; 8][..]) {
+                    return Ok(None);
+                }
+                entries.push(DesignProfileCurveEntry {
+                    primary_id,
+                    primary_id_offset: cadmpeg_core::decode::u64_from_index(cursor + 4),
+                    secondary_id,
+                });
+                cursor += 40;
+            }
+            if bytes.get(cursor) != Some(&1) {
+                return Ok(None);
+            }
+            cursor += 1;
+            loops.push(entries);
+        }
+    }
+    if cursor != identity_end {
+        return Ok(None);
+    }
+    Ok(Some(DesignProfileCurveSelection {
+        id: String::new(),
+        scope_record_index: group.scope_record_index,
+        group_record_index: group.record_index,
+        group_member_ordinal,
+        record_index,
+        byte_offset: header.byte_offset,
+        owner_text_offset: cadmpeg_core::decode::u64_from_index(after_asset + 4),
+        owner_text,
+        sketch_scope_record_index,
+        sketch_scope_offset: cadmpeg_core::decode::u64_from_index(scope_at + 32),
+        identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
+        loops,
+    }))
+}
