@@ -2515,8 +2515,21 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_material_assignments =
             crate::materials::decode_design_assignments(ctx, scan)?;
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
-        self.native.design_parameters =
-            crate::design::decode::parameters::decode_parameters(ctx, scan)?;
+        let decoded_parameters = crate::design::decode::parameters::decode_parameters(ctx, scan)?;
+        self.native.design_parameters = decoded_parameters.parameters;
+        for unparsed in &decoded_parameters.unparsed {
+            push_loss_vec(
+                ctx,
+                &mut self.report.losses,
+                F3dLossCode::ParameterRecordUnparsed,
+                format_args!(
+                    "{} typed compact parameter frame(s) in {} match no parameter grammar and were not decoded.",
+                    unparsed.count, unparsed.stream
+                ),
+                "collect F3D parameter losses",
+                "retain F3D parameter loss",
+            )?;
+        }
         self.native.design_entity_headers =
             crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
@@ -2831,6 +2844,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -2846,6 +2860,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -2861,6 +2876,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -2917,6 +2933,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.sketches,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,
+                profile_curves: &self.native.design_profile_curve_selections,
                 groups: &self.native.design_construction_operand_groups,
                 operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -4763,6 +4780,13 @@ fn populate_annotations(
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_entity");
+                // Admitted z noise is read as zero, so the projected
+                // endpoints are derived rather than byte-exact.
+                if entity.planar_z_noise.is_some() {
+                    for field in ["geometry.start", "geometry.end"] {
+                        annotations.derived(ctx, projected, field)?;
+                    }
+                }
             }
         }
         for entity in &native.sketch_surfaces {
@@ -4984,10 +5008,13 @@ fn extend_related_design_records(
             scan,
             &native.design_parameter_scopes,
         )?;
+    let primary_frames =
+        crate::design::decode::scopes::parameter_scope::design_primary_frame_offsets(ctx, scan)?;
     crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
         ctx,
         &mut native.design_parameter_scopes,
         &native.asm_histories,
+        &primary_frames,
     )?;
     native.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
@@ -5308,6 +5335,13 @@ fn extend_related_design_records(
         )?;
     native.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
+            ctx,
+            scan,
+            &native.design_construction_operand_groups,
+            &native.design_record_headers,
+        )?;
+    native.design_profile_curve_selections =
+        crate::design::decode::operands::decode_profile_curve_selections(
             ctx,
             scan,
             &native.design_construction_operand_groups,

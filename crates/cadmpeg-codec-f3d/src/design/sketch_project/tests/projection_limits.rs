@@ -36,6 +36,7 @@ fn owner_limit_curve(spatial: bool) -> SketchCurveIdentity {
             )
             .unwrap()
         }),
+        planar_z_noise: None,
     }
 }
 

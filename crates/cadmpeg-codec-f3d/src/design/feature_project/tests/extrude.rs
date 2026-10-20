@@ -476,7 +476,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 opaque_index_offset: 747,
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 751,
-                variant: false,
+                variant: Some(false),
+                typed_references: false,
                 paired_class_tag: "259".to_owned(),
                 paired_byte_offset: 800,
             },
@@ -504,6 +505,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             &[],
             &[],
             &crate::design::profile_select::SketchCurveSelectionResolution {
+                profile_curves: &[],
                 scopes: &[],
                 groups: &[],
                 operands: &[],

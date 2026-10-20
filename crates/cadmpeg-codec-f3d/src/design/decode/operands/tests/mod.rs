@@ -15,6 +15,7 @@ mod recipe_id_limits;
 mod recipe_structure_limits;
 mod recipes;
 mod selection;
+mod typed_profile;
 mod work_point;
 
 mod body_recipes;

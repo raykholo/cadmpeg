@@ -58,7 +58,8 @@ fn binder_group() -> DesignExtrudeSelectionGroup {
             opaque_index_offset: 47,
             opaque_scalar: 0.0,
             opaque_scalar_offset: 51,
-            variant: false,
+            variant: Some(false),
+            typed_references: false,
             paired_class_tag: "277".to_owned(),
             paired_byte_offset: 100,
         },
@@ -210,6 +211,7 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let mut feature = binder_feature(&scope, profile.clone());
                 let curve_resolution = SketchCurveSelectionResolution {
+                    profile_curves: &[],
                     scopes: &[],
                     groups: &[],
                     operands: &[],

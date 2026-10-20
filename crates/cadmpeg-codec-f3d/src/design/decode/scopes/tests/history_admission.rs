@@ -87,7 +87,7 @@ fn history_bound_scope_admission_reports_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test decode context");
-    let error = admit_history_bound_scope_variants(&ctx, &mut scopes, &[])
+    let error = admit_history_bound_scope_variants(&ctx, &mut scopes, &[], &Default::default())
         .expect_err("one scope exceeds the collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -112,7 +112,8 @@ fn history_bound_scope_admission_refuses_group_and_output_limits() {
 
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
+        let result =
+            admit_history_bound_scope_variants(&ctx, &mut scopes, &[], &Default::default());
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
@@ -175,7 +176,7 @@ fn equivalent_scope_variant_refuses_work_and_materialization_limits() {
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
                         .unwrap();
-                admit_history_bound_scope_variants(&ctx, &mut scopes, &[])
+                admit_history_bound_scope_variants(&ctx, &mut scopes, &[], &Default::default())
             }) {
                 cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
                 error => panic!("unexpected refusal: {error:?}"),
@@ -201,7 +202,8 @@ fn equivalent_scope_variant_refuses_work_and_materialization_limits() {
         }
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
+        let result =
+            admit_history_bound_scope_variants(&ctx, &mut scopes, &[], &Default::default());
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
@@ -240,7 +242,8 @@ fn equivalent_scope_json_refuses_nested_collection_depth_and_text_limits() {
                 _ => unreachable!(),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-            let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
+            let result =
+                admit_history_bound_scope_variants(&ctx, &mut scopes, &[], &Default::default());
             if result.is_err() {
                 assert_eq!(scopes.len(), 2);
             }
@@ -259,8 +262,10 @@ fn retains_the_unique_history_bound_scope_envelope() {
         history_state(6, None),
     ])];
 
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
-        .expect("unique envelope");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut scopes, &histories, &Default::default())
+    })
+    .expect("unique envelope");
 
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].byte_offset(), 100);
@@ -275,10 +280,13 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
         history_state(9, Some(8)),
     ])];
 
-    assert!(
-        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &histories))
-            .is_err()
-    );
+    assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
+        ctx,
+        &mut scopes,
+        &histories,
+        &Default::default()
+    ))
+    .is_err());
 }
 
 #[test]
@@ -346,8 +354,10 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
 
     let mut scopes = vec![older, newer];
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut scopes, &[]))
-        .expect("equivalent envelope");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut scopes, &[], &Default::default())
+    })
+    .expect("equivalent envelope");
 
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].byte_offset(), 200);
@@ -398,13 +408,41 @@ fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
 #[test]
 fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     let mut equivalent = thicken_variants(-1.0, -1.0);
-    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut equivalent, &[]))
-        .expect("equivalent envelopes");
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut equivalent, &[], &Default::default())
+    })
+    .expect("equivalent envelopes");
     assert_eq!(equivalent.len(), 1);
     assert_eq!(equivalent[0].byte_offset(), 200);
 
     let mut different = thicken_variants(-1.0, -1.0 - f64::EPSILON);
+    assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
+        ctx,
+        &mut different,
+        &[],
+        &Default::default()
+    ))
+    .is_err());
+}
+
+/// Without a history binding, the one envelope that the stream's primary
+/// record index names is admitted even when the payloads differ.
+#[test]
+fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
+    let mut different = thicken_variants(-1.0, -2.0);
+    let stream = crate::ids::native_stream(&different[0].id)
+        .expect("fixture stream")
+        .to_owned();
+    let primary = std::collections::HashSet::from([(stream.clone(), 100)]);
+    with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[], &primary))
+        .expect("primary-indexed envelope");
+    assert_eq!(different.len(), 1);
+    assert_eq!(different[0].byte_offset(), 100);
+
+    let mut both = thicken_variants(-1.0, -2.0);
+    let primary = std::collections::HashSet::from([(stream.clone(), 100), (stream, 200)]);
     assert!(
-        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[])).is_err()
+        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut both, &[], &primary))
+            .is_err()
     );
 }

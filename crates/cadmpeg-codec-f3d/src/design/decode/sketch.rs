@@ -662,6 +662,10 @@ fn decode_sketch_visibility_member(
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
+/// The explicit head frame whose closing reference at offset 151 carries an
+/// inline type GUID: forty bytes longer than the plain frame.
+const TYPED_MEMBER_RUN_HEAD_FRAME: usize = MEMBER_RUN_HEAD_FRAME + 40;
+
 /// Parse a member-run head placement: the paired same-index record after the
 /// sketch's entity header opens with a marked
 /// reference naming a head record. A 34-byte head denotes the identity
@@ -714,8 +718,11 @@ fn parse_member_run_head_placement(
                     paired_byte_offset: u64_from_index(paired_at),
                 }
             }
-            MEMBER_RUN_HEAD_FRAME
-                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) =>
+            MEMBER_RUN_HEAD_FRAME | TYPED_MEMBER_RUN_HEAD_FRAME
+                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..])
+                    && (frame_length == MEMBER_RUN_HEAD_FRAME
+                        || crate::bytes::typed_local_reference_target(bytes, head_at + 151)
+                            .is_some()) =>
             {
                 let values = f64s_at::<16>(bytes, head_at + 22)?;
                 let mut transform = [[0.0; 4]; 4];
@@ -728,6 +735,7 @@ fn parse_member_run_head_placement(
                 DesignSketchFrameForm::MemberExplicit {
                     paired_byte_offset: u64_from_index(paired_at),
                     transform: SketchPlacementMatrix::try_from(transform).ok()?,
+                    typed_reference: frame_length == TYPED_MEMBER_RUN_HEAD_FRAME,
                 }
             }
             _ => return None,
@@ -1297,12 +1305,48 @@ fn parse_legacy_sketch_member_run(
     primary_at: usize,
     entity_suffix: u32,
 ) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
+    if let Some(members) =
+        parse_legacy_sketch_member_run_with(ctx, bytes, primary_at, entity_suffix, false)?
+    {
+        return Ok(Some(members));
+    }
+    parse_legacy_sketch_member_run_with(ctx, bytes, primary_at, entity_suffix, true)
+}
+
+/// Target of the local reference at `at` in one spelling: the eleven-byte
+/// `01 + u32 + six zero bytes` or the 51-byte typed reference.
+fn legacy_sketch_reference_target(bytes: &[u8], at: usize, typed: bool) -> Option<u32> {
+    if typed {
+        crate::bytes::typed_local_reference_target(bytes, at)
+    } else if bytes.get(at) == Some(&1) && bytes.get(at + 5..at + 11) == Some(&[0u8; 6][..]) {
+        View::u32_le_at(bytes, at + 1)
+    } else {
+        None
+    }
+}
+
+/// Parse the legacy counted sketch member run with one reference spelling.
+///
+/// The paired header is followed by eight zero bytes, a reference at offset
+/// 19, eleven bytes, the u32 member count, and that many references; every
+/// reference in the run uses the same spelling.
+fn parse_legacy_sketch_member_run_with(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+    typed: bool,
+) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
+    let width = if typed {
+        crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+    } else {
+        11
+    };
     let parsed = (|| {
         let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
         if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
             || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
-            || bytes.get(paired_at + 19) != Some(&1)
-            || bytes.get(paired_at + 24..paired_at + 30) != Some(&[0u8; 6][..])
+            || legacy_sketch_reference_target(bytes, paired_at + 19, typed).is_none()
         {
             return None;
         }
@@ -1314,17 +1358,18 @@ fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        let count = usize::try_from(View::u32_le_at(bytes, paired_at + 41)?).ok()?;
+        let count_at = paired_at + 19 + width + 11;
+        let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0 {
             return None;
         }
-        let run_end = (paired_at + 45).checked_add(count.checked_mul(11)?)?;
+        let run_end = (count_at + 4).checked_add(count.checked_mul(width)?)?;
         if run_end > bytes.len() {
             return None;
         }
-        Some((paired_at, count))
+        Some((count_at + 4, count))
     })();
-    let Some((paired_at, count)) = parsed else {
+    let Some((first, count)) = parsed else {
         return Ok(None);
     };
 
@@ -1332,14 +1377,9 @@ fn parse_legacy_sketch_member_run(
     ctx.reserve_vec(&mut members, count, "f3d legacy sketch member run")?;
     let parsed = (|| {
         for ordinal in 0..count {
-            let marker = paired_at + 45 + ordinal * 11;
-            if bytes.get(marker) != Some(&1)
-                || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
-            {
-                return None;
-            }
+            let marker = first + ordinal * width;
             members.push(crate::records::identity::Located {
-                value: View::u32_le_at(bytes, marker + 1)?,
+                value: legacy_sketch_reference_target(bytes, marker, typed)?,
                 offset: u64_from_index(marker + 1),
             });
         }
@@ -1348,9 +1388,7 @@ fn parse_legacy_sketch_member_run(
     Ok(parsed)
 }
 
-/// Recognize either legacy sketch-container tail. A counted container owns
-/// its complete member run. A localized container omits that run and is
-/// accepted only when its paired record names an exact placement-head frame.
+/// Read the counted member run of a legacy sketch container.
 fn parse_legacy_sketch_container_members(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -1616,17 +1654,65 @@ pub(crate) fn decode_record_headers(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
-    let references = entities.iter().flat_map(|entity| {
-        native_stream(&entity.id)
-            .into_iter()
-            .flat_map(move |scope| {
-                entity
-                    .reference_values()
-                    .map(move |record_index| (scope, *record_index))
-            })
-    });
+    // Sketch-relation records name their sketch through `ParentNode`; a
+    // legacy counted member run does not list them. The stream's type table
+    // registers every relation-class entity, and an entity ID repeats its
+    // record index, so those registrations name the relation records.
+    let types = decode_types(ctx, scan)?;
+    let mut relation_records = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let scope = native_scope_charged(ctx, &entry.name)?;
+        let stream_types = stream_types_by_class_tag(ctx, &types, &entry.name)?;
+        for record_index in registered_relation_record_indices(ctx, stream_types.into_values())? {
+            ctx.reserve_vec(&mut relation_records, 1, "f3d relation record indices")?;
+            relation_records.push((scope.clone(), record_index));
+        }
+    }
+    let references = entities
+        .iter()
+        .flat_map(|entity| {
+            native_stream(&entity.id)
+                .into_iter()
+                .flat_map(move |scope| {
+                    entity
+                        .reference_values()
+                        .map(move |record_index| (scope, *record_index))
+                })
+        })
+        .chain(
+            relation_records
+                .iter()
+                .map(|(scope, record_index)| (scope.as_str(), *record_index)),
+        );
     let wanted = wanted_record_indices(ctx, references)?;
     decode_headers_for_indices(ctx, scan, &wanted)
+}
+
+/// Record indices of the sketch-relation records a type table registers:
+/// every entity of a sketch-relation class type, whose entity ID repeats its
+/// record index.
+pub(in crate::design) fn registered_relation_record_indices<'a>(
+    ctx: &DecodeContext<'_>,
+    types: impl IntoIterator<Item = &'a crate::records::entity_header::SegmentType>,
+) -> Result<Vec<u32>, CodecError> {
+    let mut out = Vec::new();
+    for design_type in types {
+        if SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version).is_none() {
+            continue;
+        }
+        for &entity_id in design_type.entities.values() {
+            let Ok(record_index) = u32::try_from(entity_id) else {
+                continue;
+            };
+            ctx.reserve_vec(&mut out, 1, "f3d relation record indices")?;
+            out.push(record_index);
+        }
+    }
+    Ok(out)
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) named by
@@ -3487,9 +3573,13 @@ fn decode_sketch_curve_identities_from_stream(
         } else {
             None
         };
-        let (geometry, geometry_offset) = parsed_geometry
-            .map_or((None, geometry_shift + 133), |parsed| {
-                (Some(parsed.geometry), parsed.geometry_offset)
+        let (geometry, geometry_offset, planar_z_noise) =
+            parsed_geometry.map_or((None, geometry_shift + 133, None), |parsed| {
+                (
+                    Some(parsed.geometry),
+                    parsed.geometry_offset,
+                    parsed.planar_z_noise,
+                )
             });
 
         ctx.reserve_vec(&mut out, 1, "f3d sketch curve output")?;
@@ -3516,6 +3606,7 @@ fn decode_sketch_curve_identities_from_stream(
             primary_id,
             secondary_id,
             geometry,
+            planar_z_noise,
         });
     }
     Ok(out)
@@ -4085,6 +4176,7 @@ fn decode_sketch_curve_identity_variant(
 struct DecodedSketchCurveGeometry {
     geometry: SketchCurveGeometry,
     geometry_offset: usize,
+    planar_z_noise: Option<[f64; 3]>,
 }
 
 fn decode_sketch_curve_geometry(
@@ -4098,13 +4190,23 @@ fn decode_sketch_curve_geometry(
     let Some(geometry_payload) = payload.get(geometry_shift..) else {
         return Ok(None);
     };
+    let mut planar_z_noise = None;
     let decoded = match class {
         SketchCurveClass::Line => {
-            if let Some((geometry, _)) = decode_line_family(ctx, geometry_payload, record_at)? {
+            if let Some((geometry, form)) = decode_line_family(ctx, geometry_payload, record_at)? {
+                if form == COMPACT_PLANAR_LINE_VALUES {
+                    planar_z_noise = compact_planar_line_z_noise(geometry_payload);
+                }
                 Some((geometry, 133))
             } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
-                decode_line_family(ctx, referenced, record_at)?
-                    .map(|(geometry, _)| (geometry, 11 + 133))
+                let decoded = decode_line_family(ctx, referenced, record_at)?;
+                if decoded
+                    .as_ref()
+                    .is_some_and(|(_, form)| *form == COMPACT_PLANAR_LINE_VALUES)
+                {
+                    planar_z_noise = compact_planar_line_z_noise(referenced);
+                }
+                decoded.map(|(geometry, _)| (geometry, 11 + 133))
             } else {
                 None
             }
@@ -4141,6 +4243,7 @@ fn decode_sketch_curve_geometry(
         decoded.map(|(geometry, offset)| DecodedSketchCurveGeometry {
             geometry,
             geometry_offset: geometry_shift + offset,
+            planar_z_noise,
         }),
     )
 }
@@ -4543,6 +4646,9 @@ fn decode_line(
     decode_line_values(ctx, payload, 133, record_at)
 }
 
+/// Value count that `decode_line_family` reports for the compact planar line.
+const COMPACT_PLANAR_LINE_VALUES: usize = 9;
+
 fn decode_compact_planar_line(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -4556,16 +4662,38 @@ fn decode_compact_planar_line(
         };
         *value = parsed;
     }
-    if values[2] != 0.0 || values[5] != 0.0 || values[8] != 0.0 {
-        return Ok(None);
+    // Each z component is zero or floating-point noise below the resolution
+    // of the same vector's own coordinates; the projection reads it as zero.
+    for z in [2, 5, 8] {
+        if !planar_z_is_zero(values[z - 2], values[z - 1], values[z]) {
+            return Ok(None);
+        }
+        values[z] = 0.0;
     }
-    let Some((_, reference_end)) = marked_u32(payload, values_at + 9 * 8) else {
-        return Ok(None);
-    };
-    if payload.get(reference_end..reference_end + 6) != Some(&[0; 6]) {
+    // The values are followed by one reference: the plain eleven-byte
+    // spelling or the 51-byte typed spelling.
+    let reference_at = values_at + 9 * 8;
+    let plain = marked_u32(payload, reference_at).is_some_and(|(_, reference_end)| {
+        payload.get(reference_end..reference_end + 6) == Some(&[0; 6])
+    });
+    if !plain && crate::bytes::typed_local_reference_target(payload, reference_at).is_none() {
         return Ok(None);
     }
     decode_line_components(ctx, &values, Vector3::new(0.0, 0.0, 1.0), record_at)
+}
+
+/// Whether `z` is zero for a planar vector `(x, y, z)` stored in centimetres:
+/// exactly zero, or at most `f64::EPSILON * max(|x|, |y|, 1 cm)`.
+pub(in crate::design) fn planar_z_is_zero(x: f64, y: f64, z: f64) -> bool {
+    z == 0.0 || z.abs() <= f64::EPSILON * x.abs().max(y.abs()).max(1.0)
+}
+
+/// Raw z components of a compact planar line at `payload` offset 133 when
+/// at least one is nonzero noise admitted by [`planar_z_is_zero`].
+pub(in crate::design) fn compact_planar_line_z_noise(payload: &[u8]) -> Option<[f64; 3]> {
+    let raw = [2usize, 5, 8].map(|index| View::f64_le_at(payload, 133 + index * 8));
+    let raw = [raw[0]?, raw[1]?, raw[2]?];
+    raw.iter().any(|z| *z != 0.0).then_some(raw)
 }
 
 fn decode_line_family(
@@ -4576,7 +4704,8 @@ fn decode_line_family(
     if let Some(geometry) = decode_line(ctx, payload, record_at)? {
         return Ok(Some((geometry, 12)));
     }
-    Ok(decode_compact_planar_line(ctx, payload, record_at)?.map(|geometry| (geometry, 9)))
+    Ok(decode_compact_planar_line(ctx, payload, record_at)?
+        .map(|geometry| (geometry, COMPACT_PLANAR_LINE_VALUES)))
 }
 
 fn decode_line_values(

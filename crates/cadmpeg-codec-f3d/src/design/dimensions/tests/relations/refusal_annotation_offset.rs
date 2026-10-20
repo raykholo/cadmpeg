@@ -23,6 +23,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
         geometry: None,
+        planar_z_noise: None,
     };
     let source_curve = curve(source_curve_id.clone(), 10, 20, 0);
     let result_curve = curve(result_curve_id.clone(), 11, 21, 7);

@@ -383,7 +383,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
         decode_parameters(&cadmpeg_test_support::service_decode_context(), scan)
     })
     .unwrap();
-    let [parameter] = parameters.as_slice() else {
+    let [parameter] = parameters.parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };
     assert_eq!(parameter.record_index, 71);
@@ -1308,7 +1308,8 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         22,
         21,
         std::num::NonZeroU64::new(1).unwrap(),
-        50,
+        // The timestamp sits 42 bytes into the plain companion prefix.
+        52,
     );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
@@ -1669,3 +1670,5 @@ fn decoded_parameter_records_refuse_each_collection_limit() {
         }
     });
 }
+
+mod typed_references;

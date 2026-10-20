@@ -28,6 +28,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             )
             .unwrap(),
         ),
+        planar_z_noise: None,
     };
     let curves = vec![
         curve(10, 10, 0.0),

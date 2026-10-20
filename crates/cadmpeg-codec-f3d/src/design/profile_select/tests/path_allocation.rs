@@ -176,6 +176,7 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
     }
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: &curves,
