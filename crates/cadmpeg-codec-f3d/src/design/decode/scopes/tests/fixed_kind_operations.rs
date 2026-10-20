@@ -1087,6 +1087,7 @@ fn fixed_kind_edge_and_revolve_operations(
             )
             .unwrap(),
         ),
+        planar_z_noise: None,
     };
     let projected = crate::test_support::with_decode_context(|decode_ctx| {
         crate::design::feature_project::project_fixed_revolve_with_entities(

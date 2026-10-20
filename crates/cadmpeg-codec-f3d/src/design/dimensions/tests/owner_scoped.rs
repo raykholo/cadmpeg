@@ -441,6 +441,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
             )
             .unwrap(),
         ),
+        planar_z_noise: None,
     };
     let curves = vec![
         curve(10, 10, 0.0),

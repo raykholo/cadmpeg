@@ -150,6 +150,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
                 )
                 .unwrap(),
             ),
+            planar_z_noise: None,
         };
     let curves = vec![
         curve(10, 10, (0.0, 0.0), (10.0, 0.0)),
@@ -367,6 +368,7 @@ fn point_closure_does_not_mark_construction_geometry() {
             )
             .unwrap(),
         ),
+        planar_z_noise: None,
     };
 
     let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
@@ -456,6 +458,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             )
             .unwrap(),
         ),
+        planar_z_noise: None,
     };
     let clockwise_arc = SketchCurveIdentity {
         id: "f3d:native:curve#220".into(),
@@ -478,6 +481,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             )
             .unwrap(),
         ),
+        planar_z_noise: None,
     };
     let nonclamped_nurbs = SketchCurveIdentity {
         id: "f3d:native:curve#218".into(),
@@ -511,6 +515,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             )
             .unwrap(),
         )),
+        planar_z_noise: None,
     };
 
     let placements = vec![placement];
@@ -952,6 +957,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id: 0,
         geometry: Some(geometry),
+        planar_z_noise: None,
     };
     let mut curves = vec![
         curve(
@@ -1001,6 +1007,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         primary_id: std::num::NonZeroU64::new(3).unwrap(),
         secondary_id: 0,
         geometry: None,
+        planar_z_noise: None,
     });
     curves.push(curve(
         104,

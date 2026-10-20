@@ -268,14 +268,6 @@ without assigning a semantic role to that record.
 
 **Need.** The loop roles and entry fields can distinguish outer and inner boundaries and curve orientation, and the other member form keeps those Extrude profiles native.
 
-### DR-78. Compact planar line z components
-
-**Question.** Are the tiny nonzero z components of some typed-reference compact planar lines, about `1e-76`, exact zeros in the source model?
-
-**Known.** `f3d.md` §3.1 "A compact planar sketch line stores nine f64 values" gives the line with exact zero z components for its start, displacement, and direction. Some typed-reference sketch lines store z values of order `1e-76` in those positions, and the decoder rejects them, so those lines have no neutral sketch entity.
-
-**Need.** Profiles that use such lines stay native until the admission rule for these values is settled.
-
 ### DR-76. Other typed compact parameter trailers
 
 **Question.** What do the typed compact parameter frames with other expression trailers or a null owner on a feature input encode?

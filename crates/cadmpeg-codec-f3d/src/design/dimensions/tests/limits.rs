@@ -124,6 +124,7 @@ fn fixture() -> Fixture {
         primary_id: std::num::NonZeroU64::new(30).unwrap(),
         secondary_id: 1,
         geometry: None,
+        planar_z_noise: None,
     };
     let entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#dimension-curve").unwrap(),
