@@ -3128,6 +3128,7 @@ fn project_input_topology(
     let vertices = project_input_members(&topology.vertices, |slot| {
         crate::ids::history_input_vertex_id(&prefix, slot)
     })?;
+    let edge_geometry = project_input_edge_geometry(topology, &prefix);
     let id = crate::ids::history_input_state_id(&prefix);
     let input_of = feature.id.clone();
     let native_ref = state.id.clone();
@@ -3139,8 +3140,126 @@ fn project_input_topology(
         faces,
         edges,
         vertices,
+        edge_geometry,
         native_ref: Some(native_ref),
     })
+}
+
+/// Keep the edge geometry of the historical edges that some feature
+/// definition selects; consumers locate only selected edges in the bodies
+/// they rebuild.
+pub(crate) fn retain_selected_edge_geometry(
+    features: &[cadmpeg_ir::features::Feature],
+    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let sampled = input_topologies
+        .iter()
+        .flat_map(|topology| &topology.edge_geometry)
+        .map(|geometry| geometry.edge.as_str())
+        .collect::<HashSet<_>>();
+    if sampled.is_empty() {
+        return Ok(());
+    }
+    let mut selected = HashSet::<String>::new();
+    for feature in features {
+        let definition = serde_json::to_value(feature.evaluation.definition())
+            .map_err(|error| cadmpeg_core::CodecError::malformed(format_args!("{error}")))?;
+        let mut pending = vec![&definition];
+        while let Some(value) = pending.pop() {
+            match value {
+                serde_json::Value::String(text) if sampled.contains(text.as_str()) => {
+                    selected.insert(text.clone());
+                }
+                serde_json::Value::Array(values) => pending.extend(values),
+                serde_json::Value::Object(fields) => pending.extend(fields.values()),
+                _ => {}
+            }
+        }
+    }
+    drop(sampled);
+    for topology in input_topologies {
+        topology
+            .edge_geometry
+            .retain(|geometry| selected.contains(geometry.edge.as_str()));
+    }
+    Ok(())
+}
+
+/// Project the sampled edges of one historical state with their vertex
+/// positions and the state faces whose loops use them.
+fn project_input_edge_geometry(
+    topology: &AsmHistoricalTopology,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+) -> Vec<cadmpeg_ir::features::HistoricalEdgeGeometry> {
+    if topology.edge_samples.is_empty() {
+        return Vec::new();
+    }
+    let positions = topology
+        .point_positions
+        .iter()
+        .map(|point| (point.point, point.position))
+        .collect::<HashMap<_, _>>();
+    let vertex_positions = topology
+        .vertex_points
+        .iter()
+        .filter_map(|binding| Some((binding.entity, *positions.get(&binding.carrier)?)))
+        .collect::<HashMap<_, _>>();
+    let endpoints = topology
+        .edge_vertices
+        .iter()
+        .map(|edge| (edge.edge, (edge.start_vertex, edge.end_vertex)))
+        .collect::<HashMap<_, _>>();
+    let state_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let mut loop_faces = HashMap::new();
+    for relation in &topology.face_loops {
+        if state_faces.contains(&relation.owner_ref) {
+            for loop_ in &relation.member_refs {
+                loop_faces.insert(*loop_, relation.owner_ref);
+            }
+        }
+    }
+    let mut edge_faces = HashMap::<i64, Vec<i64>>::new();
+    for coedge in &topology.coedge_topology {
+        if let Some(face) = loop_faces.get(&coedge.owner_loop) {
+            let faces = edge_faces.entry(coedge.edge).or_default();
+            if !faces.contains(face) {
+                faces.push(*face);
+            }
+        }
+    }
+    let samples = topology
+        .edge_samples
+        .iter()
+        .map(|sample| (sample.edge, sample))
+        .collect::<HashMap<_, _>>();
+    let position = |vertex: i64| {
+        vertex_positions
+            .get(&vertex)
+            .copied()
+            .and_then(cadmpeg_ir::features::FinitePoint3::new)
+    };
+    topology
+        .edges
+        .iter()
+        .filter_map(|slot| {
+            let sample = samples.get(slot)?;
+            let (start, end) = endpoints.get(slot).map_or((None, None), |(start, end)| {
+                (position(*start), position(*end))
+            });
+            let mut faces = edge_faces.get(slot).cloned().unwrap_or_default();
+            faces.sort_unstable();
+            Some(cadmpeg_ir::features::HistoricalEdgeGeometry {
+                edge: crate::ids::history_input_edge_id(prefix, *slot),
+                interior: cadmpeg_ir::features::FinitePoint3::new(sample.interior)?,
+                tangent: sample.tangent.and_then(cadmpeg_ir::units::UnitVector3::new),
+                start,
+                end,
+                faces: project_input_members(&faces, |face| {
+                    crate::ids::history_input_face_id(prefix, face)
+                })?,
+            })
+        })
+        .collect()
 }
 
 fn project_input_members<T: Eq + std::hash::Hash>(
@@ -7830,6 +7949,7 @@ fn historical_topology(
                 })
             })
             .collect::<Option<Vec<_>>>()),
+        edge_samples: historical_edge_samples(brep),
     };
     // Transitions diff each family in key order. The decoder appends the
     // containers it builds for saved free edges after the containers it walks,
@@ -7849,6 +7969,57 @@ fn historical_topology(
         family.sort_by_key(|relation| relation.owner_ref);
     }
     Ok(Some(topology))
+}
+
+/// Sample each edge's solved carrier at the midpoint of its parameter interval.
+///
+/// An edge without a bounded solved carrier, or whose carrier has no finite
+/// point there, has no sample.
+fn historical_edge_samples(
+    brep: &cadmpeg_asm::brep::AsmBrep,
+) -> Vec<crate::history_records::AsmHistoricalEdgeSample> {
+    use cadmpeg_ir::eval::admission::EvaluationAdmission;
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let curves = brep
+        .curves
+        .iter()
+        .map(|curve| (curve.id.as_str(), &curve.geometry))
+        .collect::<HashMap<_, _>>();
+    let mut samples = brep
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let [start, end] = edge.param_range()?.get();
+            let CurveGeometry::Solved(geometry) = curves.get(edge.curve()?.as_str())? else {
+                return None;
+            };
+            let parameter = 0.5 * (start + end);
+            let interior = cadmpeg_ir::eval::decode::curve_point_solved(
+                EvaluationAdmission::Standard,
+                geometry,
+                parameter,
+            )
+            .ok()?;
+            let tangent = cadmpeg_ir::eval::curve_tangent_solved(
+                EvaluationAdmission::Standard,
+                geometry,
+                parameter,
+            )
+            .ok()
+            .and_then(|tangent| {
+                cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(tangent.get())
+            })
+            .map(|tangent| *tangent.as_raw());
+            Some(crate::history_records::AsmHistoricalEdgeSample {
+                edge: stable_ref(edge.id.as_str())?,
+                interior: interior.get(),
+                tangent,
+            })
+        })
+        .collect::<Vec<_>>();
+    samples.sort_by_key(|sample| sample.edge);
+    samples
 }
 
 pub(crate) fn historical_topology_with_tags(

@@ -319,6 +319,9 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space values of the point carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) point_positions: Vec<AsmHistoricalPoint>,
+    /// Model-space samples of the bounded curve carriers of edges in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) edge_samples: Vec<AsmHistoricalEdgeSample>,
 }
 
 /// One persistent tag group attached to a historical face or edge revision.
@@ -376,6 +379,15 @@ pub(crate) struct AsmHistoricalPlane {
 pub(crate) struct AsmHistoricalPoint {
     pub(crate) point: i64,
     pub(crate) position: Point3,
+}
+
+/// Point and unit tangent of one edge at the midpoint of its carrier interval.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalEdgeSample {
+    pub(crate) edge: i64,
+    pub(crate) interior: Point3,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tangent: Option<Vector3>,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
@@ -1167,6 +1179,8 @@ pub(crate) struct AsmHistoricalRowsDelta {
     pub(crate) coedge_pcurves: AsmHistoricalRowDelta<AsmHistoricalOptionalCarrierBinding>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) point_positions: AsmHistoricalRowDelta<AsmHistoricalPoint>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) edge_samples: AsmHistoricalRowDelta<AsmHistoricalEdgeSample>,
 }
 
 impl AsmHistoricalRow for AsmHistoricalEntityTags {
@@ -1202,6 +1216,12 @@ impl AsmHistoricalRow for AsmHistoricalCylinder {
 }
 
 impl AsmHistoricalRow for AsmHistoricalEdge {
+    fn key(&self) -> i64 {
+        self.edge
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalEdgeSample {
     fn key(&self) -> i64 {
         self.edge
     }
