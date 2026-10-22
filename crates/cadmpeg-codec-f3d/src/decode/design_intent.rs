@@ -908,6 +908,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         products.assembly_joints,
     );
+    crate::history::retain_selected_edge_geometry(
+        &model.features,
+        &mut model.feature_input_topologies,
+    )?;
     let phase_one_headers = prereqs
         .design_record_headers
         .iter()
