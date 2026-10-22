@@ -447,6 +447,10 @@ A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, sl
 
 An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
 
+A revolve uses slot 0 for its part operation, slot 1 for its boundary patch, slot 2 for its axis, slot 3 for its extent, slot 4 for its angle parameter, slot 7 for its feature dimensions, and slot 17 for the result object collection. The feature label's sole participant identifies the owning planar sketch, and the boundary patch selects its profile as for an extrusion. Extent value 3 is a full revolution; the angle parameter does not apply to it.
+
+Type `896cf08ed1113c0460007cb801f31bb0` is a work axis. After the content header it stores `entity_flags:u32` and two u32 values; segment major versions above 21 add one u32 value. A type-2 reference list follows, then an optional u32 `0x203`, two f64 triples, and `state:u8`. The first triple is a point on the axis and the second is the span from that point to the other end of the axis segment, both in internal centimetres. The axis direction is the span direction. Origin work axes span from −1 to 1 along their direction.
+
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
 
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.

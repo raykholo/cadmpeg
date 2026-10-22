@@ -923,6 +923,11 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             | PmDcFeaturePropertyKind::RdxVariable { .. }
             | PmDcFeaturePropertyKind::EdgeItem { .. }
             | PmDcFeaturePropertyKind::TerminationFlag { .. } => {}
+            PmDcFeaturePropertyKind::WorkAxis {
+                references: axis, ..
+            } => {
+                references.extend(axis.references().iter().map(|reference| reference.index()));
+            }
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
                 ..
