@@ -6,8 +6,8 @@ each other's changes when the second one rebases. The check asks GitHub,
 through the `gh` CLI, for the upstream repository's open PRs and warns on
 each one that shares files with this branch. It needs network access and
 an authenticated `gh`; `--offline` skips it. Added open-item IDs are also
-compared with added headings in PR diffs. Exact collisions fail; unreadable
-diffs produce a skip note. Diff requests run in parallel with bounded workers.
+compared with added headings in PR diffs; a retitled heading keeps its ID
+and is not new. Exact collisions fail; unreadable diffs produce a skip note. Diff requests run in parallel with bounded workers.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from preflight_open_items import OPEN_ITEMS, ITEM
+from preflight_open_items import OPEN_ITEMS, ITEM, items
 
 NAME = "open-prs"
 ORDER = 90
@@ -70,18 +70,25 @@ def overlaps(pulls: list[dict], paths: set[str], branch: str | None) -> list[str
 
 
 def added_ids(diff: str) -> set[tuple[str, str]]:
-    """Added open-item headings in a unified PR diff, keyed by document and ID."""
+    """New open-item headings in a unified PR diff, keyed by document and ID.
+
+    A heading that the same diff also removes from the same document is a
+    retitled item, not a new ID.
+    """
     path = ""
-    found = set()
+    added = set()
+    removed = set()
     for line in diff.splitlines():
-        if line.startswith("+++ "):
-            path = line[4:].removeprefix("b/")
-        elif line.startswith("+") and OPEN_ITEMS.match(path):
+        if line.startswith(("+++ ", "--- ")):
+            if line.startswith("+++ "):
+                path = line[4:].removeprefix("b/")
+            continue
+        if line[:1] in "+-" and line[1:5] == "### " and OPEN_ITEMS.match(path):
             match = ITEM.match(line[1:])
-            if match and line.startswith("+### "):
+            if match:
                 prefix, digits, suffix, _ = match.groups()
-                found.add((path, f"{prefix}-{digits}{suffix}"))
-    return found
+                (added if line[0] == "+" else removed).add((path, f"{prefix}-{digits}{suffix}"))
+    return added - removed
 
 
 def pull_diff(repo: str, number: int) -> str | None:
@@ -98,11 +105,14 @@ def id_collisions(context, repo: str, pulls: list[dict], branch: str | None):
     ours = set()
     for path in context.changed_paths():
         if OPEN_ITEMS.match(path):
+            existing = {identifier for identifier, _, _ in items(context.read_base(path))}
             for _, line in context.added_lines(path):
                 match = ITEM.match(line)
                 if match and line.startswith("### "):
                     prefix, digits, suffix, _ = match.groups()
-                    ours.add((path, f"{prefix}-{digits}{suffix}"))
+                    identifier = f"{prefix}-{digits}{suffix}"
+                    if identifier not in existing:
+                        ours.add((path, identifier))
     results = []
     if not ours:
         return results

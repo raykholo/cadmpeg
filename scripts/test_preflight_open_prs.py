@@ -83,6 +83,25 @@ class OpenPulls(harness.FixtureCase):
         self.assertEqual(harness.statuses(results), ["FAIL", "FAIL", "WARN"])
         self.assertIn(f"{path}: DE-01", results[0].details)
 
+    def test_retitled_item_is_not_a_new_id(self) -> None:
+        from subprocess import CompletedProcess
+        path = "docs/formats/f3d-open-items.md"
+        self.repo.checkout("upstream")
+        self.repo.commit({path: "### DR-90. Old title\n"})
+        self.repo.checkout("topic")
+        self.repo.git("rebase", "-q", "upstream")
+        self.repo.commit({path: "### DR-90. Our title\n"})
+        diff = f"--- a/{path}\n+++ b/{path}\n-### DR-90. Old title\n+### DR-90. Their title\n"
+        self.assertEqual(check.added_ids(diff), set())
+        with patch.object(check, "open_pulls", return_value=PULLS), \
+                patch.object(check.shutil, "which", return_value="gh"), \
+                patch.object(check.subprocess, "run", wraps=check.subprocess.run) as run:
+            original = run._mock_wraps
+            run.side_effect = lambda args, **kwargs: (CompletedProcess(args, 0, diff, "")
+                                                      if args[0] == "gh" else original(args, **kwargs))
+            results = harness.run_check(check, self.repo.context())
+        self.assertNotIn("FAIL", harness.statuses(results))
+
     def test_missing_gh_skips_with_note(self) -> None:
         with patch.object(check.shutil, "which", return_value=None):
             results = harness.run_check(check, self.repo.context())
