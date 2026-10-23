@@ -73,7 +73,8 @@ class OpenPulls(harness.FixtureCase):
         diff = (f"+++ b/{path}\n ### DE-02. Context\n-### DE-03. Removed\n"
                 "+### DE-01. Other item\n+++ b/README.md\n+### DE-04. Other path\n")
         self.assertEqual(check.added_ids(diff), {(path, "DE-01")})
-        with patch.object(check, "open_pulls", return_value=PULLS), \
+        pulls = [{**pull, "files": [*pull["files"], {"path": path}]} for pull in PULLS]
+        with patch.object(check, "open_pulls", return_value=pulls), \
                 patch.object(check.shutil, "which", return_value="gh"), \
                 patch.object(check.subprocess, "run", wraps=check.subprocess.run) as run:
             original = run._mock_wraps
@@ -82,6 +83,18 @@ class OpenPulls(harness.FixtureCase):
             results = harness.run_check(check, self.repo.context())
         self.assertEqual(harness.statuses(results), ["FAIL", "FAIL", "WARN"])
         self.assertIn(f"{path}: DE-01", results[0].details)
+
+    def test_only_pulls_that_change_the_document_are_diffed(self) -> None:
+        path = "docs/formats/f3d-open-items.md"
+        self.repo.commit({path: "### DE-01. Branch item\n"})
+        pulls = [*PULLS, {"number": 10, "title": "items", "author": {"login": "x"},
+                          "headRefName": "items", "files": [{"path": path}]}]
+        with patch.object(check, "open_pulls", return_value=pulls), \
+                patch.object(check.shutil, "which", return_value="gh"), \
+                patch.object(check, "pull_diff", return_value="") as diff:
+            results = harness.run_check(check, self.repo.context())
+        self.assertEqual([call.args[1] for call in diff.call_args_list], [10])
+        self.assertNotIn("FAIL", harness.statuses(results))
 
     def test_retitled_item_is_not_a_new_id(self) -> None:
         from subprocess import CompletedProcess
@@ -93,7 +106,8 @@ class OpenPulls(harness.FixtureCase):
         self.repo.commit({path: "### DR-90. Our title\n"})
         diff = f"--- a/{path}\n+++ b/{path}\n-### DR-90. Old title\n+### DR-90. Their title\n"
         self.assertEqual(check.added_ids(diff), set())
-        with patch.object(check, "open_pulls", return_value=PULLS), \
+        pulls = [{**pull, "files": [{"path": path}]} for pull in PULLS]
+        with patch.object(check, "open_pulls", return_value=pulls), \
                 patch.object(check.shutil, "which", return_value="gh"), \
                 patch.object(check.subprocess, "run", wraps=check.subprocess.run) as run:
             original = run._mock_wraps

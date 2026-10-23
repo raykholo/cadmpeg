@@ -6,8 +6,10 @@ each other's changes when the second one rebases. The check asks GitHub,
 through the `gh` CLI, for the upstream repository's open PRs and warns on
 each one that shares files with this branch. It needs network access and
 an authenticated `gh`; `--offline` skips it. Added open-item IDs are also
-compared with added headings in PR diffs; a retitled heading keeps its ID
-and is not new. Exact collisions fail; unreadable diffs produce a skip note. Diff requests run in parallel with bounded workers.
+compared with the headings that other open PRs add; a retitled heading keeps
+its ID and is not new. Exact collisions fail. Only the PRs whose files, as
+`gh pr list` reports them, include an open-items document this branch changes
+have their diffs read, in parallel; an unreadable diff produces a skip note.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
 from preflight_open_items import OPEN_ITEMS, ITEM, items
 
@@ -101,7 +104,69 @@ def pull_diff(repo: str, number: int) -> str | None:
     return process.stdout if process.returncode == 0 else None
 
 
-def id_collisions(context, repo: str, pulls: list[dict], branch: str | None):
+@dataclass
+class Survey:
+    """The open PRs, asked once per run and shared with the open-items check."""
+
+    skip: str | None = None
+    repo: str = ""
+    pulls: list[dict] | None = None
+    branch: str | None = None
+    diffs: dict[int, str | None] | None = None
+
+
+def survey(context) -> Survey:
+    cached = context.cache.get(NAME)
+    if cached is not None:
+        return cached
+    result = Survey()
+    repo = None
+    if context.options.offline:
+        result.skip = "--offline"
+    elif shutil.which("gh") is None:
+        result.skip = "the gh CLI is not installed"
+    elif (repo := repository(context)) is None:
+        result.skip = f"cannot tell the GitHub repository of {context.upstream}"
+    if repo is not None:
+        result.repo = repo
+        try:
+            result.pulls = open_pulls(repo)
+        except (subprocess.TimeoutExpired, json.JSONDecodeError):
+            result.pulls = None
+        if result.pulls is None:
+            result.skip = f"gh could not list the open PRs of {repo}"
+        else:
+            result.branch = branch_name(context)
+    context.cache[NAME] = result
+    return result
+
+
+def pull_diffs(context, found: Survey) -> dict[int, str | None]:
+    """Diffs of the other open PRs whose files include an open-items document this branch changes."""
+    if found.diffs is None:
+        documents = {path for path in context.changed_paths() if OPEN_ITEMS.match(path)}
+        touching = [pull["number"] for pull in found.pulls or []
+                    if pull.get("headRefName") != found.branch
+                    and documents & {file["path"] for file in pull.get("files") or []}]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            diffs = list(pool.map(lambda number: pull_diff(found.repo, number), touching))
+        found.diffs = dict(zip(touching, diffs))
+    return found.diffs
+
+
+def claimed_ids(context) -> dict[tuple[str, str], set[int]] | None:
+    """(document, ID) -> the other open PRs that add that item; None when GitHub was not asked."""
+    found = survey(context)
+    if found.pulls is None:
+        return None
+    claims: dict[tuple[str, str], set[int]] = {}
+    for number, diff in pull_diffs(context, found).items():
+        for key in added_ids(diff or ""):
+            claims.setdefault(key, set()).add(number)
+    return claims
+
+
+def id_collisions(context, found: Survey):
     ours = set()
     for path in context.changed_paths():
         if OPEN_ITEMS.match(path):
@@ -116,17 +181,14 @@ def id_collisions(context, repo: str, pulls: list[dict], branch: str | None):
     results = []
     if not ours:
         return results
-    others = [pull for pull in pulls if pull.get("headRefName") != branch]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        diffs = list(pool.map(lambda pull: pull_diff(repo, pull["number"]), others))
-    for pull, diff in zip(others, diffs):
+    for number, diff in sorted(pull_diffs(context, found).items()):
         if diff is None:
-            results.append(context.skipped(f"could not read diff of PR #{pull['number']}"))
+            results.append(context.skipped(f"could not read diff of PR #{number}"))
             continue
         shared = sorted(ours & added_ids(diff))
         if shared:
             results.append(context.failed(
-                f"open-item IDs also added by PR #{pull['number']}",
+                f"open-item IDs also added by PR #{number}",
                 *(f"{path}: {identifier}" for path, identifier in shared),
                 "fix: renumber the new item and every reference to it",
             ))
@@ -134,27 +196,16 @@ def id_collisions(context, repo: str, pulls: list[dict], branch: str | None):
 
 
 def run(context):
-    if context.options.offline:
-        return context.skipped("--offline")
-    if shutil.which("gh") is None:
-        return context.skipped("the gh CLI is not installed")
-    repo = repository(context)
-    if repo is None:
-        return context.skipped(f"cannot tell the GitHub repository of {context.upstream}")
-    try:
-        pulls = open_pulls(repo)
-    except (subprocess.TimeoutExpired, json.JSONDecodeError):
-        pulls = None
-    if pulls is None:
-        return context.skipped(f"gh could not list the open PRs of {repo}")
-    branch = branch_name(context)
-    found = overlaps(pulls, set(context.changed_paths()), branch)
-    results = id_collisions(context, repo, pulls, branch)
-    if not found:
-        return results or context.passed(f"no open PR in {repo} changes the same files")
+    found = survey(context)
+    if found.pulls is None:
+        return context.skipped(found.skip or "the open PRs are unknown")
+    overlap = overlaps(found.pulls, set(context.changed_paths()), found.branch)
+    results = id_collisions(context, found)
+    if not overlap:
+        return results or context.passed(f"no open PR in {found.repo} changes the same files")
     results.append(context.warned(
-        f"{len(found)} open PR(s) change the same files",
-        *found[:15],
+        f"{len(overlap)} open PR(s) change the same files",
+        *overlap[:15],
         "check: read each one; drop duplicate work, and agree which lands first and what the "
         "second must keep",
     ))

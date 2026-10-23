@@ -69,6 +69,7 @@ class Context:
         self.rev = rev
         self.options = options or Options()
         self.check = ""
+        self.cache: dict[str, object] = {}  # Data that one check computes and another reuses.
         self._paths: list[str] | None = None
 
     # Results.
