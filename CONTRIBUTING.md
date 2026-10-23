@@ -131,6 +131,8 @@ When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old
 
 `spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
 
+`version-layouts` warns when added spec text says “from version N”, “before version N”, “in versions N through M”, “in version N and later”, or “segment major version(s)”, and a layout record anchored in that paragraph has no version in its anchor.
+
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
 
 ---
