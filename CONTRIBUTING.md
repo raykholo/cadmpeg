@@ -121,7 +121,7 @@ Without `--full`, nothing compiles. `--run-layout` regenerates changed layout ta
 
 The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
 
-When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old version. Old version literals in the CLI query tests and the IGES bounded-decode scripts fail, as does a rejected-version list that contains the new version. Unchanged document digests in `hash.rs` and an old FreeCAD profile `cadir_version` warn. Older versions that tests and fuzz seeds use on purpose are not reported.
+When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old version. Old version literals in the CLI query tests and the IGES bounded-decode scripts fail, as does a rejected-version list that contains the new version. Unchanged document digests in `hash.rs` and an old FreeCAD profile `cadir_version` warn. Versions older than the previous one, such as those that refusal tests and fuzz seeds use on purpose, are not reported, and neither is the previous version in a CLI query test that also expects the refusal message naming it (`has ir_version N`).
 
 `open-prs` also reads the diffs of the open PRs that change an open-items document this branch changes, and only those. An ID added to the same document by another open PR fails; a heading that keeps its ID and changes its title is not a new ID. The branch under test is excluded. Missing `gh`, offline mode, and unreadable PR diffs produce a skip note.
 

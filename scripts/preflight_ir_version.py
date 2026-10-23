@@ -457,8 +457,15 @@ def other_changes(context) -> list[str]:
     return changes
 
 
+QUERY_TESTS = "crates/cadmpeg/tests/query.rs"
+
+
 def stale_fixtures(context, old: int) -> list[str]:
-    """Files that pinned the old version at the merge base and still pin it."""
+    """Files that pinned the old version at the merge base and still pin it.
+
+    The CLI query tests are checked line by line in `stale_pins`, which keeps
+    the refusal tests of an old version.
+    """
     pattern = rf'"ir_version"\s*:\s*"{old}"'
     pinned = context.git("grep", "-l", "-E", pattern, context.base, "--").stdout.splitlines()
     pinned = {line.split(":", 1)[1] for line in pinned if ":" in line}
@@ -467,7 +474,21 @@ def stale_fixtures(context, old: int) -> list[str]:
         arguments.append(context.rev)
     still = context.git(*arguments, "--").stdout.splitlines()
     still = {line.split(":", 1)[1] if context.rev else line for line in still}
-    return sorted(pinned & still)
+    return sorted((pinned & still) - {QUERY_TESTS})
+
+
+def refused_on_purpose(lines: list[str], index: int, pin: str) -> bool:
+    """Whether the test function around a line expects the refusal of that version.
+
+    A refusal test feeds in a foreign version and checks the message that names
+    it (`has ir_version 5`), so the version is deliberate even when it is the
+    previous one.
+    """
+    for start in range(index, -1, -1):
+        if re.search(r"\bfn \w+", lines[start]):
+            body = "\n".join(lines[start:item_end(lines, start) + 1])
+            return bool(re.search(rf"\bir_version {re.escape(pin)}\b", body))
+    return False
 
 
 def stale_pins(context, old: int, new: int) -> tuple[list[str], list[str]]:
@@ -475,23 +496,26 @@ def stale_pins(context, old: int, new: int) -> tuple[list[str], list[str]]:
 
     Returns the stale pins, which fail, and the pins to review: unchanged
     document digests and the FreeCAD profile, which is regenerated with its
-    fixtures rather than on every bump. Other old versions, such as the foreign
-    version a refusal test feeds in, are deliberate and not reported.
+    fixtures rather than on every bump. Other old versions are deliberate and
+    not reported, and so is the old version in a query test that expects the
+    refusal message naming it (`has ir_version N`).
     """
     problems: list[str] = []
     review: list[str] = []
     profile = "docs/formats/freecad_fcstd-profile.json"
-    paths = ("crates/cadmpeg/tests/query.rs", "scripts/verify-iges-bounded.py",
+    paths = (QUERY_TESTS, "scripts/verify-iges-bounded.py",
              "scripts/test_verify_iges_bounded.py", profile)
     literal = re.compile(r"[\"'](?:ir_version|cadir_version)[\"']\s*:\s*[\"'](\d+)[\"']"
                          r"|payload\.get\(\"ir_version\"\) != \"(\d+)\""
                          r"|does not use ir_version \"(\d+)\"")
     for path in paths:
         text = context.read(path) or ""
-        for number, line in enumerate(text.splitlines(), 1):
+        lines = text.splitlines()
+        for number, line in enumerate(lines, 1):
             for match in literal.finditer(line):
                 pin = next(value for value in match.groups() if value is not None)
-                if int(pin) == old:
+                if int(pin) == old and not (path == QUERY_TESTS
+                                            and refused_on_purpose(lines, number - 1, pin)):
                     entry = f"{path}:{number}: version pin {pin}; expected {new}"
                     (review if path == profile else problems).append(entry)
         if path.endswith("query.rs"):

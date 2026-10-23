@@ -257,6 +257,21 @@ mod tests {
         self.repo.checkout("topic")
         self.assertPasses({DOCUMENT: document(9), GOLDEN: golden(9)})
 
+    def test_bump_keeps_a_refusal_test_of_the_previous_version(self) -> None:
+        query = "crates/cadmpeg/tests/query.rs"
+        refusal = ('fn a_foreign_ir_version_is_refused() {\n'
+                   '    let doc = r#"{"ir_version": "8", "model": {}}"#;\n'
+                   '    assert(contains("has ir_version 8"));\n}\n')
+        self.repo.commit({query: refusal})
+        self.repo.checkout("upstream")
+        self.repo.git("merge", "-q", "topic")
+        self.repo.checkout("topic")
+        self.assertPasses({DOCUMENT: document(9), GOLDEN: golden(9)})
+        self.repo.write({query: refusal + 'fn valid() {\n    let doc = r#"{"ir_version": "8"}"#;\n}\n'})
+        results = self.results()
+        self.assertEqual(harness.statuses(results), ["FAIL"])
+        self.assertEqual(results[0].details[0], f"{query}:6: version pin 8; expected 9")
+
     def test_branch_behind_an_upstream_bump_checks_no_pins(self) -> None:
         self.repo.checkout("upstream")
         self.repo.commit({DOCUMENT: document(9), GOLDEN: golden(9),
