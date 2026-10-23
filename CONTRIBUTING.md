@@ -129,6 +129,8 @@ When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old
 
 `open-items` fails on duplicate IDs per file. It warns when a prefix moves outside its base/upstream sections, when a new DE/EN prefix is outside Decode/Encode, or when a new ID skips the next number. Removed item numbers need not be filled.
 
+`spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
+
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
 
 ---
