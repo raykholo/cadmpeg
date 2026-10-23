@@ -65,6 +65,12 @@ class LayoutCheck(harness.FixtureCase):
         self.assertEqual(harness.statuses(harness.run_check(check, context)), ["PASS"])
         self.assertEqual((self.repo.root / CODE).read_bytes(), before)
 
+    def test_run_layout_with_rev_keeps_the_file_findings(self) -> None:
+        self.repo.commit({CODE: "pub const A: usize = 3;\n"})
+        results = self.results(rev="HEAD", run_layout=True)
+        self.assertEqual(harness.statuses(results), ["WARN", "SKIP"])
+        self.assertIn("never edited by hand", results[0].details[0])
+
     def test_conflict_markers_fail(self) -> None:
         self.repo.commit({TOML: "<<<<<<< HEAD\na = 2\n=======\na = 3\n>>>>>>> main\n",
                           PAGE: "| b |\n"})

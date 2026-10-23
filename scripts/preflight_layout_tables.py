@@ -63,18 +63,20 @@ def run(context):
                   if path in changed]
         problems.append(f"{', '.join(edited)} changed without docs/layouts/{name}.toml; "
                         "derived files are never edited by hand")
-    if problems and not context.options.run_layout:
-        return context.warned("layout regeneration needs verification", *problems,
-                              "fix: keep every table record in the .toml, then run "
-                              f"{REGENERATE} and commit the result")
-    if not context.options.run_layout:
-        return context.warned(
+    if problems:
+        unverified = context.warned("layout regeneration needs verification", *problems,
+                                    "fix: keep every table record in the .toml, then run "
+                                    f"{REGENERATE} and commit the result")
+    else:
+        unverified = context.warned(
             f"layout table(s) changed: {', '.join(sorted(tables))}; regeneration not verified",
             f"verify: {REGENERATE}, then git diff, then {' '.join(TEST)}",
             "or rerun preflight with --run-layout",
         )
+    if not context.options.run_layout:
+        return unverified
     if not context.worktree:
-        return context.skipped("--run-layout needs the working tree, not --rev")
+        return [unverified, context.skipped("--run-layout needs the working tree, not --rev")]
     derived = [path for name in sorted(code) for path in (f"docs/layouts/{name}.md", code[name])]
     before = {path: (context.root / path).read_bytes()
               if (context.root / path).is_file() else None for path in derived}
