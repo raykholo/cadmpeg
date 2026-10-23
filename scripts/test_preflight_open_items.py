@@ -65,6 +65,24 @@ class OpenItemsCheck(harness.FixtureCase):
         self.repo.checkout("topic")
         self.assertEqual(harness.statuses(self.results()), ["PASS"])
 
+    def test_wrong_section_and_skipped_number_warn(self) -> None:
+        self.repo.commit({PATH: document("DR-88. Old item", "DR-89. Another item")
+                          + "## 2. Decode\n\n### DE-01. Decode item\n"})
+        self.repo.checkout("upstream")
+        self.repo.git("merge", "-q", "topic")
+        self.repo.checkout("topic")
+        self.repo.commit({PATH: document("DR-88. Old item", "DR-89. Another item",
+                                        "DE-03. Misplaced decode")})
+        results = self.results()
+        self.assertEqual(harness.statuses(results), ["WARN"])
+        self.assertTrue(any("expected section: decode" in d for d in results[0].details))
+        self.assertTrue(any("skips DE-02" in d for d in results[0].details))
+
+    def test_contiguous_ids_in_their_section_pass(self) -> None:
+        self.repo.commit({PATH: document("DR-88. Old item", "DR-89. Another item",
+                                        "DR-90. New item", "DR-91. Next item")})
+        self.assertEqual(harness.statuses(self.results()), ["PASS"])
+
     def test_next_free_keeps_zero_padding(self) -> None:
         self.assertEqual(check.next_free("GC", [("GC-01", "a", 1), ("GC-09A", "b", 2)]), "GC-10")
 

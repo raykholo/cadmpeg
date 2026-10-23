@@ -41,6 +41,59 @@ def next_free(prefix: str, *documents: list[tuple[str, str, int]]) -> str:
     return f"{prefix}-{max(numbers, default=0) + 1:0{width}d}"
 
 
+def sections(text: str | None) -> dict[str, set[str]]:
+    """Section headings used by each prefix."""
+    found = {}
+    section = ""
+    for line in (text or "").splitlines():
+        if line.startswith("## "):
+            section = re.sub(r"^## (?:\d+\.\s*)?", "", line).strip().lower()
+        match = ITEM.match(line)
+        if match:
+            found.setdefault(match.group(1), set()).add(section)
+    return found
+
+
+def hygiene(context, path: str) -> list[str]:
+    text = context.read(path) or ""
+    base = context.read_base(path)
+    upstream = context.read_upstream(path)
+    known = sections(base)
+    for prefix, titles in sections(upstream).items():
+        known.setdefault(prefix, set()).update(titles)
+    warnings = []
+    section = ""
+    for number, line in enumerate(text.splitlines(), 1):
+        if line.startswith("## "):
+            section = re.sub(r"^## (?:\d+\.\s*)?", "", line).strip().lower()
+        match = ITEM.match(line)
+        if not match:
+            continue
+        prefix, digits, suffix, _ = match.groups()
+        expected = known.get(prefix, set())
+        semantic = {"DE": "decode", "EN": "encode"}.get(prefix)
+        if ((expected and section not in expected)
+                or (not expected and semantic and semantic not in section)):
+            warnings.append(f"{path}:{number}: {prefix}-{digits}{suffix} under '{section}'; "
+                            f"expected section: {', '.join(sorted(expected)) or semantic}")
+    previous = items(base) + items(upstream)
+    old_ids = {identifier for identifier, _, _ in previous}
+    maximum = {}
+    for identifier, _, _ in previous:
+        prefix, digits = identifier.split("-")
+        maximum[prefix] = max(maximum.get(prefix, 0), int(digits.rstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")))
+    added = [entry for entry in items(text) if entry[0] not in old_ids]
+    for identifier, _, number in sorted(added, key=lambda entry: (
+            entry[0].split("-")[0], int(re.search(r"-(\d+)", entry[0]).group(1)))):
+        prefix, digits = identifier.split("-")
+        value = int(digits.rstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        high = maximum.get(prefix, 0)
+        if value > high + 1:
+            warnings.append(f"{path}:{number}: {identifier} skips {prefix}-{high + 1:0{len(digits)}d}")
+        maximum[prefix] = max(high, value)
+    return warnings
+
+
 def run(context):
     paths = [path for path in context.changed_paths() if OPEN_ITEMS.match(path)]
     if not paths:
@@ -63,6 +116,9 @@ def run(context):
                   and upstream_titles[identifier] != title):
                 problems.append(f"{path}:{line}: {identifier} \"{title}\" collides with upstream's "
                                 f"{identifier} \"{upstream_titles[identifier]}\"; next free is {free}")
+        warnings = hygiene(context, path)
+        if warnings:
+            results.append(context.warned(f"open-item hygiene in {path}", *warnings))
         if problems:
             results.append(context.failed(
                 f"open-item ID collision in {path}", *problems,
