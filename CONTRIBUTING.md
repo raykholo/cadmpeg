@@ -135,6 +135,8 @@ When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old
 
 `ir-validation` warns on new public struct fields in `cadmpeg-ir` whose names occur in no `validate*.rs` file in that crate. This name search does not prove that validation is sufficient.
 
+`spec-invariants` warns on added spec lines with “must”, “is 0”, “is −1 or”, or “is one of” beside a code identifier when that name occurs in no require/refuse/ensure/check call argument in codec parser or validation source. Tests, comments, strings, and encoder/export paths do not supply checks. This heuristic does not prove semantic agreement.
+
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
 
 ---
