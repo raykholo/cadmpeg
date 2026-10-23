@@ -123,6 +123,8 @@ The `open-prs` check lists the upstream open pull requests through the GitHub CL
 
 When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old version. Old version literals in the CLI query tests and the IGES bounded-decode scripts fail, as does a rejected-version list that contains the new version. Unchanged document digests in `hash.rs` and an old FreeCAD profile `cadir_version` warn. Older versions that tests and fuzz seeds use on purpose are not reported.
 
+`open-prs` also reads PR diffs when this branch adds open-item IDs. An ID added to the same document by another open PR fails. The branch under test is excluded. Missing `gh`, offline mode, and unreadable PR diffs produce a skip note.
+
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
 
 ---

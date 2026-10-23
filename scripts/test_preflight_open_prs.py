@@ -66,6 +66,29 @@ class OpenPulls(harness.FixtureCase):
         self.assertEqual(harness.statuses(results), ["WARN"])
         self.assertEqual([d.split()[0] for d in results[0].details[:-1]], ["#9"])
 
+    def test_duplicate_added_id_fails_and_ignores_context_and_other_paths(self) -> None:
+        from subprocess import CompletedProcess
+        path = "docs/formats/f3d-open-items.md"
+        self.repo.commit({path: "### DE-01. Branch item\n"})
+        diff = (f"+++ b/{path}\n ### DE-02. Context\n-### DE-03. Removed\n"
+                "+### DE-01. Other item\n+++ b/README.md\n+### DE-04. Other path\n")
+        self.assertEqual(check.added_ids(diff), {(path, "DE-01")})
+        with patch.object(check, "open_pulls", return_value=PULLS), \
+                patch.object(check.shutil, "which", return_value="gh"), \
+                patch.object(check.subprocess, "run", wraps=check.subprocess.run) as run:
+            original = run._mock_wraps
+            run.side_effect = lambda args, **kwargs: (CompletedProcess(args, 0, diff, "")
+                                                      if args[0] == "gh" else original(args, **kwargs))
+            results = harness.run_check(check, self.repo.context())
+        self.assertEqual(harness.statuses(results), ["FAIL", "FAIL", "WARN"])
+        self.assertIn(f"{path}: DE-01", results[0].details)
+
+    def test_missing_gh_skips_with_note(self) -> None:
+        with patch.object(check.shutil, "which", return_value=None):
+            results = harness.run_check(check, self.repo.context())
+        self.assertEqual(harness.statuses(results), ["SKIP"])
+        self.assertIn("not installed", results[0].summary)
+
     def test_offline_skips(self) -> None:
         results = harness.run_check(check, self.repo.context(offline=True))
         self.assertEqual(harness.statuses(results), ["SKIP"])

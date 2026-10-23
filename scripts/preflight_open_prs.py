@@ -5,7 +5,9 @@ Two open PRs that change the same files either duplicate work or must keep
 each other's changes when the second one rebases. The check asks GitHub,
 through the `gh` CLI, for the upstream repository's open PRs and warns on
 each one that shares files with this branch. It needs network access and
-an authenticated `gh`; `--offline` skips it.
+an authenticated `gh`; `--offline` skips it. Added open-item IDs are also
+compared with added headings in PR diffs. Exact collisions fail; unreadable
+diffs produce a skip note. Diff requests run in parallel with bounded workers.
 """
 
 from __future__ import annotations
@@ -14,6 +16,9 @@ import json
 import re
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
+from preflight_open_items import OPEN_ITEMS, ITEM
 
 NAME = "open-prs"
 ORDER = 90
@@ -45,7 +50,7 @@ def branch_name(context) -> str | None:
 
 def open_pulls(repo: str) -> list[dict] | None:
     process = subprocess.run(
-        ["gh", "pr", "list", "-R", repo, "--state", "open", "--limit", "100",
+        ["gh", "pr", "list", "-R", repo, "--state", "open", "--limit", "1000",
          "--json", "number,title,author,headRefName,files"],
         capture_output=True, text=True, timeout=60)
     return json.loads(process.stdout) if process.returncode == 0 else None
@@ -64,6 +69,60 @@ def overlaps(pulls: list[dict], paths: set[str], branch: str | None) -> list[str
     return found
 
 
+def added_ids(diff: str) -> set[tuple[str, str]]:
+    """Added open-item headings in a unified PR diff, keyed by document and ID."""
+    path = ""
+    found = set()
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[4:].removeprefix("b/")
+        elif line.startswith("+") and OPEN_ITEMS.match(path):
+            match = ITEM.match(line[1:])
+            if match and line.startswith("+### "):
+                prefix, digits, suffix, _ = match.groups()
+                found.add((path, f"{prefix}-{digits}{suffix}"))
+    return found
+
+
+def pull_diff(repo: str, number: int) -> str | None:
+    try:
+        process = subprocess.run(
+            ["gh", "pr", "diff", str(number), "-R", repo, "--color=never"],
+            capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return None
+    return process.stdout if process.returncode == 0 else None
+
+
+def id_collisions(context, repo: str, pulls: list[dict], branch: str | None):
+    ours = set()
+    for path in context.changed_paths():
+        if OPEN_ITEMS.match(path):
+            for _, line in context.added_lines(path):
+                match = ITEM.match(line)
+                if match and line.startswith("### "):
+                    prefix, digits, suffix, _ = match.groups()
+                    ours.add((path, f"{prefix}-{digits}{suffix}"))
+    results = []
+    if not ours:
+        return results
+    others = [pull for pull in pulls if pull.get("headRefName") != branch]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        diffs = list(pool.map(lambda pull: pull_diff(repo, pull["number"]), others))
+    for pull, diff in zip(others, diffs):
+        if diff is None:
+            results.append(context.skipped(f"could not read diff of PR #{pull['number']}"))
+            continue
+        shared = sorted(ours & added_ids(diff))
+        if shared:
+            results.append(context.failed(
+                f"open-item IDs also added by PR #{pull['number']}",
+                *(f"{path}: {identifier}" for path, identifier in shared),
+                "fix: renumber the new item and every reference to it",
+            ))
+    return results
+
+
 def run(context):
     if context.options.offline:
         return context.skipped("--offline")
@@ -80,11 +139,13 @@ def run(context):
         return context.skipped(f"gh could not list the open PRs of {repo}")
     branch = branch_name(context)
     found = overlaps(pulls, set(context.changed_paths()), branch)
+    results = id_collisions(context, repo, pulls, branch)
     if not found:
-        return context.passed(f"no open PR in {repo} changes the same files")
-    return context.warned(
+        return results or context.passed(f"no open PR in {repo} changes the same files")
+    results.append(context.warned(
         f"{len(found)} open PR(s) change the same files",
         *found[:15],
         "check: read each one; drop duplicate work, and agree which lands first and what the "
         "second must keep",
-    )
+    ))
+    return results
