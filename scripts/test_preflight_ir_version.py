@@ -223,6 +223,48 @@ mod tests {
         self.assertIn("FAIL", harness.statuses(results))
         self.assertIn("makes it 10", results[0].summary)
 
+    def test_bump_names_each_stale_pin(self) -> None:
+        digest = "a" * 64
+        pins = {
+            "crates/cadmpeg-ir/src/hash.rs":
+                f'fn pins_document() {{ assert_eq!(document(), "{digest}"); }}',
+            "crates/cadmpeg/tests/query.rs": 'for version in [serde_json::json!("9")] {}',
+            "scripts/verify-iges-bounded.py": 'if payload.get("ir_version") != "8": pass',
+            "scripts/test_verify_iges_bounded.py": 'for version in ("9",): pass',
+            "docs/formats/freecad_fcstd-profile.json": '{"cadir_version": "8"}',
+        }
+        self.repo.commit(pins)
+        self.repo.checkout("upstream")
+        self.repo.git("merge", "-q", "topic")
+        self.repo.checkout("topic")
+        self.repo.commit({DOCUMENT: document(9), GOLDEN: golden(9)})
+        results = self.results()
+        self.assertEqual(harness.statuses(results), ["FAIL", "WARN"])
+        for path in pins:
+            self.assertTrue(any(path in detail for result in results for detail in result.details), path)
+        self.repo.write({path: text.replace('"8"', '"9"').replace('"9",', '"8",')
+                         .replace('json!("9")', 'json!("8")').replace(digest, "b" * 64)
+                         for path, text in pins.items()})
+        self.assertEqual(harness.statuses(self.results()), ["PASS"])
+
+    def test_bump_keeps_deliberately_older_versions(self) -> None:
+        # Refusal tests and fuzz seeds feed in foreign versions on purpose.
+        fuzz = "crates/cadmpeg-fuzz/seeds/ir_from_json/valid_v0_rejected.json"
+        query = "crates/cadmpeg/tests/query.rs"
+        self.repo.commit({fuzz: golden(0), query: 'r#"{"ir_version": "5"}"#'})
+        self.repo.checkout("upstream")
+        self.repo.git("merge", "-q", "topic")
+        self.repo.checkout("topic")
+        self.assertPasses({DOCUMENT: document(9), GOLDEN: golden(9)})
+
+    def test_branch_behind_an_upstream_bump_checks_no_pins(self) -> None:
+        self.repo.checkout("upstream")
+        self.repo.commit({DOCUMENT: document(9), GOLDEN: golden(9),
+                          "docs/formats/freecad_fcstd-profile.json": '{"cadir_version": "8"}'})
+        self.repo.checkout("topic")
+        # A pin this branch does not bump is not its business.
+        self.assertPasses({"docs/formats/freecad_fcstd-profile.json": '{"cadir_version": "7"}'})
+
     def test_codec_serialized_type_warns(self) -> None:
         self.repo.commit({"crates/cadmpeg-codec-f3d/src/native.rs": STRUCT})
         self.assertEqual(harness.statuses(self.results()), ["WARN"])

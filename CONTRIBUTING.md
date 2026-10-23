@@ -121,6 +121,8 @@ Without `--full`, nothing compiles. `--run-layout` regenerates changed layout ta
 
 The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
 
+When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old version. Old version literals in the CLI query tests and the IGES bounded-decode scripts fail, as does a rejected-version list that contains the new version. Unchanged document digests in `hash.rs` and an old FreeCAD profile `cadir_version` warn. Older versions that tests and fuzz seeds use on purpose are not reported.
+
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
 
 ---

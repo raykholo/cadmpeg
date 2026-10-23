@@ -470,6 +470,57 @@ def stale_fixtures(context, old: int) -> list[str]:
     return sorted(pinned & still)
 
 
+def stale_pins(context, old: int, new: int) -> tuple[list[str], list[str]]:
+    """Version pins outside the JSON fixtures that still name the old version.
+
+    Returns the stale pins, which fail, and the pins to review: unchanged
+    document digests and the FreeCAD profile, which is regenerated with its
+    fixtures rather than on every bump. Other old versions, such as the foreign
+    version a refusal test feeds in, are deliberate and not reported.
+    """
+    problems: list[str] = []
+    review: list[str] = []
+    profile = "docs/formats/freecad_fcstd-profile.json"
+    paths = ("crates/cadmpeg/tests/query.rs", "scripts/verify-iges-bounded.py",
+             "scripts/test_verify_iges_bounded.py", profile)
+    literal = re.compile(r"[\"'](?:ir_version|cadir_version)[\"']\s*:\s*[\"'](\d+)[\"']"
+                         r"|payload\.get\(\"ir_version\"\) != \"(\d+)\""
+                         r"|does not use ir_version \"(\d+)\"")
+    for path in paths:
+        text = context.read(path) or ""
+        for number, line in enumerate(text.splitlines(), 1):
+            for match in literal.finditer(line):
+                pin = next(value for value in match.groups() if value is not None)
+                if int(pin) == old:
+                    entry = f"{path}:{number}: version pin {pin}; expected {new}"
+                    (review if path == profile else problems).append(entry)
+        if path.endswith("query.rs"):
+            lists = re.findall(r"for version in \[(.*?)\]", text, re.S)
+            rejects = re.compile(r'serde_json::json!\(\s*"' + str(new) + r'"\s*\)')
+        elif path.endswith("test_verify_iges_bounded.py"):
+            lists = re.findall(r"for version in \((.*?)\)", text, re.S)
+            rejects = re.compile(r"[\"']" + str(new) + r"[\"']")
+        else:
+            lists = []
+        if any(rejects.search(values) for values in lists):
+            problems.append(f"{path}: rejected-version list includes current IR_VERSION {new}")
+    path = "crates/cadmpeg-ir/src/hash.rs"
+    before = context.read_base(path) or ""
+    lines = (context.read(path) or "").splitlines()
+    for index, line in enumerate(lines):
+        if not re.search(r"\bfn \w+", line):
+            continue
+        end = item_end(lines, index)
+        body = "\n".join(lines[index:end + 1])
+        if not re.search(r"document|document_local_sha256|cloned_local_digest", body):
+            continue
+        for offset, value in enumerate(lines[index:end + 1]):
+            for digest in re.findall(r'"([0-9a-f]{64})"', value):
+                if digest in before and digest.strip("0"):
+                    review.append(f"{path}:{index + offset + 1}: unchanged document digest {digest}")
+    return problems, review
+
+
 def run(context):
     base = version(context.read_base(VERSION_FILE))
     upstream = version(context.read_upstream(VERSION_FILE))
@@ -502,10 +553,21 @@ def run(context):
         if stale:
             results.append(context.failed(
                 f"IR_VERSION is {new} but {len(stale)} file(s) still pin \"ir_version\": \"{base}\"",
-                *stale[:15],
+                *stale,
                 "fix: regenerate goldens, fuzz seeds, digest pins, and CLI test documents "
                 "(UPDATE_GOLDEN=1 cargo test-fast golden, then review the diff)",
             ))
+    if new != base and base is not None:
+        pins, review = stale_pins(context, base, new)
+        if pins:
+            results.append(context.failed(
+                f"IR bump has version pins still at {base}", *pins,
+                f"fix: set each pin to \"{new}\""))
+        if review:
+            results.append(context.warned(
+                "IR bump pins to review", *review,
+                "check: regenerate document digests and the FreeCAD profile if they cover the "
+                "bumped version"))
     if (unclear or unreached) and not wire and new == base:
         notes = ([f"{change} (name defined more than once)" for change in unclear]
                  + [f"{change} (no IR_VERSION document reaches it)" for change in unreached])
