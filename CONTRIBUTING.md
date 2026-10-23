@@ -133,6 +133,8 @@ When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old
 
 `version-layouts` warns when added spec text says “from version N”, “before version N”, “in versions N through M”, “in version N and later”, or “segment major version(s)”, and a layout record anchored in that paragraph has no version in its anchor.
 
+`ir-validation` warns on new public struct fields in `cadmpeg-ir` whose names occur in no `validate*.rs` file in that crate. This name search does not prove that validation is sufficient.
+
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
 
 ---
