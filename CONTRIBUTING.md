@@ -133,7 +133,7 @@ When the branch bumps `IR_VERSION`, `ir-version` names each pin still at the old
 
 `version-layouts` warns when added spec text says “from version N”, “before version N”, “in versions N through M”, “in version N and later”, or “segment major version(s)”, and a layout record anchored in that paragraph has no version in its anchor.
 
-`ir-validation` warns on new public struct fields in `cadmpeg-ir` whose names occur in no `validate*.rs` file in that crate. This name search does not prove that validation is sufficient.
+`ir-validation` warns on new public struct fields in `cadmpeg-ir` whose names occur in no validation file of that crate: a `validate*.rs` file or any Rust file under a `validate*/` module, tests excluded. This name search does not prove that validation is sufficient.
 
 `spec-invariants` warns on added spec lines with “must”, “is 0”, “is −1 or”, or “is one of” beside a code identifier when that name occurs in no require/refuse/ensure/check call argument in codec parser or validation source. Tests, comments, strings, and encoder/export paths do not supply checks. This heuristic does not prove semantic agreement.
 

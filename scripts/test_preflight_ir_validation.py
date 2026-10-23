@@ -33,6 +33,20 @@ class IrValidation(harness.FixtureCase):
         self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context(rev="HEAD"))),
                          ["WARN"])
 
+    def test_field_validated_in_the_validate_subtree_passes(self) -> None:
+        path = "crates/cadmpeg-ir/src/body.rs"
+        topology = "crates/cadmpeg-ir/src/validate/topology.rs"
+        tests = "crates/cadmpeg-ir/src/validate/topology/tests.rs"
+        self.repo.commit({path: "pub struct Body { pub old: u32 }\n",
+                          "crates/cadmpeg-ir/src/validate.rs": "fn check() { body.old; }\n"})
+        self.repo.branch()
+        self.repo.commit({path: "pub struct Body { pub old: u32, pub edge_geometry: u32 }\n",
+                          tests: "fn t() { body.edge_geometry; }\n"})
+        self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["WARN"])
+        self.repo.commit({topology: "fn check() { body.edge_geometry; }\n"})
+        for context in (self.repo.context(), self.repo.context(rev="HEAD")):
+            self.assertEqual(harness.statuses(harness.run_check(check, context)), ["PASS"])
+
     def test_enum_fields_and_private_fields_are_excluded(self) -> None:
         text = "pub enum Kind { Value { pub ignored: u32 } }\nstruct A { private: u32 }"
         self.assertEqual(check.fields(text), set())
