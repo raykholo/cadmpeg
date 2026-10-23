@@ -44,15 +44,26 @@ class LayoutCheck(harness.FixtureCase):
         self.assertEqual(harness.statuses(results), ["WARN"])
         self.assertIn("UPDATE_LAYOUT_CODE=1", results[0].details[0])
 
-    def test_table_without_page_fails(self) -> None:
+    def test_table_without_page_warns(self) -> None:
         self.repo.commit({TOML: "a = 2\n"})
-        self.assertEqual(harness.statuses(self.results()), ["FAIL"])
+        self.assertEqual(harness.statuses(self.results()), ["WARN"])
 
-    def test_hand_edited_derived_file_fails(self) -> None:
+    def test_derived_file_without_table_warns(self) -> None:
         self.repo.commit({CODE: "pub const A: usize = 3;\n"})
         results = self.results()
-        self.assertEqual(harness.statuses(results), ["FAIL"])
+        self.assertEqual(harness.statuses(results), ["WARN"])
         self.assertIn("never edited by hand", results[0].details[0])
+
+    def test_regeneration_can_reproduce_a_code_only_change(self) -> None:
+        self.repo.commit({CODE: "pub const A: usize = 3;\n"})
+        context = self.repo.context(run_layout=True)
+        before = (self.repo.root / CODE).read_bytes()
+        def regenerate(command, env=None):
+            (self.repo.root / CODE).write_bytes(before)
+            return 0, ""
+        context.run = regenerate
+        self.assertEqual(harness.statuses(harness.run_check(check, context)), ["PASS"])
+        self.assertEqual((self.repo.root / CODE).read_bytes(), before)
 
     def test_conflict_markers_fail(self) -> None:
         self.repo.commit({TOML: "<<<<<<< HEAD\na = 2\n=======\na = 3\n>>>>>>> main\n",

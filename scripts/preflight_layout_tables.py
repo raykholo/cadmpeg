@@ -8,7 +8,8 @@ table records and regenerating, never by merging the derived text by hand.
 
 Without `--run-layout` the check compares which of the three files changed
 and prints the regeneration commands. With `--run-layout` it regenerates
-both derived files, reports what regeneration changed, and runs the
+both derived files, accepts byte-identical output even when only one derived
+file changed on the branch, reports what regeneration changed, and runs the
 `layout_tables` test. That builds the `cadmpeg` test target.
 """
 
@@ -53,6 +54,8 @@ def run(context):
         for path in (f"docs/layouts/{name}.toml", f"docs/layouts/{name}.md", code.get(name)):
             if path and CONFLICT.search(context.read(path) or ""):
                 problems.append(f"{path}: conflict markers")
+    if problems:
+        return context.failed("layout files contain conflict markers", *problems)
     for name in sorted(tables - pages):
         problems.append(f"docs/layouts/{name}.toml changed but docs/layouts/{name}.md did not")
     for name in sorted((pages | sources) - tables):
@@ -60,8 +63,8 @@ def run(context):
                   if path in changed]
         problems.append(f"{', '.join(edited)} changed without docs/layouts/{name}.toml; "
                         "derived files are never edited by hand")
-    if problems:
-        return context.failed("layout tables and derived files disagree", *problems,
+    if problems and not context.options.run_layout:
+        return context.warned("layout regeneration needs verification", *problems,
                               "fix: keep every table record in the .toml, then run "
                               f"{REGENERATE} and commit the result")
     if not context.options.run_layout:
@@ -73,9 +76,11 @@ def run(context):
     if not context.worktree:
         return context.skipped("--run-layout needs the working tree, not --rev")
     derived = [path for name in sorted(code) for path in (f"docs/layouts/{name}.md", code[name])]
-    before = context.git("diff", "--", *derived).stdout
+    before = {path: (context.root / path).read_bytes()
+              if (context.root / path).is_file() else None for path in derived}
     status, output = context.run(TEST, env={"UPDATE_LAYOUT_DOCS": "1", "UPDATE_LAYOUT_CODE": "1"})
-    after = context.git("diff", "--", *derived).stdout
+    after = {path: (context.root / path).read_bytes()
+             if (context.root / path).is_file() else None for path in derived}
     if status:
         return context.failed("layout regeneration failed", *output.splitlines()[-15:])
     status, output = context.run(TEST)
@@ -83,7 +88,7 @@ def run(context):
         return context.failed("layout_tables test fails after regeneration",
                               *output.splitlines()[-15:])
     if before != after:
-        rewritten = context.git("diff", "--name-only", "--", *derived).stdout.split()
+        rewritten = [path for path in derived if before[path] != after[path]]
         return context.failed("regeneration changed derived files; review and commit them",
                               *rewritten)
     return context.passed("derived layout files match a regeneration; layout_tables passes")
