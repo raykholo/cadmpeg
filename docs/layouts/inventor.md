@@ -452,3 +452,78 @@ Parsed by:
 | 47 | 4 | `map_count` | `u32` | little | spec | map_count u32 = 0 |
 | 51 | 4 | `source_value` | `u32` | little | spec | source_value u32 |
 | 55 | 4 | `option_reference` | `u32` | little | spec | option_reference u32 |
+
+## `pm_dc_pattern_selection_control_body`
+
+Spec §13.3 · layout: byte offsets · size: 9 B
+
+Offsets are relative to the end of the versioned content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `first_reference` | `u32` | little | spec | After the content header it stores two record references and one u8 control |
+| 4 | 4 | `second_reference` | `u32` | little | spec | After the content header it stores two record references and one u8 control |
+| 8 | 1 | `control` | `u8` | little | spec | After the content header it stores two record references and one u8 control |
+
+## `pm_dc_pattern_cached_edge_body`
+
+Spec §13.3 · layout: byte offsets · size: 103 B
+
+Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | store cached line selections |
+| 4 | 4 | `reverse_reference` | `u32` | little | spec | store cached line selections |
+| 8 | 4 | `geometry_reference` | `u32` | little | spec | store cached line selections |
+| 12 | 4 | `selection_form` | `u32` | little | spec | store cached line selections |
+| 16 | 2 | `zero` | `u16` | little | spec | store cached line selections |
+| 18 | 4 | `curve_form` | `u32` | little | spec | store cached line selections |
+| 22 | 24 | `origin` | `f64[3]` | little | spec | store cached line selections |
+| 46 | 24 | `span` | `f64[3]` | little | spec | store cached line selections |
+| 70 | 24 | `selection_point` | `f64[3]` | little | spec | store cached line selections |
+| 94 | 1 | `line_state` | `u8` | little | spec | store cached line selections |
+| 95 | 8 | `source_references` | `u32[2]` | little | spec | store cached line selections |
+
+## `pm_dc_pattern_cached_line_body`
+
+Spec §13.3 · layout: byte offsets · size: 99 B
+
+Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | store cached line selections |
+| 4 | 4 | `reverse_reference` | `u32` | little | spec | store cached line selections |
+| 8 | 4 | `geometry_reference` | `u32` | little | spec | store cached line selections |
+| 12 | 4 | `selection_form` | `u32` | little | spec | store cached line selections |
+| 16 | 2 | `zero` | `u16` | little | spec | store cached line selections |
+| 18 | 4 | `curve_form` | `u32` | little | spec | store cached line selections |
+| 22 | 24 | `origin` | `f64[3]` | little | spec | store cached line selections |
+| 46 | 24 | `span` | `f64[3]` | little | spec | store cached line selections |
+| 70 | 24 | `selection_point` | `f64[3]` | little | spec | store cached line selections |
+| 94 | 1 | `line_state` | `u8` | little | spec | store cached line selections |
+| 95 | 4 | `source_references` | `u32[1]` | little | spec | store cached line selections |
+
+## `pm_dc_pattern_suppression_prefix`
+
+Spec §13.3 · layout: byte offsets · size: 8 B
+
+Offsets are relative to the end of the versioned content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u16[2]` | little | spec | stores the u16 pair `4, 0x3000` and a u32 count |
+| 4 | 4 | `count` | `u32` | little | spec | stores the u16 pair `4, 0x3000` and a u32 count |

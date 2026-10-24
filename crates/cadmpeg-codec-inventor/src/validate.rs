@@ -1237,7 +1237,39 @@ fn validate_features(
             .iter()
             .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter))),
     );
+    let patterns_by_id = cadmpeg_core::decode::unique_index(
+        data.pm_dc_pattern_features
+            .iter()
+            .map(|record| (record.id(), record)),
+    );
+    let mut linear_outputs = HashSet::new();
     for feature in &ir.model.features {
+        if crate::feature::pattern::is_linear_pattern(feature) {
+            linear_outputs.insert(feature.id.clone());
+            if feature
+                .native_ref
+                .as_ref()
+                .and_then(|id| patterns_by_id.get(id))
+                .and_then(Option::as_ref)
+                .is_none_or(|source| {
+                    !crate::feature::pattern::matches_source(
+                        source,
+                        feature,
+                        &data.pm_dc_feature_properties,
+                        &ir.model.parameters,
+                        &data.pm_dc_transforms,
+                        &ir.model.feature_result_topologies,
+                    )
+                })
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor rectangular pattern does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if is_flat_pattern_feature(feature)
             && feature
                 .native_ref
@@ -1401,7 +1433,8 @@ fn validate_features(
         }
     }
     for result in &ir.model.feature_result_topologies {
-        if mirror_outputs.contains(&result.output_of) {
+        if mirror_outputs.contains(&result.output_of) || linear_outputs.contains(&result.output_of)
+        {
             continue;
         }
         let Some(collection) = result

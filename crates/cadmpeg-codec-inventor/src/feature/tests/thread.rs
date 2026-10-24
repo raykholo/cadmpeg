@@ -207,6 +207,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         record_types: std::collections::HashMap::new(),
         features: vec![source],
         pattern_features: Vec::new(),
+        pattern_operands: crate::feature::pattern::Operands::default(),
         mirror_body_maps: Vec::new(),
         terminators: Vec::new(),
         properties,
