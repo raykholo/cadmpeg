@@ -36,7 +36,7 @@ fn face_selection_records_require_indices_and_exact_termination() -> TestResult 
             let value = parse_face_item(ctx, source, version)?;
             assert!(matches!(
                 value.kind,
-                PmDcFeaturePropertyKind::FaceItem { index_references }
+                PmDcFeaturePropertyKind::FaceItem { index_references, .. }
                     if index_references.values() == [0x8000_0001]
             ));
             Ok(())
@@ -137,6 +137,7 @@ fn thread_fixture() -> TestResult<(PmDcFeature, PmDcFeatureLabel, Vec<PmDcFeatur
         thread_property(
             19,
             PmDcFeaturePropertyKind::FaceItem {
+                index_reference_value: -1,
                 index_references: PmDcU32List::new(
                     2,
                     Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
