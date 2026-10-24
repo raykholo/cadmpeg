@@ -38,6 +38,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 mod history;
+pub(crate) mod motion;
 pub(crate) mod profile;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
@@ -227,6 +228,10 @@ pub(crate) enum PmDcFeaturePropertyKind {
     TerminationFlag {
         value: u8,
     },
+    FaceItem {
+        index_references: PmDcU32List,
+        index_reference_value: i32,
+    },
     /// A work axis: the line through `origin` along `span`, in internal
     /// centimetres.
     WorkAxis {
@@ -258,6 +263,7 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Fillet,
     Chamfer,
     Auxiliary,
+    Motion,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -290,6 +296,9 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     ObjectCollection,
     FilletEdgeSets,
     EdgeCollection,
+    TransformList,
+    BodySelection,
+    FaceCollection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -840,7 +849,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         EDGE_ITEM_TYPE => Some(parse_edge_item),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         WORK_AXIS_TYPE => Some(parse_work_axis),
-        _ => None,
+        _ => motion::parser(type_id),
     }
 }
 
@@ -1031,7 +1040,7 @@ fn parse_surface_body(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor, version)?;
-    let body = cursor.reference("feature surface body reference")?;
+    let body = cursor.reference("feature surface body qualified value")?;
     cursor.finish("feature surface body")?;
     Ok(property(
         version,
@@ -1576,6 +1585,7 @@ pub(crate) enum FeatureFamily {
     Hole,
     Plate,
     Revolve,
+    Motion,
 }
 
 impl FeatureFamily {
@@ -1588,10 +1598,15 @@ impl FeatureFamily {
             Self::Hole => &[HOLE_CLASS_ID],
             Self::Plate => &[PLATE_CLASS_ID],
             Self::Revolve => &[REVOLVE_CLASS_ID],
+            Self::Motion => &[
+                motion::MOVE_CLASS_ID,
+                motion::MOVE_BODY_CLASS_ID,
+                motion::ROTATE_CLASS_ID,
+            ],
         }
     }
 
-    pub(crate) fn output_slot(self) -> usize {
+    pub(crate) fn output_slot(self, property_count: usize) -> usize {
         match self {
             Self::Extrusion => 26,
             Self::Fillet => 15,
@@ -1599,6 +1614,8 @@ impl FeatureFamily {
             Self::Hole => 24,
             Self::Plate => 6,
             Self::Revolve => 17,
+            Self::Motion if property_count == 13 => 8,
+            Self::Motion => 0,
         }
     }
 
@@ -1610,6 +1627,7 @@ impl FeatureFamily {
             Self::Hole,
             Self::Plate,
             Self::Revolve,
+            Self::Motion,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1634,6 +1652,11 @@ impl FeatureFamily {
             ) | (
                 Self::Revolve,
                 FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
+            ) | (
+                Self::Motion,
+                FeatureDefinition::Operation(
+                    FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. }
+                )
             )
         )
     }
@@ -1645,6 +1668,9 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. }) => Some(Self::Revolve),
+            FeatureDefinition::Operation(
+                FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
+            ) => Some(Self::Motion),
             _ => None,
         }
     }
@@ -1862,6 +1888,7 @@ pub(crate) fn project(
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
                 FeatureFamily::Plate => project_plate(ctx, feature, label, &index),
                 FeatureFamily::Revolve => project_revolve(ctx, feature, label, &index),
+                FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
             }
             .transpose()?,
             None => None,
@@ -2165,6 +2192,13 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
             FeatureFamily::Plate => NativeFeatureKind::Other("Plate".into()),
             FeatureFamily::Revolve => NativeFeatureKind::Other("Revolve".into()),
+            FeatureFamily::Motion => NativeFeatureKind::Other(
+                NATIVE_CLASSES
+                    .iter()
+                    .find(|(bytes, _)| *bytes == class_id.0.into_inner())
+                    .map_or("MoveBody", |(_, name)| *name)
+                    .into(),
+            ),
         };
     }
     NATIVE_CLASSES
@@ -3168,7 +3202,9 @@ fn enum16(
         PmDcFeatureEnumFamily::PartOperation => 5,
         PmDcFeatureEnumFamily::Extent => 11,
         PmDcFeatureEnumFamily::Hole => 3,
-        PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => 2,
+        PmDcFeatureEnumFamily::Fillet
+        | PmDcFeatureEnumFamily::Chamfer
+        | PmDcFeatureEnumFamily::Motion => 2,
         PmDcFeatureEnumFamily::Auxiliary => return None,
     };
     match slot_property(source, slot, index)?.kind {
@@ -3365,7 +3401,7 @@ mod tests {
     fn a_sheet_metal_plate_projects_an_extrusion_with_its_body_result() {
         let family = super::FeatureFamily::from_class_id(super::PLATE_CLASS_ID);
         assert!(matches!(family, Some(super::FeatureFamily::Plate)));
-        assert_eq!(super::FeatureFamily::Plate.output_slot(), 6);
+        assert_eq!(super::FeatureFamily::Plate.output_slot(9), 6);
         // A plate with a bend to an existing face stays native.
         let bent = test_feature(100, 15, &[(4, 7)]);
         let label = test_label(100, 1, super::PLATE_CLASS_ID, &[]);

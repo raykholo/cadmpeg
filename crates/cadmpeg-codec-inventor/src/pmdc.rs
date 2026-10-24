@@ -234,6 +234,10 @@ impl PmDcReferenceList {
         })
     }
 
+    pub(crate) fn marker(&self) -> u16 {
+        self.marker
+    }
+
     pub(crate) fn references(&self) -> &[PmDcReference] {
         self.items
             .as_ref()
@@ -378,6 +382,10 @@ impl PmDcU32List {
             marker,
             items,
         })
+    }
+
+    pub(crate) fn marker(&self) -> u16 {
+        self.marker
     }
 
     pub(crate) fn values(&self) -> &[u32] {
