@@ -1114,7 +1114,37 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(PmDcPatternFeature::id)
         .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
         .collect::<HashSet<_>>();
+    let patterns_by_id = cadmpeg_core::decode::unique_index(
+        data.pm_dc_pattern_features
+            .iter()
+            .map(|record| (record.id(), record)),
+    );
     for feature in &ir.model.features {
+        if crate::feature::pattern::is_linear_pattern(feature) {
+            if feature
+                .native_ref
+                .as_ref()
+                .and_then(|id| patterns_by_id.get(id))
+                .and_then(Option::as_ref)
+                .is_none_or(|source| {
+                    !crate::feature::pattern::matches_source(
+                        source,
+                        feature,
+                        &data.pm_dc_feature_properties,
+                        &ir.model.parameters,
+                        &data.pm_dc_transforms,
+                        &ir.model.feature_result_topologies,
+                    )
+                })
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor rectangular pattern does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if is_flat_pattern_feature(feature)
             && feature
                 .native_ref
