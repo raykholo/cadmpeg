@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::face_property_is_admitted;
+use super::{body_selector_links_valid, face_property_is_admitted};
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, FACE_COLLECTION_TYPE,
     FACE_ITEM_TYPE,
@@ -434,4 +434,37 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
         "Inventor thread annotation does not match its PmDc face selection"
     );
     Ok(())
+}
+
+#[test]
+fn body_selectors_require_nonnull_local_surface_body_wrappers() {
+    let selector = |members: &[u32]| PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::BodySelection,
+        items: PmDcReferenceList::new(
+            2,
+            (!members.is_empty()).then_some(PmDcListMetadata::U32([1, 0])),
+            members
+                .iter()
+                .copied()
+                .map(PmDcReference::from_packed)
+                .collect(),
+        )
+        .expect("synthetic reference list"),
+    };
+    let body_at = |ordinal| (ordinal == 6).then_some("474d8790d011f8d10008cabc0663dc09");
+    assert!(body_selector_links_valid(&selector(&[]), body_at));
+    assert!(body_selector_links_valid(&selector(&[7]), body_at));
+    assert!(body_selector_links_valid(
+        &selector(&[0x8000_0007]),
+        body_at
+    ));
+    assert!(!body_selector_links_valid(&selector(&[0]), body_at));
+    assert!(!body_selector_links_valid(
+        &selector(&[0x8000_0000]),
+        body_at
+    ));
+    assert!(!body_selector_links_valid(&selector(&[8]), body_at));
+    assert!(!body_selector_links_valid(&selector(&[7]), |_| Some(
+        "914d8790d011f8d10008cabc0663dc09"
+    )));
 }

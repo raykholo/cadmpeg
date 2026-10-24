@@ -650,6 +650,26 @@ pub(crate) fn reference_list(
     })
 }
 
+pub(crate) fn allocated_reference_list(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    marker: u16,
+    field: &str,
+) -> Result<PmDcReferenceList, CodecError> {
+    let (count, metadata) = list_preamble(cursor, marker, field)?;
+    let mut references = ctx.alloc_filled(
+        count,
+        PmDcReference::from_packed(0),
+        "read Inventor body-selector references",
+    )?;
+    for reference in &mut references {
+        *reference = cursor.reference("reference-list entry")?;
+    }
+    PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc reference list metadata disagrees with length".into())
+    })
+}
+
 fn list_preamble(
     cursor: &mut Cursor<'_>,
     marker: u16,

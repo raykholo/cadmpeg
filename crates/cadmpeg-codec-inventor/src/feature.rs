@@ -35,6 +35,7 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 pub(crate) mod base;
+pub(crate) mod combine;
 mod history;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
@@ -76,6 +77,9 @@ const OBJECT_COLLECTION_TYPE: [u8; 16] = [
 ];
 pub(crate) const FACE_COLLECTION_TYPE: [u8; 16] = [
     0xf1, 0xb2, 0xbc, 0x24, 0xd0, 0x11, 0x21, 0xdd, 0x00, 0x08, 0xd0, 0xbc, 0x06, 0x63, 0xdc, 0x09,
+];
+const BODY_SELECTION_TYPE: [u8; 16] = [
+    0x83, 0xaa, 0xda, 0xd5, 0x4f, 0x43, 0x75, 0xda, 0xcd, 0x10, 0x03, 0xb2, 0x60, 0xa8, 0xa4, 0x22,
 ];
 const HOLE_TYPE: [u8; 16] = [
     0x11, 0x7c, 0xcd, 0x43, 0xd2, 0x11, 0x96, 0x58, 0xa0, 0x00, 0x21, 0x80, 0x36, 0x03, 0xc8, 0xc9,
@@ -298,6 +302,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     EdgeCollection,
     FaceCollection,
     LoftSections,
+    BodySelection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -858,6 +863,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         SELECTION_LIST_TYPE => Some(parse_selection_list),
         FEATURE_DIMENSIONS_TYPE => Some(parse_feature_dimensions),
         OBJECT_COLLECTION_TYPE => Some(parse_object_collection),
+        BODY_SELECTION_TYPE => Some(parse_body_selection),
         FILLET_EDGE_SETS_TYPE => Some(parse_fillet_edge_sets),
         RDX_VARIABLE_TYPE => Some(parse_rdx_variable),
         SURFACE_BODY_TYPE => Some(parse_surface_body),
@@ -1030,6 +1036,25 @@ reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
 reference_parser!(parse_edge_collection, EdgeCollection);
 reference_parser!(parse_face_collection, FaceCollection);
+
+fn parse_body_selection(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, version)?;
+    let items = crate::pmdc::allocated_reference_list(ctx, &mut cursor, 2, "body selector")?;
+    cursor.finish("body selector")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::BodySelection,
+            items,
+        },
+    ))
+}
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -1600,6 +1625,7 @@ pub(crate) enum FeatureFamily {
     Plate,
     Thicken,
     Shell,
+    Combine,
 }
 
 impl FeatureFamily {
@@ -1614,6 +1640,7 @@ impl FeatureFamily {
             Self::Plate => &[PLATE_CLASS_ID],
             Self::Thicken => &[THICKEN_CLASS_ID],
             Self::Shell => &[SHELL_CLASS_ID],
+            Self::Combine => &[combine::CLASS_ID],
         }
     }
 
@@ -1627,6 +1654,7 @@ impl FeatureFamily {
             Self::Plate => 6,
             Self::Thicken => 15,
             Self::Shell => 9,
+            Self::Combine => 0,
         }
     }
 
@@ -1640,6 +1668,7 @@ impl FeatureFamily {
             Self::Plate,
             Self::Thicken,
             Self::Shell,
+            Self::Combine,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1670,6 +1699,9 @@ impl FeatureFamily {
             ) | (
                 Self::Shell,
                 FeatureDefinition::Operation(FeatureOperation::Shell { .. })
+            ) | (
+                Self::Combine,
+                FeatureDefinition::Operation(FeatureOperation::Combine { .. })
             )
         )
     }
@@ -1683,6 +1715,7 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => Some(Self::Thicken),
             FeatureDefinition::Operation(FeatureOperation::Shell { .. }) => Some(Self::Shell),
+            FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
             _ => None,
         }
     }
@@ -1899,6 +1932,7 @@ pub(crate) fn project(
                 FeatureFamily::Plate => project_plate(ctx, feature, label, &index),
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
                 FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
+                FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2218,6 +2252,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Plate => NativeFeatureKind::Other("Plate".into()),
             FeatureFamily::Thicken => NativeFeatureKind::Other("Thicken".into()),
             FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
+            FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
         };
     }
     NATIVE_CLASSES
@@ -3372,6 +3407,16 @@ fn feature_result(
     else {
         return None;
     };
+    feature_result_members(ctx, source, collection, items, index)
+}
+
+fn feature_result_members(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    collection: &PmDcFeatureProperty,
+    items: &PmDcReferenceList,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
     let mut bodies = Vec::new();
     for reference in items.references() {
         let body = resolve_property(
@@ -3998,7 +4043,10 @@ mod tests {
         assert!(admitted(&edge_set(Some(reference(11))), types));
     }
 
-    fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
+    pub(super) fn test_property(
+        ordinal: u32,
+        kind: PmDcFeaturePropertyKind,
+    ) -> PmDcFeatureProperty {
         Located::new(
             PmDcFeaturePropertyPayload {
                 save_version_major: 16,
@@ -4161,7 +4209,7 @@ mod tests {
 
     // The fixture builder keeps each independently indexed record family explicit.
     #[allow(clippy::too_many_arguments)]
-    fn test_projection_index<'a>(
+    pub(super) fn test_projection_index<'a>(
         properties: &'a [PmDcFeatureProperty],
         parameters: &'a [crate::design::PmDcParameter],
         neutral_parameters: &'a [DesignParameter],
@@ -5406,6 +5454,7 @@ mod tests {
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
+    mod body_selection;
     mod extents;
     mod shell;
     mod thread;

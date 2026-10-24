@@ -1042,6 +1042,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 Some(property.id()),
             ));
         }
+        if !body_selector_links_valid(&property.kind, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor body selector member is not a surface-body wrapper".into(),
+                Some(property.id()),
+            ));
+        }
     }
     for link in &data.pm_dc_entity_style_links {
         let references = [
@@ -1186,6 +1196,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(|result| (&result.output_of, result))
         .collect::<HashMap<_, _>>();
+    let combine_features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                crate::feature::FeatureFamily::from_definition(feature.evaluation.definition()),
+                Some(crate::feature::FeatureFamily::Combine)
+            )
+        })
+        .map(|feature| &feature.id)
+        .collect::<HashSet<_>>();
     let model_roots = data
         .pm_dc_model_roots
         .iter()
@@ -1386,6 +1408,22 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             }
             continue;
         }
+        if matches!(family, crate::feature::FeatureFamily::Combine)
+            && crate::feature::combine::definition(raw_feature, |reference| {
+                let ordinal = reference.checked_sub(1)?;
+                properties_by_record
+                    .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
+                    .copied()
+            })
+            .as_ref()
+                != Some(definition)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor Combine operands, operation, or keep-tools state differs from its PmDc properties".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
         let output_slot = family.output_slot();
         let expected_collection = raw_feature
             .properties
@@ -1427,7 +1465,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         else {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result does not resolve to its PmDc object collection".into(),
+                "Inventor feature result does not resolve to its PmDc body selection".into(),
                 Some(result.id.as_str().to_owned()),
             ));
             continue;
@@ -1448,14 +1486,21 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             }
             continue;
         }
-        let PmDcFeaturePropertyKind::References {
-            family: crate::feature::PmDcFeatureReferenceFamily::ObjectCollection,
-            items,
-        } = &collection.kind
-        else {
+        let items = match &collection.kind {
+            PmDcFeaturePropertyKind::References {
+                family: crate::feature::PmDcFeatureReferenceFamily::ObjectCollection,
+                items,
+            } => Some(items),
+            PmDcFeaturePropertyKind::References {
+                family: crate::feature::PmDcFeatureReferenceFamily::BodySelection,
+                items,
+            } if combine_features.contains(&result.output_of) => Some(items),
+            _ => None,
+        };
+        let Some(items) = items else {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result native reference is not an object collection".into(),
+                "Inventor feature result native reference is not its body collection or Combine selector".into(),
                 Some(result.id.as_str().to_owned()),
             ));
             continue;
@@ -1483,7 +1528,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result bodies do not match its PmDc object collection".into(),
+                "Inventor feature result bodies do not match its PmDc body selection".into(),
                 Some(result.id.as_str().to_owned()),
             ));
         }
@@ -2732,6 +2777,24 @@ pub(crate) fn fillet_option_is_admitted<'a>(
         || type_at(option.index() - 1).is_none_or(|type_id| {
             type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
         })
+}
+
+fn body_selector_links_valid<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> bool {
+    let PmDcFeaturePropertyKind::References {
+        family: crate::feature::PmDcFeatureReferenceFamily::BodySelection,
+        items,
+    } = kind
+    else {
+        return true;
+    };
+    items.references().iter().all(|reference| {
+        reference
+            .record_ordinal()
+            .is_some_and(|ordinal| type_at(ordinal) == Some("474d8790d011f8d10008cabc0663dc09"))
+    })
 }
 
 #[cfg(test)]
