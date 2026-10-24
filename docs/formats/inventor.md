@@ -488,6 +488,28 @@ Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` 
 
 For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. From segment major version 21, it contains 26 more property references. From segment major version 29, eight u32 extension values follow the first 12 of these references, and from version 30 six more u32 extension values end the suffix. The mirror suffix contains five more property references, six u32 extension values from segment major version 21, and two final property references. From segment major version 29, eight u32 extension values separate the two final property references. The record ends after the applicable suffix.
 
+A feature label with class identifier `a326c2b6d211263660002cab01f31bb0` identifies a mirror. The mirror's 13 property-reference slots have the same indices in each suffix form. Extension values do not take slot indices. The operand slots are:
+
+| Slot | Record | Meaning |
+| --- | --- | --- |
+| 0 | `184d8790d011f8d10008cabc0663dc09` | Operand placement transform. |
+| 2 | `dfd51dbbd1116e72000817bd0663dc09` | Mirror variable. |
+| 3 | Null in the zero-option form | Auxiliary operand. |
+| 5 | `71f23ed8d2115094a00049803603c8c9` | Feature dimensions. |
+| 6 | `284d8790d011f8d10008cabc0663dc09` | False selects feature mode; true selects body mode. |
+| 7 | `284d8790d011f8d10008cabc0663dc09` | Mirror option. |
+| 8 | Null or `54ff261a4a425767649295abae7c3db8` | Generated-instance map. |
+| 9 | Null or object collection | Affected result bodies in solid-feature mode. |
+| 10 | Null or object collection | Source bodies in body mode. |
+| 11 | Null or `284d8790d011f8d10008cabc0663dc09` | Boolean option; false in the zero-option form. |
+| 12 | `42df52ced011d0d20008ccbc0663dc09` | Reflection plane. |
+
+In the identity-frame, zero-option form, slot 0 is the identity matrix, `control` is zero, and the slot-7 Boolean is false. The slot-2 variable's nominal and model values are zero, slot 3 is null, and slot 11 is null or a false Boolean. The slot-12 work plane is in part coordinates. Its u and v axes are perpendicular unit vectors. With plane origin `o` and unit normal `n = normalize(u × v)`, the reflection is `p' = p - 2 n dot(n, p - o)`. The reflection linear part is `I - 2 n nᵀ`; its translation is `2 n dot(n, o)`. The plane origin and translation use internal centimetres. The slot-0 matrix does not contain this reflection.
+
+In feature mode, the pattern record's nonempty participant list gives the ordered seed identities. A seed occurs once. For solid-feature mirrors, each seed is a generic feature or pattern-feature record that precedes the mirror under the same model root. With a null slot 8, slot 9 gives a nonempty ordered collection of distinct result surface-body records. For work-plane mirrors, the pattern participants name source work-plane records and the mirror label's participants name generated work-plane records. The reflection maps the source plane to the generated plane.
+
+In body mode, the pattern record's participant list is empty. Slot 10 gives a nonempty ordered collection of source surface-body records. With a null slot 8, the source and result use the same surface-body identities. With a generated-instance map, the mirror label's participants give the ordered generated-body feature records. Each has class identifier `5bb87e87ac4a0f14d314ef89ad8b5a7f` and its property slot 3 names its result surface-body record. These records give the mirror's result bodies; the slot-10 source bodies do not replace them. Result surface-body identities are distinct.
+
 ### 13.1 Feature history
 
 A model root (§11) also owns the browser feature tree of its model. The root label of a model root is the feature label whose owner reference selects the model root. The tree of the document model root is the part modeling history. The tree of a flat-pattern model root is the flat-pattern history. A segment has a history only when it has exactly one document model root.

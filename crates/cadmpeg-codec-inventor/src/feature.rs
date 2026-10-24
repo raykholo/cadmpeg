@@ -37,8 +37,9 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
-mod history;
+pub(crate) mod history;
 pub(crate) mod loft_sweep;
+pub(crate) mod mirror;
 pub(crate) mod profile;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
@@ -156,6 +157,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
+    mirror_body_maps: Vec<crate::record_identity::RecordIdentity>,
     /// Wire bodies of `PmDc` kernel-body records, which profile selections name.
     pub(crate) issues: Vec<RecordIssue>,
 }
@@ -566,6 +568,7 @@ pub(crate) fn inventory(
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
+        mirror_body_maps: Vec::new(),
         issues: Vec::new(),
     };
     for segment in &document.segments {
@@ -594,6 +597,19 @@ pub(crate) fn inventory(
                 .and_modify(|previous| *previous = None)
                 .or_insert_with(|| Some(type_id_string(record.type_id)));
             let parsed = match record.type_id {
+                mirror::BODY_MAP_TYPE => {
+                    ctx.charge_entities(1, "admit Inventor mirror instance-map identity")?;
+                    inventory
+                        .mirror_body_maps
+                        .push(crate::record_identity::RecordIdentity {
+                            segment_token: segment.pair.token.key().clone(),
+                            record_ordinal: record.ordinal,
+                            type_id: crate::record_identity::RecordTypeId::from_bytes(
+                                record.type_id,
+                            ),
+                        });
+                    Ok(())
+                }
                 FEATURE_TYPE => parse_feature(record.payload, version).and_then(|feature| {
                     push_record(
                         ctx,
@@ -1980,19 +1996,61 @@ pub(crate) fn project(
             None => {}
         }
     }
+    let mirror_index = mirror::MirrorIndex::new(
+        &inventory.properties,
+        &sketch.transforms,
+        &inventory.work_planes,
+        &inventory.features,
+        &inventory.labels,
+        inventory
+            .mirror_body_maps
+            .iter()
+            .map(|r| (r.segment_token.as_str(), r.record_ordinal)),
+    );
+    let seed_records = unique_index(
+        inventory
+            .features
+            .iter()
+            .map(|record| &record.identity)
+            .chain(
+                inventory
+                    .pattern_features
+                    .iter()
+                    .map(|record| &record.identity),
+            )
+            .map(|identity| (identity.record_ordinal, identity)),
+    );
     for pattern in &inventory.pattern_features {
         if history.placement(pattern.identity.record_ordinal).is_none() {
             continue;
         }
         let label = label_of(pattern.identity.record_ordinal);
+        let value = label
+            .and_then(|label| {
+                mirror_index.project(ctx, pattern, label, |ordinal| {
+                    let seed = seed_records.get(&ordinal)?.as_ref()?;
+                    mirror::seed_feature_id(&history, pattern.identity.record_ordinal, seed)
+                })
+            })
+            .transpose()?;
+        let (feature, result) = match value {
+            Some((feature, result)) => {
+                neutral += 1;
+                (feature, Some(result))
+            }
+            None => (
+                native_feature(ctx, &pattern.identity, label, pattern.id())?,
+                None,
+            ),
+        };
         projected.push(HistoryItem {
             record: pattern.identity.record_ordinal,
             kind: history::HistoryNodeKind::Pattern,
             flags: pattern.header.flags,
             label,
-            feature: native_feature(ctx, &pattern.identity, label, pattern.id())?,
-            result: None,
-            neutral: false,
+            neutral: result.is_some(),
+            feature,
+            result,
         });
     }
     for record in &sketch.sketches {
@@ -2175,7 +2233,7 @@ fn insert_history_property(
     Ok(())
 }
 
-fn history_feature_id(
+pub(crate) fn history_feature_id(
     identity: &crate::record_identity::RecordIdentity,
 ) -> Result<FeatureId, CodecError> {
     Ok(FeatureId::compose(
@@ -3873,6 +3931,7 @@ mod tests {
             entity_style_links: Vec::new(),
             kernel_entity_links: Vec::new(),
             work_planes: Vec::new(),
+            mirror_body_maps: Vec::new(),
             issues: Vec::new(),
         };
         let design = crate::design::DesignInventory {
@@ -4027,6 +4086,21 @@ mod tests {
         })
         .expect("profile bodies");
         assert_eq!((bodies.bodies.len(), bodies.undecoded), (0, 1));
+    }
+
+    #[test]
+    fn mirror_instance_map_identities_obey_the_entity_budget() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(super::mirror::BODY_MAP_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+        ));
+        let inventory =
+            inventory_with_record(super::mirror::BODY_MAP_TYPE, &[], DecodePolicy::service())
+                .expect("instance-map identity");
+        assert_eq!(inventory.mirror_body_maps.len(), 1);
     }
 
     #[test]
@@ -4450,7 +4524,7 @@ mod tests {
         assert_eq!(parsed.state, -1);
     }
 
-    fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
+    pub(super) fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
         let mut bytes = if version >= 23 {
             content_at(21, version, &[])
         } else {

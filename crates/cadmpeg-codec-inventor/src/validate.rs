@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor-native validation.
 
+mod mirror;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::FaceNativeKey;
@@ -167,7 +169,7 @@ pub(crate) fn validate_native(
     validate_active_carrier(&data, &mut findings);
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
-    validate_features(ir, &data, &mut findings);
+    validate_features(ctx, ir, &data, &mut findings)?;
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -757,7 +759,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
-fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_features(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: &NativeData,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let mirror_outputs = mirror::validate_mirrors(ctx, ir, data, findings)?;
     let raw = data
         .records
         .iter()
@@ -1393,6 +1401,9 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for result in &ir.model.feature_result_topologies {
+        if mirror_outputs.contains(&result.output_of) {
+            continue;
+        }
         let Some(collection) = result
             .native_ref
             .as_deref()
@@ -1468,6 +1479,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             Some(issue.id()),
         ));
     }
+    Ok(())
 }
 
 fn face_property_is_admitted<'a>(

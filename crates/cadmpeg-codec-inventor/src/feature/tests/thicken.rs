@@ -163,6 +163,7 @@ fn fixture() -> Fixture {
         .collect(),
         features: Vec::new(),
         pattern_features: Vec::new(),
+        mirror_body_maps: Vec::new(),
         terminators: Vec::new(),
         properties: Vec::new(),
         labels: Vec::new(),
