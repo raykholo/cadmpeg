@@ -71,3 +71,15 @@ independently.
 **Need.** A source rule or a specimen with deep location chains near either cap must settle the reduction order and the truncation point. Until then the neutral occurrence set is an implementation-capped selection.
 
 **Note.** QA sweep locations: `crates/cadmpeg-codec-freecad/src/brep/location_identity.rs:57-90` and `crates/cadmpeg-codec-freecad/src/topology_transfer.rs:136-148`. This is the FreeCAD analogue of the unrecorded selection threshold in ASM GC-34.
+
+## EX-01. Concurrent index and name constraint bindings
+
+**Question.** How do concurrent index and name paths select the expression of one constraint?
+
+**Known.** `Constraints[i]` and `.Constraints.name` select a constraint by index and name.
+
+**Need.** A saved document with both target paths for one constraint and its evaluated value.
+
+**Conflict.** Both paths can identify the same constraint; their precedence is not established.
+
+**Note.** The neutral projection reports a conflict and retains both native records.
