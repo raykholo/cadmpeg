@@ -1869,6 +1869,10 @@ fn report_design_projection_gaps(
     native: &F3dNative,
 ) -> Result<(), CodecError> {
     let gaps = design_projection_gaps(ir, native)?;
+    report.losses.extend(crate::history::stored_bodies::losses(
+        &ir.model.features,
+        &native.design_parameter_scopes,
+    ));
     let incomplete_families = incomplete_feature_families(ir);
     let history_budget_skips = native
         .asm_histories
