@@ -85,6 +85,10 @@ pub(crate) enum FreecadLossCode {
     SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
+    /// More than one sketch constraint has the same nonempty name.
+    SketchConstraintNameAmbiguous,
+    /// A sketch constraint has both index and name expression bindings.
+    SketchConstraintBindingConflict,
     /// Sketch profiles are not chained because endpoint matching reached its work cap.
     SketchProfileMatchingBounded,
     /// Topology color values were retained because their count did not match mapped topology.
@@ -149,6 +153,8 @@ impl FreecadLossCode {
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
+        Self::SketchConstraintNameAmbiguous,
+        Self::SketchConstraintBindingConflict,
         Self::SketchExternalReferenceUnresolved,
         Self::SketchExternalCacheUnresolved,
         Self::SketchProfileMatchingBounded,
@@ -204,6 +210,8 @@ impl FreecadLossCode {
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
+            Self::SketchConstraintNameAmbiguous => "sketch.constraint-name-ambiguous",
+            Self::SketchConstraintBindingConflict => "sketch.constraint-binding-conflict",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
             Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
             Self::SketchProfileMatchingBounded => "sketch.profile-matching-bounded",
@@ -240,6 +248,8 @@ impl FreecadLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
+            | Self::SketchConstraintNameAmbiguous
+            | Self::SketchConstraintBindingConflict
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
             Self::DrawingViewAxisNotTransferred
@@ -312,6 +322,8 @@ impl FreecadLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
+            | Self::SketchConstraintNameAmbiguous
+            | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
@@ -394,6 +406,8 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",
+                "sketch.constraint-name-ambiguous",
+                "sketch.constraint-binding-conflict",
                 "sketch.external-reference-unresolved",
                 "sketch.external-cache-unresolved",
                 "sketch.profile-matching-bounded",
