@@ -200,7 +200,7 @@ pub(crate) fn decode(
         ));
     }
     bind_snapshot_revision_ids(&mut states)?;
-    let binding_budget_exceeded = admit_history_binding(&states, remaining_retained_bytes)?
+    let binding_budget_exceeded = admit_history_binding(ctx, &states, remaining_retained_bytes)?
         == HistoryBindingAdmission::Skipped;
     if binding_budget_exceeded {
         for state in &mut states {
@@ -543,6 +543,7 @@ pub(crate) enum HistoryBindingAdmission {
 /// bulletin boards, history records or transitions. A chain that does not
 /// validate is admitted and stays unbound.
 pub(crate) fn admit_history_binding(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &[AsmDeltaState],
     remaining_retained_bytes: &mut u64,
 ) -> Result<HistoryBindingAdmission, cadmpeg_core::CodecError> {
@@ -579,7 +580,10 @@ pub(crate) fn admit_history_binding(
     }
     let Some(remaining) = changed_slots
         .and_then(|count| count.checked_mul(HISTORY_RETAINED_BYTES_PER_CHANGED_SLOT))
-        .and_then(|estimate| remaining_retained_bytes.checked_sub(estimate))
+        .and_then(|estimate| {
+            ctx.observe_retained_allowance(*remaining_retained_bytes, estimate);
+            remaining_retained_bytes.checked_sub(estimate)
+        })
     else {
         return Ok(HistoryBindingAdmission::Skipped);
     };

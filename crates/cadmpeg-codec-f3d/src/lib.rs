@@ -93,6 +93,7 @@ mod decode;
 mod design;
 mod dialect;
 mod f3z;
+pub use f3z::{F3zDecodedMember, F3zMember, F3zMemberKind, F3zSession};
 mod history;
 mod history_records;
 mod ids;
