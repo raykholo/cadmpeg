@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Optional archive recovery and required-member admission boundaries.
 
-use crate::test_support::assembly_test::{
-    f3d_without_brep, f3z_archive, redirections_json, XREF_ROLE,
-};
+use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::{F3dCodec, F3dLossCode};
@@ -31,20 +29,16 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
         "FusionAssetName[Active]/Previews/preview.png",
     ] {
         let original = f3z_archive("root.f3d", &[(name, &preview), ("root.f3d", &root)]);
-        let baseline = crate::test_support::archive_session::decode(
-            &mut Cursor::new(&original),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+        let baseline = F3dCodec
+            .decode(&mut Cursor::new(&original), &DecodeOptions::default())
+            .unwrap();
         assert!(!baseline.ir().model.faces.is_empty());
         let mut changed = original;
         damage_local_frame(&mut changed, name);
         let decoded = cadmpeg_test_support::EditableDecodeResult::from(
-            crate::test_support::archive_session::decode(
-                &mut Cursor::new(&changed),
-                &DecodeOptions::default(),
-            )
-            .unwrap(),
+            F3dCodec
+                .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+                .unwrap(),
         );
         assert_eq!(decoded.ir().model, baseline.ir().model);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
@@ -84,18 +78,14 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
 fn unreadable_unreferenced_document_does_not_hide_a_readable_model_root() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let original = f3z_archive("root.f3d", &[("unused.f3d", &root), ("root.f3d", &root)]);
-    let baseline = crate::test_support::archive_session::decode(
-        &mut Cursor::new(&original),
-        &DecodeOptions::default(),
-    )
-    .unwrap();
+    let baseline = F3dCodec
+        .decode(&mut Cursor::new(&original), &DecodeOptions::default())
+        .unwrap();
     let mut changed = original;
     damage_local_frame(&mut changed, "unused.f3d");
-    let decoded = crate::test_support::archive_session::decode(
-        &mut Cursor::new(&changed),
-        &DecodeOptions::default(),
-    )
-    .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+        .unwrap();
     assert_eq!(decoded.ir().model, baseline.ir().model);
     assert!(decoded
         .report()
@@ -112,11 +102,9 @@ fn unreadable_required_members_still_refuse_the_document() {
         let mut changed = original.clone();
         damage_local_frame(&mut changed, name);
         assert!(
-            crate::test_support::archive_session::decode(
-                &mut Cursor::new(changed),
-                &DecodeOptions::default()
-            )
-            .is_err(),
+            F3dCodec
+                .decode(&mut Cursor::new(changed), &DecodeOptions::default())
+                .is_err(),
             "{name}"
         );
     }
@@ -127,11 +115,9 @@ fn unreadable_required_members_still_refuse_the_document() {
         let mut changed = root.clone();
         damage_local_frame(&mut changed, name);
         assert!(
-            crate::test_support::archive_session::decode(
-                &mut Cursor::new(changed),
-                &DecodeOptions::default()
-            )
-            .is_err(),
+            F3dCodec
+                .decode(&mut Cursor::new(changed), &DecodeOptions::default())
+                .is_err(),
             "{name}"
         );
     }
@@ -149,18 +135,14 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
         "root.f3d",
         &[("root.f3d", &root), ("component.f3d", &component)],
     );
-    let baseline = crate::test_support::archive_session::decode(
-        &mut Cursor::new(&changed),
-        &DecodeOptions::default(),
-    )
-    .unwrap();
+    let baseline = F3dCodec
+        .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+        .unwrap();
     assert!(!baseline.ir().model.faces.is_empty());
     damage_local_frame(&mut changed, "component.f3d");
-    let decoded = crate::test_support::archive_session::decode(
-        &mut Cursor::new(changed),
-        &DecodeOptions::default(),
-    )
-    .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(changed), &DecodeOptions::default())
+        .unwrap();
     assert!(decoded.ir().model.faces.is_empty());
     assert!(decoded.ir().model.surfaces.is_empty());
     assert!(decoded
@@ -213,33 +195,35 @@ fn failed_referenced_document_decodes_once_for_every_reference() {
         &mut component,
         "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
     );
-    let archive = |references: usize| {
-        let targets = vec![("component.f3d", XREF_ROLE); references];
-        let root = f3d_without_brep("assembly-design", "root.f3d", &targets);
+    let parent = |name: &str, targets: &[(&str, &str)]| f3d_without_brep("design", name, targets);
+    let archive = |second: &[(&str, &str)]| {
+        let root = f3d_without_brep(
+            "assembly-design",
+            "root.f3d",
+            &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
+        );
+        let first = parent("first.f3d", &[("component.f3d", XREF_ROLE)]);
+        let second = parent("second.f3d", second);
         f3z_archive(
             "root.f3d",
-            &[("root.f3d", &root), ("component.f3d", &component)],
+            &[
+                ("root.f3d", &root),
+                ("first.f3d", &first),
+                ("second.f3d", &second),
+                ("component.f3d", &component),
+            ],
         )
     };
-    let once = archive(1);
-    // The root's redirections table grows with each reference.
-    let table_growth = u64::try_from(
-        redirections_json("root.f3d", &[("component.f3d", XREF_ROLE); 3]).len()
-            - redirections_json("root.f3d", &[("component.f3d", XREF_ROLE)]).len(),
-    )
-    .unwrap();
-    let ceiling = smallest_decompression_ceiling(&once) + table_growth;
-    let repeated = archive(3);
-    let mut policy = DecodePolicy::desktop();
-    policy.limits.max_decompressed_bytes_total = ceiling;
+    let unreferenced = archive(&[("missing.f3d", XREF_ROLE)]);
+    let repeated = archive(&[("component.f3d", XREF_ROLE)]);
+    // The second parent names a missing member or the failed one; the
+    // tables have equal length, so any extra cost is a second decode.
+    let base = smallest_decompression_ceiling(&unreferenced);
+    let ceiling = smallest_decompression_ceiling(&repeated);
+    eprintln!("ceilings: unreferenced {base}, repeated {ceiling}");
+    assert!(ceiling <= base, "{ceiling} > {base}");
     let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(&repeated),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        )
+        .decode(&mut Cursor::new(&repeated), &DecodeOptions::default())
         .unwrap();
     let undecoded = decoded
         .report()
@@ -247,5 +231,5 @@ fn failed_referenced_document_decodes_once_for_every_reference() {
         .iter()
         .filter(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code)
         .count();
-    assert_eq!(undecoded, 3);
+    assert_eq!(undecoded, 2);
 }
