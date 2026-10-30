@@ -17,8 +17,10 @@ use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
 mod merge;
+mod observer;
 mod session;
 
+pub use observer::{observe_f3z_members, F3zMemberObserver};
 pub use session::{F3zDecodedMember, F3zMember, F3zMemberKind, F3zSession};
 
 fn push_loss(losses: &mut Vec<LossNote>, code: F3dLossCode, args: std::fmt::Arguments<'_>) {

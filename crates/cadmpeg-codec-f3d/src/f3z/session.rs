@@ -339,6 +339,14 @@ impl<'a> F3zSession<'a> {
         ctx: &DecodeContext<'_>,
         id: &str,
     ) -> Result<(Decoded, OperationPoses), CodecError> {
+        super::observer::observed(id, || self.decode_member_scan(ctx, id))
+    }
+
+    fn decode_member_scan(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &str,
+    ) -> Result<(Decoded, OperationPoses), CodecError> {
         self.archive.with_member_scan(&self.scan, id, |scan| {
             let arena = DecodeArena::new();
             ctx.with_arena(&arena, |local| {
