@@ -240,7 +240,7 @@ impl DecodeContext<'_> {
     /// The caller must then execute the task against this context. This also
     /// preserves budget-dependent optional output and the exact refusal site.
     pub fn accept_trace(&self, trace: &DecodeTrace) -> bool {
-        self.accept_trace_rebinding(trace, |spaces| spaces.is_identity())
+        self.accept_trace_rebinding(trace, DecodeSpaceRebinding::is_identity)
     }
 
     /// Applies a task's operations and rebinds its owned address-space IDs.
