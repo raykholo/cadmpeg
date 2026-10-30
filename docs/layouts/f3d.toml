@@ -27063,3 +27063,39 @@ offset = 212
 type = "u8"
 source = "spec"
 anchor = "An empty-attribute local component occurrence stores an empty attribute list after its path."
+
+[[record]]
+name = "body_presentation_legacy_tail_color_carrier"
+kind = "byte"
+section = "3.1"
+anchor = "The colour carrier follows: four f32 normalized RGBA components with alpha `1`, bytes `01 01`, nine zero bytes, and a u8 selector-name form `0` or `1`."
+size = 28
+note = "Offsets are relative to the first RGBA component of a type-version-18 body-presentation record. Zero padding of at most eight bytes precedes it."
+
+[[record.field]]
+name = "rgba"
+offset = 0
+type = "f32[4]"
+source = "spec"
+anchor = "four f32 normalized RGBA components with alpha `1`"
+
+[[record.field]]
+name = "carrier_marker"
+offset = 16
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 01`"
+
+[[record.field]]
+name = "carrier_zero_run"
+offset = 18
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes"
+
+[[record.field]]
+name = "selector_name_form"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "a u8 selector-name form `0` or `1`"

@@ -2874,6 +2874,7 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.has_topology_assignments,
                 );
                 self.report.losses.extend(face_losses);
+                self.report.losses.extend(materials.losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match &prereqs.xref {
                     Ok(Some(table)) => {
@@ -2895,6 +2896,7 @@ impl<'a> F3dDecodeSession<'a> {
                     decoded_materials.untyped_distance_properties,
                 );
                 self.report.notes.extend(decoded_materials.notes);
+                self.report.losses.extend(decoded_materials.losses);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;

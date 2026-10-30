@@ -849,7 +849,7 @@ pub(crate) fn body_bindings(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyBinding>, CodecError> {
-    let records = body_map_records(bytes, meta)?;
+    let records = selected_body_map_records(bytes, meta)?;
 
     let mut bindings = Vec::new();
     for record in records {
