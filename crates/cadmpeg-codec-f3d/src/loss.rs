@@ -176,6 +176,8 @@ pub(crate) enum F3dLossCode {
     MaterialDistanceUnitUntyped,
     /// A face material GUID names distinct visual tokens without a selection rule.
     FaceAppearanceAmbiguous,
+    /// A legacy-tail body presentation record bound no appearance to a body.
+    BodyPresentationUnbound,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
     /// Feature history-state dependency links were not projected.
@@ -459,6 +461,7 @@ impl F3dLossCode {
         Self::ParameterUnitUntyped,
         Self::MaterialDistanceUnitUntyped,
         Self::FaceAppearanceAmbiguous,
+        Self::BodyPresentationUnbound,
         Self::ParameterExpressionUnbound,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
@@ -640,6 +643,7 @@ impl F3dLossCode {
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
+            Self::BodyPresentationUnbound => "material.body-presentation-unbound",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
@@ -847,6 +851,7 @@ impl F3dLossCode {
             | Self::ParameterUnitUntyped
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
+            | Self::BodyPresentationUnbound
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
@@ -1034,7 +1039,9 @@ impl F3dLossCode {
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
-            Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
+            Self::FaceAppearanceAmbiguous | Self::BodyPresentationUnbound => {
+                LossTaxonomy::AppearanceReduced
+            }
             Self::XrefOwnerUnresolved
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
@@ -1214,6 +1221,7 @@ mod tests {
                 "parameter.unit-untyped",
                 "material.distance-unit-untyped",
                 "material.face-appearance-ambiguous",
+                "material.body-presentation-unbound",
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",

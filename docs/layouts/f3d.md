@@ -7872,6 +7872,19 @@ Unstated regions:
 - `200..201` (1 B): Zero separator.
 - `210..212` (2 B): Zero trailing field of the repeated component-record reference.
 
+## `body_presentation_legacy_tail_color_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 28 B
+
+Offsets are relative to the first RGBA component of a type-version-18 body-presentation record. Zero padding of at most eight bytes precedes it.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `rgba` | `f32[4]` | little | spec | four f32 normalized RGBA components with alpha `1` |
+| 16 | 2 | `carrier_marker` | `bytes[2]` | little | spec | bytes `01 01` |
+| 18 | 9 | `carrier_zero_run` | `bytes[9]` | little | spec | nine zero bytes |
+| 27 | 1 | `selector_name_form` | `u8` | little | spec | a u8 selector-name form `0` or `1` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

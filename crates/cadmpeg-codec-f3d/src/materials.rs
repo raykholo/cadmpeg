@@ -581,6 +581,8 @@ pub(crate) struct DecodedMaterials {
     pub(crate) untyped_distance_properties: usize,
     /// Rejected Protein record diagnostics.
     pub(crate) notes: Vec<String>,
+    /// Losses for legacy-tail body presentation records that bound no body.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -728,7 +730,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         &object_types,
         body_bindings,
     )?;
-    let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
+    let (body_overrides, mut unbound) = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
     for over in &body_overrides {
         if bindings.iter().any(
             |binding| matches!(&binding.target, AppearanceTarget::Body(body) if body == &over.body),
@@ -736,6 +738,9 @@ pub(crate) fn decode_with_body_bindings<'a>(
             continue;
         }
         let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
+            if over.legacy_tail {
+                *unbound.entry("visual-token-unresolved").or_default() += 1;
+            }
             continue;
         };
         bindings.push(AppearanceBinding {
@@ -761,6 +766,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let face_assignments = decode_face_appearance_assignments(scan)?;
     let has_topology_assignments =
         !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
+    let losses = legacy_tail_unbound_losses(&unbound);
     Ok(DecodedMaterials {
         appearances: out,
         bindings,
@@ -768,6 +774,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         has_topology_assignments,
         untyped_distance_properties,
         notes,
+        losses,
     })
 }
 
@@ -1023,6 +1030,32 @@ struct BodyAppearanceOverride {
     entity_suffix: u64,
     /// Complete serialized visual token bound by the body record.
     visual_guid: DesignVisualToken,
+    /// Whether the record has the legacy-tail form (type version 18).
+    legacy_tail: bool,
+}
+
+/// Count of legacy-tail body presentation records per refusal reason.
+type LegacyTailTally = BTreeMap<&'static str, usize>;
+
+/// One loss for the legacy-tail records that bound no appearance to a body.
+fn legacy_tail_unbound_losses(
+    unbound: &LegacyTailTally,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    if unbound.is_empty() {
+        return Vec::new();
+    }
+    let total: usize = unbound.values().sum();
+    let reasons = unbound
+        .iter()
+        .map(|(reason, count)| format!("{reason}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    vec![
+        crate::loss::F3dLossCode::BodyPresentationUnbound.note(format!(
+        "{total} legacy-tail body presentation record(s) bound no appearance to a body: {reasons}. \
+         The records remain in the source image."
+    )),
+    ]
 }
 
 /// Decode per-body appearance overrides from browser body records in every
@@ -1032,8 +1065,9 @@ fn decode_body_appearance_overrides(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     body_bindings: &[DesignBodyBinding],
-) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
+) -> Result<(Vec<BodyAppearanceOverride>, LegacyTailTally), CodecError> {
     let mut out = Vec::new();
+    let mut unbound = LegacyTailTally::new();
     for entry in scan
         .entries
         .iter()
@@ -1047,9 +1081,22 @@ fn decode_body_appearance_overrides(
         };
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
         let mut appearances = browser_body_appearances(ctx, bytes)?;
+        let mut legacy_tail_suffixes = std::collections::BTreeSet::new();
         for presentation in
             crate::design::decode::presentation::body_presentations(bytes, &metadata)?
         {
+            if presentation.legacy_tail {
+                if let Some(refusal) = presentation.legacy_tail_refusal {
+                    *unbound.entry(refusal.reason()).or_default() += 1;
+                    continue;
+                }
+                let Some(material) = presentation.material else {
+                    continue;
+                };
+                legacy_tail_suffixes.insert(presentation.entity_suffix);
+                appearances.push((presentation.entity_suffix, material.visual_guid));
+                continue;
+            }
             if presentation.owner
                 != crate::design::decode::presentation::BodyPresentationOwner::Bare
                 || presentation.browser_node.is_none()
@@ -1062,9 +1109,13 @@ fn decode_body_appearance_overrides(
             appearances.push((presentation.entity_suffix, material.visual_guid));
         }
         for (entity_suffix, visual_guid) in appearances {
+            let legacy_tail = legacy_tail_suffixes.contains(&entity_suffix);
             let Some(map_pair) =
                 unique_body_map_pair(&body_map, entity_suffix, "browser body appearance")?
             else {
+                if legacy_tail {
+                    *unbound.entry("body-map-pair-unjoined").or_default() += 1;
+                }
                 continue;
             };
             let Some(body) = resolved_body_for_map_pair(
@@ -1076,12 +1127,16 @@ fn decode_body_appearance_overrides(
                 u64_from_index(map_pair.entity_suffix_offset()),
             )?
             else {
+                if legacy_tail {
+                    *unbound.entry("body-not-emitted").or_default() += 1;
+                }
                 continue;
             };
             out.push(BodyAppearanceOverride {
                 body,
                 entity_suffix,
                 visual_guid,
+                legacy_tail,
             });
         }
     }
@@ -1096,7 +1151,7 @@ fn decode_body_appearance_overrides(
             && left.entity_suffix == right.entity_suffix
             && left.visual_guid.matches(&right.visual_guid)
     });
-    Ok(out)
+    Ok((out, unbound))
 }
 
 /// One per-face appearance assignment from a Design `BulkStream`.
@@ -1256,7 +1311,7 @@ fn legacy_face_appearance_assignments(
 }
 
 /// Decode the normalized RGBA carrier of a legacy face assignment.
-fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
+pub(crate) fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
     let raw = bytes.get(offset..offset + 4 * size_of::<f32>())?;
     let component = |at: usize| View::f32_le_at(raw, at);
     let color = Color::new(component(0)?, component(4)?, component(8)?, component(12)?)?;
@@ -1264,7 +1319,7 @@ fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
 }
 
 /// Decode the selector-name form flag in the legacy twelve-byte carrier.
-fn legacy_face_selector_kind(carrier: Option<&[u8]>) -> Option<u8> {
+pub(crate) fn legacy_face_selector_kind(carrier: Option<&[u8]>) -> Option<u8> {
     let carrier = carrier?;
     (carrier.len() == 12
         && carrier.get(0..2) == Some(&[1, 1])
@@ -1274,7 +1329,7 @@ fn legacy_face_selector_kind(carrier: Option<&[u8]>) -> Option<u8> {
 }
 
 /// Validate the selector family selected by the legacy carrier flag.
-fn legacy_face_selector_is_valid(kind: u8, selector: &str) -> bool {
+pub(crate) fn legacy_face_selector_is_valid(kind: u8, selector: &str) -> bool {
     match kind {
         0 => selector.strip_prefix("Prism-").is_some_and(|suffix| {
             !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())

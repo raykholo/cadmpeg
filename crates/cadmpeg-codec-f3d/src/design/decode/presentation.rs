@@ -18,9 +18,10 @@ use crate::design::decode::sketch::{
 use crate::design::presentation::{
     is_physical_material_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
     BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
-    BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
-    BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
-    BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS,
+    BODY_PRESENTATION_TYPE_VERSION, BODY_PRESENTATION_TYPE_VERSION_LEGACY_TAIL,
+    BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION, BREP_CONTAINER_TYPE_GUID,
+    BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID,
+    BROWSER_NODE_TYPE_VERSION, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS,
     PHYSICAL_MATERIAL_LIBRARY_ID,
 };
 use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
@@ -58,6 +59,39 @@ pub(crate) struct BodyPresentation {
     pub(crate) owner: BodyPresentationOwner,
     pub(crate) browser_node: Option<BrowserNodeRecord>,
     pub(crate) material: Option<PresentationMaterial>,
+    /// Set when a legacy-tail (type version 18) record binds no material.
+    pub(crate) legacy_tail_refusal: Option<LegacyTailRefusal>,
+    /// Whether the record has the legacy-tail form (type version 18).
+    pub(crate) legacy_tail: bool,
+}
+
+/// Why a legacy-tail body-presentation record carries no usable material.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum LegacyTailRefusal {
+    /// The physical-material envelope or the colour and library tail does not
+    /// match the legacy-tail grammar.
+    EnvelopeUnparsed,
+    /// The scene-node reference is absent, null, or does not name entity `E + 1`.
+    SceneReferenceMissing,
+    /// A reference names an entity of an unexpected registered type.
+    SceneTypeMismatch,
+    /// The record ends before the colour and library tail is complete.
+    TailTruncated,
+    /// The stream registers browser nodes and none joins the record's node GUID.
+    BrowserNodeUnjoined,
+}
+
+impl LegacyTailRefusal {
+    /// Stable kebab-case reason used in loss messages.
+    pub(crate) fn reason(self) -> &'static str {
+        match self {
+            Self::EnvelopeUnparsed => "envelope-unparsed",
+            Self::SceneReferenceMissing => "scene-reference-missing",
+            Self::SceneTypeMismatch => "scene-type-mismatch",
+            Self::TailTruncated => "tail-truncated",
+            Self::BrowserNodeUnjoined => "browser-node-unjoined",
+        }
+    }
 }
 
 /// Entity identity form stored by one body-presentation owner.
@@ -161,7 +195,8 @@ pub(crate) fn body_presentations(
         BODY_PRESENTATION_TYPE_GUID,
         "body-presentation",
     )? {
-        if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
+        let legacy_tail = frame.design_type.version == BODY_PRESENTATION_TYPE_VERSION_LEGACY_TAIL;
+        if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION && !legacy_tail {
             continue;
         }
         if frame.design_type.module != DESIGN_MODULE_BODY
@@ -178,6 +213,15 @@ pub(crate) fn body_presentations(
             )));
         }
         let framed_bytes = &bytes[..frame.end];
+        if legacy_tail {
+            out.push(legacy_tail_presentation(
+                framed_bytes,
+                &frame,
+                &nodes,
+                &entity_types,
+            )?);
+            continue;
+        }
         let named_header = match parse_settled_entity_header(framed_bytes, frame.start) {
             Some(header) => Some(header),
             None => parse_genesis_entity_header(framed_bytes, frame.start),
@@ -263,9 +307,293 @@ pub(crate) fn body_presentations(
             owner,
             browser_node,
             material,
+            legacy_tail_refusal: None,
+            legacy_tail: false,
         });
     }
     Ok(out)
+}
+
+/// Bytes between the name field and the colour that are zero padding.
+const LEGACY_TAIL_COLOR_GAP_MAX: usize = MAX_ENVELOPE_GAP;
+/// Bytes of the RGBA colour carrier: four f32 components.
+const LEGACY_TAIL_COLOR_BYTES: usize = 16;
+/// Bytes of the `01 01`, nine-zero, selector-form carrier after the colour.
+const LEGACY_TAIL_CARRIER_BYTES: usize = 12;
+/// Bytes of one marked local reference.
+const LOCAL_REFERENCE_BYTES: usize = 11;
+
+/// Decode one legacy-tail (type version 18) body-presentation record.
+///
+/// The head is bare: a u64 entity suffix follows the class tag. A record that
+/// does not satisfy the grammar is kept with its refusal.
+fn legacy_tail_presentation(
+    bytes: &[u8],
+    frame: &crate::design::decode::meta::TypedPrimaryFrame<'_>,
+    nodes: &[BrowserNodeRecord],
+    entity_types: &HashMap<u64, (&str, u32)>,
+) -> Result<BodyPresentation, CodecError> {
+    let entity_suffix = View::u64_le_at(bytes, frame.start + 7).ok_or_else(|| {
+        crate::design::text::malformed_design(format_args!(
+            "F3D Design legacy-tail body-presentation entity {} has a truncated head",
+            frame.entity_id
+        ))
+    })?;
+    if entity_suffix == 0 || entity_suffix != frame.entity_id {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D Design legacy-tail body-presentation entity {} has head entity {entity_suffix}",
+            frame.entity_id
+        )));
+    }
+    let (material, mut refusal) = match legacy_tail_material(
+        bytes,
+        frame.start + 15,
+        frame.end,
+        entity_suffix,
+        entity_types,
+    ) {
+        Ok(material) => (Some(material), None),
+        Err(refusal) => (None, Some(refusal)),
+    };
+    let mut browser_node = None;
+    if let Some(material) = material.as_ref() {
+        let mut matching = nodes.iter().filter(|node| {
+            node.entity_suffix == entity_suffix
+                && node.guid.eq_ignore_ascii_case(&material.node_guid)
+        });
+        browser_node = match (matching.next(), matching.next()) {
+            (Some(node), None) => Some(node.clone()),
+            _ => None,
+        };
+        // A stream that registers no browser node joins by entity suffix.
+        if browser_node.is_none() && !nodes.is_empty() {
+            refusal = Some(LegacyTailRefusal::BrowserNodeUnjoined);
+        }
+    }
+    let name = material.as_ref().and_then(|m| m.body_name.clone());
+    Ok(BodyPresentation {
+        byte_offset: u64_from_index(frame.start),
+        entity_suffix,
+        name,
+        owner: BodyPresentationOwner::Bare,
+        browser_node,
+        material,
+        legacy_tail_refusal: refusal,
+        legacy_tail: true,
+    })
+}
+
+/// Counted UTF-16 read inside `[at, end)` that separates a short record from
+/// malformed text.
+fn legacy_tail_lp(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    bounds: std::ops::RangeInclusive<usize>,
+) -> Result<(String, usize), LegacyTailRefusal> {
+    let count = at
+        .checked_add(4)
+        .filter(|after| *after <= end)
+        .and_then(|_| View::u32_le_at(bytes, at))
+        .ok_or(LegacyTailRefusal::TailTruncated)?;
+    let count = usize::try_from(count).map_err(|_| LegacyTailRefusal::EnvelopeUnparsed)?;
+    if !bounds.contains(&count) {
+        return Err(LegacyTailRefusal::EnvelopeUnparsed);
+    }
+    let after = count
+        .checked_mul(2)
+        .and_then(|width| (at + 4).checked_add(width))
+        .ok_or(LegacyTailRefusal::EnvelopeUnparsed)?;
+    if after > end {
+        return Err(LegacyTailRefusal::TailTruncated);
+    }
+    lp_utf16_bounded(bytes, at, bounds).ok_or(LegacyTailRefusal::EnvelopeUnparsed)
+}
+
+/// Parse the material envelope of a legacy-tail body-presentation record.
+///
+/// After the physical-material token: the BREP-container reference, a null
+/// reference, an optional counted-UTF-16 scene GUID, the reference to entity
+/// `E + 1`, a counted body name, zero padding, the RGBA colour with alpha one,
+/// the `01 01` carrier, the visual token, the appearance-library id, an
+/// optional display name, the selector name, and f32 values zero and one.
+fn legacy_tail_material(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    entity_suffix: u64,
+    entity_types: &HashMap<u64, (&str, u32)>,
+) -> Result<PresentationMaterial, LegacyTailRefusal> {
+    use LegacyTailRefusal::{
+        EnvelopeUnparsed, SceneReferenceMissing, SceneTypeMismatch, TailTruncated,
+    };
+    let bytes = bytes.get(..end).ok_or(EnvelopeUnparsed)?;
+    let physical_marker =
+        lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID).map_err(|_| EnvelopeUnparsed)?;
+    let library_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID).map_err(|_| EnvelopeUnparsed)?;
+    let mut markers = find_all(bytes, start, end, &physical_marker);
+    let (Some(physical_at), None) = (markers.next(), markers.next()) else {
+        return Err(EnvelopeUnparsed);
+    };
+    let (physical_guid_at, physical_guid) =
+        preceding_lp_utf16(bytes, start, physical_at).ok_or(EnvelopeUnparsed)?;
+    let node_tail_at = physical_guid_at.checked_sub(11).ok_or(EnvelopeUnparsed)?;
+    if bytes.get(node_tail_at..node_tail_at + 11) != Some(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]) {
+        return Err(EnvelopeUnparsed);
+    }
+    let (_, node_guid) = preceding_lp_utf16(bytes, start, node_tail_at).ok_or(EnvelopeUnparsed)?;
+    if physical_guid.len() != GUID_LEN
+        || node_guid.len() != GUID_LEN
+        || !is_guid_prefix(&physical_guid)
+        || !is_guid_prefix(&node_guid)
+    {
+        return Err(EnvelopeUnparsed);
+    }
+    // An optional counted display name of the physical material precedes the
+    // `PrismMaterial-N` token.
+    let mut token_at =
+        skip_zeros(bytes, physical_at + physical_marker.len(), end).ok_or(EnvelopeUnparsed)?;
+    let (mut physical_token, mut after_token) = legacy_tail_lp(bytes, token_at, end, 1..=256)?;
+    if !is_physical_material_token(&physical_token) {
+        token_at = after_token;
+        (physical_token, after_token) = legacy_tail_lp(bytes, token_at, end, 1..=256)?;
+        if !is_physical_material_token(&physical_token) {
+            return Err(EnvelopeUnparsed);
+        }
+    }
+
+    let mut at = after_token;
+    let container = local_reference(bytes, &mut at).ok_or(EnvelopeUnparsed)?;
+    if local_reference_value(bytes, &mut at) != Some(LocalReference::Null) {
+        return Err(EnvelopeUnparsed);
+    }
+    if View::u32_le_at(bytes, at) == u32::try_from(GUID_LEN).ok() {
+        let (scene_guid, after_guid) = legacy_tail_lp(bytes, at, end, GUID_LEN..=GUID_LEN)?;
+        if !is_guid_prefix(&scene_guid) {
+            return Err(EnvelopeUnparsed);
+        }
+        at = after_guid;
+    }
+    if end.saturating_sub(at) < LOCAL_REFERENCE_BYTES {
+        return Err(TailTruncated);
+    }
+    let scene = local_reference(bytes, &mut at).ok_or(SceneReferenceMissing)?;
+    if entity_suffix.checked_add(1) != Some(scene) {
+        return Err(SceneReferenceMissing);
+    }
+    let type_is = |entity: u64, guid: &str, version: u32| {
+        entity_types
+            .get(&entity)
+            .is_some_and(|(found, found_version)| {
+                found.eq_ignore_ascii_case(guid) && *found_version == version
+            })
+    };
+    if !type_is(
+        container,
+        BREP_CONTAINER_TYPE_GUID,
+        BREP_CONTAINER_TYPE_VERSION,
+    ) || !type_is(
+        scene,
+        BODY_SCENE_NODE_TYPE_GUID,
+        BODY_SCENE_NODE_TYPE_VERSION,
+    ) {
+        return Err(SceneTypeMismatch);
+    }
+
+    // Counted body name; a zero count is an unnamed body.
+    let name_count = View::u32_le_at(bytes, at).ok_or(TailTruncated)?;
+    let body_name = if name_count == 0 {
+        at += 4;
+        None
+    } else {
+        let (name, after_name) = legacy_tail_lp(bytes, at, end, 1..=256)?;
+        at = after_name;
+        Some(name)
+    };
+    // Zero padding, then the colour and carrier.
+    let mut color_at = None;
+    for gap in 0..=LEGACY_TAIL_COLOR_GAP_MAX {
+        if bytes
+            .get(at..at + gap)
+            .is_none_or(|pad| pad.iter().any(|byte| *byte != 0))
+        {
+            break;
+        }
+        let candidate = at + gap;
+        let carrier_at = candidate + LEGACY_TAIL_COLOR_BYTES;
+        if crate::materials::normalized_legacy_face_color(bytes, candidate).is_some()
+            && crate::materials::legacy_face_selector_kind(
+                bytes.get(carrier_at..carrier_at + LEGACY_TAIL_CARRIER_BYTES),
+            )
+            .is_some()
+        {
+            color_at = Some(candidate);
+            break;
+        }
+    }
+    let Some(color_at) = color_at else {
+        return Err(
+            if end.saturating_sub(at) < LEGACY_TAIL_COLOR_BYTES + LEGACY_TAIL_CARRIER_BYTES {
+                TailTruncated
+            } else {
+                EnvelopeUnparsed
+            },
+        );
+    };
+    let carrier_at = color_at + LEGACY_TAIL_COLOR_BYTES;
+    let selector_kind = crate::materials::legacy_face_selector_kind(
+        bytes.get(carrier_at..carrier_at + LEGACY_TAIL_CARRIER_BYTES),
+    )
+    .ok_or(EnvelopeUnparsed)?;
+    let visual_at = carrier_at + LEGACY_TAIL_CARRIER_BYTES;
+    let (visual_text, after_visual) = legacy_tail_lp(bytes, visual_at, end, 1..=256)?;
+    let visual_guid = crate::records::references::DesignVisualToken::try_from(visual_text)
+        .map_err(|_| EnvelopeUnparsed)?;
+    if bytes.get(after_visual..after_visual + library_marker.len())
+        != Some(library_marker.as_slice())
+    {
+        return Err(if after_visual + library_marker.len() > end {
+            TailTruncated
+        } else {
+            EnvelopeUnparsed
+        });
+    }
+    let mut at = after_visual + library_marker.len();
+    let display_count = View::u32_le_at(bytes, at).ok_or(TailTruncated)?;
+    if display_count == 0 {
+        at += 4;
+    } else {
+        let (display, after_display) = legacy_tail_lp(bytes, at, end, 1..=256)?;
+        if display.chars().any(char::is_control) {
+            return Err(EnvelopeUnparsed);
+        }
+        at = after_display;
+    }
+    let selector_at = at;
+    let (selector, after_selector) = legacy_tail_lp(bytes, selector_at, end, 1..=256)?;
+    if !crate::materials::legacy_face_selector_is_valid(selector_kind, &selector) {
+        return Err(EnvelopeUnparsed);
+    }
+    let zero = View::f32_le_at(bytes, after_selector).ok_or(TailTruncated)?;
+    let one = View::f32_le_at(bytes, after_selector + 4).ok_or(TailTruncated)?;
+    if zero.to_le_bytes() != 0.0f32.to_le_bytes() || one.to_le_bytes() != 1.0f32.to_le_bytes() {
+        return Err(EnvelopeUnparsed);
+    }
+    let visual_preset = selector
+        .starts_with("Prism-")
+        .then(|| crate::records::identity::Located {
+            value: selector,
+            offset: u64_from_index(selector_at + 4),
+        });
+    Ok(PresentationMaterial {
+        node_guid,
+        body_name,
+        physical_token,
+        physical_token_offset: u64_from_index(token_at + 4),
+        visual_guid,
+        visual_guid_offset: u64_from_index(visual_at + 4),
+        visual_preset,
+    })
 }
 
 fn entity_types(
@@ -1434,5 +1762,188 @@ mod tests {
         assert_eq!(presentations.len(), 1);
         assert_eq!(presentations[0].material, None);
         assert_eq!(presentations[0].name, None);
+    }
+
+    /// Synthetic parts of a legacy-tail (type version 18) body record.
+    struct LegacyTailRecord {
+        entity: u64,
+        container: u64,
+        scene_reference: u64,
+        scene_guid: Option<&'static str>,
+        display_name: Option<&'static str>,
+        color: [f32; 4],
+        truncate_tail_by: usize,
+    }
+
+    impl LegacyTailRecord {
+        fn new(entity: u64) -> Self {
+            Self {
+                entity,
+                container: 7,
+                scene_reference: entity + 1,
+                scene_guid: None,
+                display_name: None,
+                color: [0.25, 0.5, 0.75, 1.0],
+                truncate_tail_by: 0,
+            }
+        }
+
+        fn bytes(&self) -> Vec<u8> {
+            let mut bytes = Vec::new();
+            lp_ascii(&mut bytes, "256");
+            bytes.extend_from_slice(&self.entity.to_le_bytes());
+            lp_utf16(&mut bytes, "11111111-2222-8333-a444-555555555555");
+            bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+            lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+            if let Some(name) = self.display_name {
+                lp_utf16(&mut bytes, name);
+            }
+            lp_utf16(&mut bytes, "PrismMaterial-018");
+            push_reference_u64(&mut bytes, self.container);
+            bytes.push(0);
+            if let Some(guid) = self.scene_guid {
+                lp_utf16(&mut bytes, guid);
+            }
+            push_reference_u64(&mut bytes, self.scene_reference);
+            bytes.extend_from_slice(&[0; 4]);
+            for component in self.color {
+                bytes.extend_from_slice(&component.to_le_bytes());
+            }
+            bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+            lp_utf16(&mut bytes, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015");
+            lp_utf16(&mut bytes, APPEARANCE_LIBRARY_ID);
+            bytes.extend_from_slice(&[0; 4]);
+            lp_utf16(&mut bytes, "PrismOpaque");
+            bytes.extend_from_slice(&0.0f32.to_le_bytes());
+            bytes.extend_from_slice(&1.0f32.to_le_bytes());
+            bytes.truncate(bytes.len() - self.truncate_tail_by);
+            bytes
+        }
+
+        fn meta(&self, scene_guid: &str) -> crate::metastream::MetaStream {
+            let types = vec![
+                design_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION_LEGACY_TAIL,
+                    DESIGN_MODULE_BODY,
+                    vec![self.entity],
+                ),
+                design_type(
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![self.container],
+                ),
+                design_type(
+                    scene_guid,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![self.entity + 1],
+                ),
+            ];
+            crate::metastream::MetaStream {
+                types,
+                records: vec![primary_record(self.entity, 0)],
+                secondary_records: Vec::new(),
+            }
+        }
+    }
+
+    fn legacy_tail_presentation(record: &LegacyTailRecord) -> super::BodyPresentation {
+        let bytes = record.bytes();
+        let meta = record.meta(BODY_SCENE_NODE_TYPE_GUID);
+        let mut presentations = body_presentations(&bytes, &meta).expect("legacy-tail frame");
+        assert_eq!(presentations.len(), 1);
+        presentations.remove(0)
+    }
+
+    #[test]
+    fn legacy_tail_record_binds_without_a_browser_node() {
+        let presentation = legacy_tail_presentation(&LegacyTailRecord::new(42));
+        assert!(presentation.legacy_tail);
+        assert_eq!(presentation.legacy_tail_refusal, None);
+        assert_eq!(presentation.owner, BodyPresentationOwner::Bare);
+        assert_eq!(presentation.entity_suffix, 42);
+        assert_eq!(presentation.browser_node, None);
+        let material = presentation.material.expect("legacy-tail material");
+        assert_eq!(material.physical_token, "PrismMaterial-018");
+        assert_eq!(
+            &*material.visual_guid,
+            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015"
+        );
+        assert_eq!(material.body_name, None);
+        assert_eq!(material.visual_preset, None);
+    }
+
+    #[test]
+    fn legacy_tail_record_with_scene_guid_and_display_name_binds() {
+        let mut record = LegacyTailRecord::new(42);
+        record.scene_guid = Some("33333333-4444-8555-b666-777777777777");
+        record.display_name = Some("ABS Plastic");
+        let presentation = legacy_tail_presentation(&record);
+        assert_eq!(presentation.legacy_tail_refusal, None);
+        let material = presentation.material.expect("legacy-tail material");
+        assert_eq!(material.physical_token, "PrismMaterial-018");
+    }
+
+    #[test]
+    fn legacy_tail_record_refuses_a_missing_scene_reference() {
+        let mut record = LegacyTailRecord::new(42);
+        record.scene_reference = 99;
+        let presentation = legacy_tail_presentation(&record);
+        assert_eq!(
+            presentation.legacy_tail_refusal,
+            Some(super::LegacyTailRefusal::SceneReferenceMissing)
+        );
+        assert_eq!(presentation.material, None);
+    }
+
+    #[test]
+    fn legacy_tail_record_refuses_a_wrong_scene_type() {
+        let record = LegacyTailRecord::new(42);
+        let bytes = record.bytes();
+        let meta = record.meta("AAAAAAAA-0000-4000-8000-000000000000");
+        let presentations = body_presentations(&bytes, &meta).expect("legacy-tail frame");
+        assert_eq!(
+            presentations[0].legacy_tail_refusal,
+            Some(super::LegacyTailRefusal::SceneTypeMismatch)
+        );
+        assert_eq!(presentations[0].material, None);
+    }
+
+    #[test]
+    fn legacy_tail_record_refuses_a_truncated_tail() {
+        let mut record = LegacyTailRecord::new(42);
+        record.truncate_tail_by = 6;
+        let presentation = legacy_tail_presentation(&record);
+        assert_eq!(
+            presentation.legacy_tail_refusal,
+            Some(super::LegacyTailRefusal::TailTruncated)
+        );
+        assert_eq!(presentation.material, None);
+    }
+
+    #[test]
+    fn legacy_tail_record_refuses_a_non_opaque_colour() {
+        let mut record = LegacyTailRecord::new(42);
+        record.color = [0.25, 0.5, 0.75, 0.5];
+        let presentation = legacy_tail_presentation(&record);
+        assert_eq!(
+            presentation.legacy_tail_refusal,
+            Some(super::LegacyTailRefusal::EnvelopeUnparsed)
+        );
+    }
+
+    #[test]
+    fn other_body_presentation_versions_are_ignored() {
+        let record = LegacyTailRecord::new(42);
+        let bytes = record.bytes();
+        let mut meta = record.meta(BODY_SCENE_NODE_TYPE_GUID);
+        meta.types[0].version = 17;
+        assert!(body_presentations(&bytes, &meta).unwrap().is_empty());
     }
 }

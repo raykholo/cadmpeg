@@ -810,3 +810,16 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** The neutral thread leaves `modeled` absent.
+
+### DR-148. Bodies without a legacy-tail presentation record
+
+**Question.** Why do some bodies of a document that stores legacy-tail body-presentation records have no such record?
+
+**Known.** One Design stream registers 1,563 version-18 body-presentation entities and 1,563 body-map pairs, and its BREP streams hold 1,574 bodies. Each body-presentation entity suffix equals one body-map entity suffix. The record stores a normalized RGBA colour beside the visual token; the relation of that colour to the appearance asset's base colour is not established for every record.
+
+**Need.** A document of this type with a body added outside the body map, and a document where a body's appearance is cleared, each with the Design stream and the BREP bodies.
+
+**Conflict.** None.
+
+**Note.** A body with no presentation record carries no body-level appearance binding.
+

@@ -26,6 +26,9 @@ pub(crate) fn visual_token(value: &str) -> Option<usize> {
 pub(crate) const BODY_PRESENTATION_TYPE_GUID: &str = "D3937028-C20C-4E65-B010-94AD418A5C20";
 pub(crate) const BODY_PRESENTATION_BASE_TYPE_GUID: &str = "63D6AD42-466A-40B7-9CCD-EB21BC500EF6";
 pub(crate) const BODY_PRESENTATION_TYPE_VERSION: u32 = 19;
+/// Earlier body-presentation type version: a bare head followed by the
+/// legacy-tail envelope and an optional scene-node GUID.
+pub(crate) const BODY_PRESENTATION_TYPE_VERSION_LEGACY_TAIL: u32 = 18;
 
 /// Stable Design type of the B-rep container referenced by a body
 /// presentation.
