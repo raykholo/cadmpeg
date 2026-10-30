@@ -1350,7 +1350,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Feature {
-                    product_definition: Default::default(),
+                    product_definition: None,
                     id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                         .expect("identity grammar"),
                     ordinal: 0,
@@ -1407,7 +1407,7 @@ mod tests {
             carriers.admit_parameter(
                 &mut ir,
                 cadmpeg_ir::features::DesignParameter {
-                    product_definition: Default::default(),
+                    product_definition: None,
                     id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
                         .expect("identity grammar"),
                     owner: None,
