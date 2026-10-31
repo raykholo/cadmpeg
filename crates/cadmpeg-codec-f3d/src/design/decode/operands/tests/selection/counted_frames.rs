@@ -196,6 +196,73 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             parse_extrude_selection_member(&long_member_bytes, &group, 0, &member_record).is_none()
         );
 
+        // Extended tails run from the 190-byte frame to the next indexed header.
+        let extended = |slot: u8, tail: &[u8]| {
+            let mut bytes = member_bytes[..190].to_vec();
+            bytes[185] = slot;
+            bytes.extend_from_slice(tail);
+            indexed_header(&mut bytes, *b"307", 321);
+            bytes.extend_from_slice(&[0; 10]);
+            bytes
+        };
+        for (slot, tail) in [
+            (0u8, vec![0u8; 5]),
+            (0, [&[0x2d, 0][..], &[7u8; 21][..], &[1, 0, 0, 0][..]].concat()),
+            (1, [&[0u8; 4][..], &1u32.to_le_bytes(), &3u32.to_le_bytes(), &[9u8; 20]].concat()),
+            (1, vec![0x55; 196]),
+            (1, vec![0; 1024]),
+        ] {
+            let bytes = extended(slot, &tail);
+            let member = parse_extrude_selection_member(&bytes, &group, 0, &member_record)
+                .expect("selection member with an extended tail");
+            assert_eq!(member.local_id, 586);
+            assert_eq!(member.next_byte_offset(), u64_from_index(190 + tail.len()));
+            assert_eq!(member.next_record_index, 321);
+            assert_eq!(member.tail_slot_present, slot == 1);
+            assert!(member.scope_tail.is_none());
+            // A header that is not complete leaves no boundary.
+            let mut broken = bytes.clone();
+            let header_at = 190 + tail.len();
+            broken[header_at + 4] = b'x';
+            assert!(
+                parse_extrude_selection_member(&broken, &group, 0, &member_record).is_none(),
+                "non-digit tag"
+            );
+            let mut broken = bytes.clone();
+            broken[header_at + 15] = 1;
+            assert!(
+                parse_extrude_selection_member(&broken, &group, 0, &member_record).is_none(),
+                "nonzero header run"
+            );
+            assert!(
+                parse_extrude_selection_member(
+                    &bytes[..bytes.len() - 1],
+                    &group,
+                    0,
+                    &member_record
+                )
+                .is_none(),
+                "truncated header"
+            );
+        }
+        // A tail past the length bound, and the typed tail lengths, are not extended.
+        for tail_len in [1025usize, 14, 50] {
+            let bytes = extended(0, &vec![0x55; tail_len]);
+            assert!(
+                parse_extrude_selection_member(&bytes, &group, 0, &member_record).is_none(),
+                "tail length {tail_len}"
+            );
+        }
+        // Zero padding that ends the stream is terminal.
+        let mut padded = member_bytes[..190].to_vec();
+        padded.extend_from_slice(&[0; 130]);
+        let padded_member = parse_extrude_selection_member(&padded, &group, 0, &member_record)
+            .expect("selection member followed by stream-end padding");
+        assert_eq!(padded_member.next_byte_offset(), 320);
+        assert_eq!(padded_member.next_record_index, 0);
+        padded[300] = 1;
+        assert!(parse_extrude_selection_member(&padded, &group, 0, &member_record).is_none());
+
         let mut edge_identity_bytes = Vec::new();
         indexed_header(&mut edge_identity_bytes, *b"278", 5887);
         edge_identity_bytes.extend_from_slice(&[0; 12]);

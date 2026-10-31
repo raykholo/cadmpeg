@@ -4768,15 +4768,19 @@ fn parse_extrude_selection_scope_tail(
     ))
 }
 
-/// Parse a selection-member identity frame.
-///
-/// `scope_record_index` names the scope that owns the selection group; the
-/// scope-tail form is admitted only when it is given.
-fn parse_extrude_identity_member(
-    bytes: &[u8],
-    start: usize,
-    scope_record_index: Option<u32>,
-) -> Option<ParsedExtrudeIdentityMember> {
+/// Fields shared by every selection-member tail form: the identity run up to
+/// and including the optional-slot marker.
+struct ExtrudeIdentityFrame {
+    local_id: u64,
+    asset_id: String,
+    after_asset_id: usize,
+    context_id: String,
+    after_context_id: usize,
+    tail_slot_offset: usize,
+    tail_slot_present: bool,
+}
+
+fn parse_extrude_identity_frame(bytes: &[u8], start: usize) -> Option<ExtrudeIdentityFrame> {
     if bytes.get(start + extrude_member::ZERO_RUN_10..start + extrude_member::LOCAL_IDENTITY)?
         != [0; 10]
     {
@@ -4798,6 +4802,100 @@ fn parse_extrude_identity_member(
     {
         return None;
     }
+    Some(ExtrudeIdentityFrame {
+        local_id,
+        asset_id,
+        after_asset_id,
+        context_id,
+        after_context_id,
+        tail_slot_offset,
+        tail_slot_present,
+    })
+}
+
+/// Longest tail of an extended selection member.
+const EXTRUDE_EXTENDED_TAIL_MAX: usize = 1024;
+
+/// End of an extended selection-member tail that starts at `tail_start`.
+///
+/// The tail runs to the next indexed record header: u32 `3`, three ASCII
+/// digits, a u32 record index and ten zero bytes. When no header follows, the
+/// tail is a run of zero bytes that ends the stream and the record index is
+/// zero. Returns the record index and the end offset. The fourteen-byte and
+/// fifty-byte lengths belong to the typed tail forms and are not extended.
+fn extended_extrude_tail_end(bytes: &[u8], tail_start: usize) -> Option<(u32, usize)> {
+    let limit = tail_start
+        .checked_add(EXTRUDE_EXTENDED_TAIL_MAX)?
+        .min(bytes.len());
+    let is_header = |at: usize| -> Option<u32> {
+        let header = bytes.get(at..at.checked_add(21)?)?;
+        (header[..4] == 3u32.to_le_bytes()
+            && header[4..7].iter().all(u8::is_ascii_digit)
+            && header[11..21].iter().all(|byte| *byte == 0))
+        .then(|| View::u32_le_at(bytes, at + 7))?
+    };
+    let typed_length = |end: usize| matches!(end - tail_start, 14 | 50);
+    for at in tail_start.checked_add(1)?..=limit {
+        if let Some(index) = is_header(at) {
+            return (!typed_length(at)).then_some((index, at));
+        }
+    }
+    let rest = bytes.get(tail_start..)?;
+    (!rest.is_empty()
+        && rest.len() <= EXTRUDE_EXTENDED_TAIL_MAX
+        && rest.iter().all(|byte| *byte == 0))
+        .then_some((0, bytes.len()))
+}
+
+/// Parse a selection-member identity frame.
+///
+/// `scope_record_index` names the scope that owns the selection group; the
+/// scope-tail and extended-tail forms are admitted only when it is given.
+fn parse_extrude_identity_member(
+    bytes: &[u8],
+    start: usize,
+    scope_record_index: Option<u32>,
+) -> Option<ParsedExtrudeIdentityMember> {
+    parse_extrude_identity_member_exact(bytes, start, scope_record_index).or_else(|| {
+        scope_record_index?;
+        let frame = parse_extrude_identity_frame(bytes, start)?;
+        let fixed_end = start.checked_add(extrude_member::LEN)?;
+        if View::u32_le_at(bytes, frame.tail_slot_offset + 1) != Some(0)
+            || frame.after_context_id.checked_add(9)? != fixed_end
+        {
+            return None;
+        }
+        let (next_record_index, tail_end) = extended_extrude_tail_end(bytes, fixed_end)?;
+        Some(ParsedExtrudeIdentityMember {
+            local_id: frame.local_id,
+            local_id_offset: u64::try_from(start + extrude_member::LOCAL_IDENTITY).ok()?,
+            asset_id: frame.asset_id,
+            asset_id_offset: u64::try_from(start + extrude_member::ASSET_UUID_UTF16).ok()?,
+            context_id: frame.context_id,
+            context_id_offset: u64::try_from(frame.after_asset_id + 4).ok()?,
+            tail_slot_present: frame.tail_slot_present,
+            tail_slot_offset: u64::try_from(frame.tail_slot_offset).ok()?,
+            scope_tail: None,
+            next_record_index,
+            next_byte_offset: u64::try_from(tail_end).ok()?,
+        })
+    })
+}
+
+fn parse_extrude_identity_member_exact(
+    bytes: &[u8],
+    start: usize,
+    scope_record_index: Option<u32>,
+) -> Option<ParsedExtrudeIdentityMember> {
+    let ExtrudeIdentityFrame {
+        local_id,
+        asset_id,
+        after_asset_id,
+        context_id,
+        after_context_id,
+        tail_slot_offset,
+        tail_slot_present,
+    } = parse_extrude_identity_frame(bytes, start)?;
     let fixed_end = start.checked_add(extrude_member::LEN)?;
     if let Some(scope_record_index) = scope_record_index {
         if !tail_slot_present
