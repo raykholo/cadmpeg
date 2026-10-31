@@ -293,6 +293,11 @@ pub(crate) enum F3dLossCode {
     /// Two component-path carriers give one local occurrence different
     /// poses; the stored placement stays in place.
     LocalOccurrencePathPoseDisagrees,
+    /// Component-path carriers that each name several expanded local
+    /// occurrences take the one assignment to distinct occurrences under which
+    /// every definition-local pose agrees. The assignment is an inference;
+    /// the bytes do not store it.
+    LocalOccurrencePathPoseInferred,
     /// External occurrence instances take the pose their contained
     /// occurrences' component-path carriers store; the placement matrix stays
     /// native.
@@ -530,6 +535,7 @@ impl F3dLossCode {
         Self::LocalOccurrencePathPose,
         Self::LocalOccurrencePathPoseUnresolved,
         Self::LocalOccurrencePathPoseDisagrees,
+        Self::LocalOccurrencePathPoseInferred,
         Self::XrefContainedPose,
         Self::XrefContainedPoseDisagrees,
         Self::XrefContainedPoseNative,
@@ -728,6 +734,7 @@ impl F3dLossCode {
             Self::LocalOccurrencePathPoseDisagrees => {
                 "assembly.local-occurrence-path-pose-disagrees"
             }
+            Self::LocalOccurrencePathPoseInferred => "assembly.local-occurrence-path-pose-inferred",
             Self::XrefContainedPose => "xref.contained-pose",
             Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
             Self::XrefContainedPoseNative => "xref.contained-pose-native",
@@ -929,6 +936,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPose
             | Self::LocalOccurrencePathPoseUnresolved
             | Self::LocalOccurrencePathPoseDisagrees
+            | Self::LocalOccurrencePathPoseInferred
             | Self::XrefContainedPoseDisagrees
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefPlacementMetadataMissing
@@ -998,6 +1006,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPose
             | Self::LocalOccurrencePathPoseUnresolved
             | Self::LocalOccurrencePathPoseDisagrees
+            | Self::LocalOccurrencePathPoseInferred
             | Self::XrefContainedPose
             | Self::XrefContainedPoseDisagrees
             | Self::XrefContainedPoseNative
@@ -1317,6 +1326,7 @@ mod tests {
                 "assembly.local-occurrence-path-pose",
                 "assembly.local-occurrence-path-pose-unresolved",
                 "assembly.local-occurrence-path-pose-disagrees",
+                "assembly.local-occurrence-path-pose-inferred",
                 "xref.contained-pose",
                 "xref.contained-pose-disagrees",
                 "xref.contained-pose-native",
