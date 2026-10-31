@@ -1,0 +1,25 @@
+name: bisect sldprt cube
+on:
+  push:
+    branches: ['bisect/**']
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        sha: ["62ae8ea8fcfc852705844433ff9a18cf572572cd", "6b9f55b8980c3c0ae957491d2ca8503ba59bb827", "1069a21c098dfb6f17795af70a7e2cb58cf10c4e", "1b6b38eff93370c986d6ad72a25d0e7753c9ae9d", "e656f98f9a1d784cec9908934b9c8f2e01614d15", "8dbea5d6c93249a7be562acc6a9799cd5a30b894", "517e2031ac2b4d558f755a216cb9621daf76c11e", "b098fbb9f7ca5d67428937a1316a2be32a81116f", "76dce9699c2f5090463039bbc210c864ca2fb06a", "2cd17aaf06f18ff5d796eb3caa54f72026ebb132", "9d65ac3a6388f4475312bc242839c7dfb9c418b0", "33f53b803de46e7b066576b602e84176a2ecc696", "0117e8610421e2822cae9af517b115c1636ecbc4", "55f3ec1246183f1caba97938a95d35c1333e8c82", "520d6b53d1fa46c680ef2ec9cde5f48874a57ab8", "b401db0862998f3afe6dd141fcee7a4a3f8e7311", "3c5d737a5d5a73abcad777e20d0a5f01eac21a39", "90201ac27f94a692459a67e102549aba2dbbe019", "74872cd1f11c4f74eb48538751398139af4c9deb", "db7a729aa943d37647ee147e8b06784a6e58abcf", "6e28b57abf73cc1e2327e56b44c8902d395ee613", "47a64aa0c2ab8cbba1f269923ee455dfac2d5848", "bad100cee542f0c058ca40c7a2b41b606a656bb6", "a4f6de93f2e9c540b93a9e30252624b24e081fe0", "12a6f8b694815427a92db2826d259801e49d644e", "0b9b22b459074ba30dc16e8d89d699c07e108006", "6c709c1f043bf60538af9c19b84a3a9f4cd0e9b9", "96e68f2ffb50ac6d26e4d91d0b071c0835e821e9", "20baa2c6a5731dc1af0ffdae65a073242799ecc9", "dfac3109a6aef308e3162a79a450816d41760f13", "17b43960f418847edf6e036b187bd3d1f418056e", "dd472e21317fa8d7c4de0d9658d790116f98bee2", "de0629acb9630dd87b790c7b876459ecc96ba949", "183de78ae4d83051e8657e1790176b2112e5b22c", "6295aff6ca8ea92b06fc2dd4907d9c5751541de9", "ae9b4d276615c19369a96fee8cdb3ff6cdb177b2", "9482f1b06723543315d50d784c7504b2bdacf6a8"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
+      - run: rustup show active-toolchain || rustup toolchain install
+      - name: build
+        run: cargo build -q --release -p cadmpeg --no-default-features --features sldprt
+      - name: measure
+        run: |
+          curl -fsSL -o cube.sldprt https://raw.githubusercontent.com/dutchman-cad/dutchman/main/crates/dutchman-core/tests/fixtures/solidworks_cube.sldprt
+          o=$(./target/release/cadmpeg measure cube.sldprt 2>&1 | grep -m1 '^  orientation' || true)
+          echo "${{ matrix.sha }} $o"
+          echo "${{ matrix.sha }} $o" >> "$GITHUB_STEP_SUMMARY"
