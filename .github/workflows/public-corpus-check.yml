@@ -45,6 +45,7 @@ jobs:
         run: python3 ci/corpus-plan.py
 
   check:
+    name: check ${{ matrix.shard }}
     needs: [build, plan]
     runs-on: ubuntu-latest
     timeout-minutes: 350
