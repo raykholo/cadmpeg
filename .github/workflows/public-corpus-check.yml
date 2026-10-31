@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fork-only sweep: runs `cadmpeg check` over the public files listed in
+# ci/public-corpus.tsv on free runners. Lives on `corpus-check/**` branches;
+# it is not part of any upstream change.
+name: Public corpus check
+
+on:
+  push:
+    branches: ['corpus-check/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -q --release -p cadmpeg
+      - run: cp target/release/cadmpeg cadmpeg-bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadmpeg-bin
+          path: cadmpeg-bin
+          retention-days: 7
+
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        run: python3 ci/corpus-plan.py
+
+  check:
+    name: check ${{ matrix.shard }}
+    needs: [build, plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cadmpeg-bin
+      - run: chmod +x cadmpeg-bin
+      - name: Fetch files
+        env:
+          IDS: ${{ matrix.ids }}
+        run: ci/corpus-fetch.sh
+      - name: Check
+        env:
+          IDS: ${{ matrix.ids }}
+          BIN: ./cadmpeg-bin
+        run: ci/corpus-run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports-${{ matrix.shard }}
+          path: reports
+          retention-days: 14
+
+  report:
+    needs: check
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: reports-*
+          path: reports
+          merge-multiple: true
+      - run: python3 ci/corpus-report.py reports > /dev/null
+      - run: cat REPORT.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: REPORT
+          path: REPORT.md
