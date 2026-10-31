@@ -1015,14 +1015,13 @@ fn resolved_edge_group_with_transition_chain(
         if !group.lost_edge_references.is_empty() {
             return lost_selection();
         }
-        if has_standard_recipe_operands {
-            return Ok(native_edge_selection(group));
-        }
         let mut combined_edges = Vec::new();
         for (index, operand) in matched_operands.iter().enumerate() {
             let recipe = resolved_edge_operand(operand);
+            // A standard recipe is not replaced by persistent identity.
             let identity = identity_matches
                 .as_ref()
+                .filter(|_| operand.recipe_structure.is_none())
                 .and_then(|identities| identities[index].resolved_edge_slot);
             let combined = match (recipe, identity) {
                 (Some(recipe), Some(identity)) if recipe != identity => {
@@ -1031,6 +1030,11 @@ fn resolved_edge_group_with_transition_chain(
                 (recipe, identity) => recipe.or(identity),
             };
             combined_edges.push(combined);
+        }
+        if has_standard_recipe_operands && combined_edges.iter().all(Option::is_some) {
+            // Every member resolved by its own recipe or identity, with no
+            // group-level proof; the standard recipe keeps the group native.
+            return Ok(native_edge_selection(group));
         }
         if combined_edges.iter().all(Option::is_some) {
             let mut edges = Vec::new();
@@ -1054,7 +1058,7 @@ fn resolved_edge_group_with_transition_chain(
             let carries_transition_evidence = identity_matches.is_some()
                 || transition_state_id.is_none()
                 || !operand.changed_boundary_edge_slots.is_empty();
-            if resolved.is_some() || carries_transition_evidence {
+            if resolved.is_some() || carries_transition_evidence || has_standard_recipe_operands {
                 partial_members.push((operand.id.as_str(), resolved));
             }
         }

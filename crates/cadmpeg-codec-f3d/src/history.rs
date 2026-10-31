@@ -19,6 +19,7 @@ mod body_index;
 mod cache;
 pub(crate) mod compact_lineage;
 pub(crate) mod edge_flange;
+mod edge_lineage;
 pub(crate) mod face_admission;
 mod loop_index;
 mod recipe_index;
@@ -1037,8 +1038,9 @@ pub(crate) fn bind_feature_outputs(
             .filter_map(|state| state.transition.as_ref()?.previous_state_id),
     );
     let mut treatment_states = HashMap::<i64, Vec<i64>>::new();
+    let mut treatment_source_states = HashMap::<i64, i64>::new();
     for feature in features.iter() {
-        let Some((state_id, _)) = feature_history_states(feature, scopes) else {
+        let Some((state_id, source_state_id)) = feature_history_states(feature, scopes) else {
             continue;
         };
         let op = match feature.evaluation.definition() {
@@ -1111,6 +1113,7 @@ pub(crate) fn bind_feature_outputs(
         }
         if !slots.is_empty() {
             treatment_states.insert(state_id, slots);
+            treatment_source_states.insert(state_id, source_state_id);
         }
     }
     let mut state_edge_midpoints = HashMap::<i64, Vec<cadmpeg_ir::math::Point3>>::new();
@@ -1123,6 +1126,7 @@ pub(crate) fn bind_feature_outputs(
         HashMap::<i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>::new();
     let mut state_solid_outputs = HashMap::<i64, Vec<i64>>::new();
     let mut state_outputs = HashMap::<i64, Option<(usize, Vec<i64>)>>::new();
+    let histories_len = histories.len();
     for (history_index, history) in histories.iter_mut().enumerate() {
         let mut by_node = HashMap::new();
         for (index, state) in history.states().iter().enumerate() {
@@ -1146,12 +1150,64 @@ pub(crate) fn bind_feature_outputs(
                     state.transition.as_ref(),
                     history.topology(&history.states()[previous]),
                 ) {
-                    let edge_samples = KeyedRows::new(&prev_topology.edge_samples);
+                    let source_topology = treatment_source_states
+                        .get(&state.state_id)
+                        .copied()
+                        .filter(|&id| id != history.states()[previous].state_id)
+                        .and_then(|id| {
+                            let mut states = history.states().iter().filter(|s| s.state_id == id);
+                            let source = states.next()?;
+                            states.next().is_none().then_some(source)
+                        })
+                        .and_then(|source| history.topology(source));
                     let mut midpoints = Vec::new();
                     for &slot in explicit_slots {
-                        if let Some(sample) = edge_samples.get(slot) {
-                            midpoints.push(sample.interior);
+                        if let Some(point) = edge_lineage::historical_edge_midpoint(
+                            source_topology,
+                            prev_topology,
+                            slot,
+                        ) {
+                            midpoints.push(point);
                         } else {
+                            if std::env::var_os("CADMPEG_EDGESTALE_DIAG").is_some() {
+                                let desc = |t: &AsmHistoricalTopology| {
+                                    format!(
+                                        "e={} f={} v={} c={} l={} b={}",
+                                        t.edges.contains(&slot),
+                                        t.faces.contains(&slot),
+                                        t.vertices.contains(&slot),
+                                        t.coedges.contains(&slot),
+                                        t.loops.contains(&slot),
+                                        t.bodies.contains(&slot)
+                                    )
+                                };
+                                let out_has = history
+                                    .topology(state)
+                                    .map(|t| t.edges.contains(&slot));
+                                let e_id = treatment_source_states.get(&state.state_id).copied();
+                                let e_states = e_id.map_or(0, |id| {
+                                    history.states().iter().filter(|s| s.state_id == id).count()
+                                });
+                                let e_has = e_id.and_then(|id| {
+                                    let st = history.states().iter().find(|s| s.state_id == id)?;
+                                    Some(history.topology(st)?.edges.contains(&slot))
+                                });
+                                eprintln!(
+                                    "EDGESTALEC e_is_l={} e_states={} e_has={:?} out_has={:?} nhist={}",
+                                    e_id == Some(history.states()[previous].state_id),
+                                    e_states,
+                                    e_has,
+                                    out_has,
+                                    histories_len,
+                                );
+                                eprintln!(
+                                    "EDGESTALEB src={} L[{}] S[{}] nedges={}",
+                                    source_topology.is_some(),
+                                    desc(prev_topology),
+                                    source_topology.map_or(String::new(), |t| desc(t)),
+                                    prev_topology.edges.len() / 100,
+                                );
+                            }
                             losses.push(
                                 crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(
                                     format!(
@@ -7019,6 +7075,33 @@ fn edge_recipe_reference_context<'a>(
         .copied()
         .filter(|edge| preceding_edges.contains(edge))
         .collect::<Vec<_>>();
+    if shared_edge_slots.is_empty() && std::env::var_os("CADMPEG_EDGESTALE_DIAG").is_some() {
+        let tags = &preceding.topology.persistent_subentity_tags;
+        let tok = tags.iter().filter(|t| t.token == reference.token).count();
+        let dref = tags
+            .iter()
+            .filter(|t| t.design_references.contains(&reference.design_reference))
+            .count();
+        let both = tags
+            .iter()
+            .filter(|t| {
+                t.token == reference.token
+                    && t.design_references.contains(&reference.design_reference)
+            })
+            .count();
+        eprintln!(
+            "EDGESTALE cands={} altc={} intopo={} prim={} refedges={} tok={} dref={} both={} resshared={}",
+            reference.candidate_faces.len().min(3),
+            reference.alternate_selector_faces.len().min(3),
+            preceding_faces.len().min(3),
+            preceding.boundary_edges.len().min(3),
+            preceding_edges.len().min(3),
+            tok.min(3),
+            dref.min(3),
+            both.min(3),
+            result_shared_edge_slots.len().min(3),
+        );
+    }
     let changed_shared_edge_slots = shared_edge_slots
         .iter()
         .copied()
@@ -7400,6 +7483,33 @@ fn bind_historical_edge_operand<'a>(
         topology,
         topology_queries,
     );
+    if operand.preceding_boundary_edge_slots.is_empty()
+        && std::env::var_os("CADMPEG_EDGESTALE_DIAG").is_some()
+    {
+        let rr = i64::from(
+            *recipe_record_indices
+                .get(operand.recipe_id.as_str())
+                .unwrap_or(&-1),
+        );
+        let count = |t: &AsmHistoricalTopology, kind| {
+            t.persistent_subentity_tags
+                .iter()
+                .filter(|g| g.entity_kind == kind && g.design_references.contains(&rr))
+                .count()
+                .min(3)
+        };
+        eprintln!(
+            "EDGESTALEP candf={} precf={} refs={} pre(face={} edge={}) res(face={} edge={}) resfaces={}",
+            operand.candidate_faces.len().min(3),
+            operand.preceding_candidate_faces.len().min(3),
+            operand.recipe_references.len().min(3),
+            count(topology, AsmHistoricalEntityKind::Face),
+            count(topology, AsmHistoricalEntityKind::Edge),
+            count(result_topology, AsmHistoricalEntityKind::Face),
+            count(result_topology, AsmHistoricalEntityKind::Edge),
+            operand.result_candidate_faces.len().min(3),
+        );
+    }
     let mut changed_edges = HashSet::new();
     for edge in deleted_edges.iter().chain(&updated_edges) {
         changed_edges.insert(*edge);

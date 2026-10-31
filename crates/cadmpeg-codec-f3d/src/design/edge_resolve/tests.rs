@@ -126,6 +126,10 @@ fn fixed_scope() -> DesignParameterScope {
 }
 
 fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
+    group_of(record_index, &[member])
+}
+
+fn group_of(record_index: u32, members: &[u32]) -> DesignConstructionOperandGroup {
     serde_json::from_value(serde_json::json!({
         "id": format!("f3d:test:group-{record_index}"),
         "scope_record_index": 1,
@@ -133,8 +137,8 @@ fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
         "record_index": record_index,
         "byte_offset": 0,
         "class_tag": "300",
-        "members": [member],
-        "member_offsets": [0],
+        "members": members,
+        "member_offsets": vec![0; members.len()],
         "frame": {
             "layout": "counted",
             "member_count_offset": 0,
@@ -394,6 +398,82 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
+}
+
+fn standard_recipe_operand(record_index: u32, resolved: Option<i64>) -> DesignEdgeOperand {
+    let mut operand = recipe_edge_operand(record_index, &[], &[]);
+    operand.recipe_state_id = Some(7);
+    operand.resolved_edge_slot = resolved;
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 1,
+            sides: vec![
+                crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+                    header_value: 1,
+                    scalars: Vec::new(),
+                    payload_prefix: Vec::new(),
+                    entries: Vec::new(),
+                },
+            ],
+        },
+    );
+    operand
+}
+
+#[test]
+fn standard_recipe_group_keeps_resolved_members_and_lists_the_rest() {
+    use cadmpeg_ir::features::EdgeSelection;
+
+    let selection_group = group_of(2, &[10, 11, 12]);
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
+    let select = |operands: &[DesignEdgeOperand], identities: &[DesignEdgeIdentityOperand]| {
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            operands,
+            identities,
+            Some(7),
+            &feature_id,
+            None,
+        )
+        .unwrap()
+    };
+
+    // One member resolves by its recipe, one by neither recipe nor identity,
+    // and one has only a persistent identity, which a standard recipe ignores.
+    let operands = [
+        standard_recipe_operand(10, Some(21)),
+        standard_recipe_operand(11, None),
+        standard_recipe_operand(12, None),
+    ];
+    let mut by_identity = identity(12, &[]);
+    by_identity.resolved_edge_slot = Some(19);
+    let EdgeSelection::HistoricalPartial {
+        edges, unresolved, ..
+    } = select(&operands, &[by_identity])
+    else {
+        panic!("a partial historical selection");
+    };
+    assert_eq!(edges.len(), 1);
+    assert!(edges[0].as_str().ends_with(":21"));
+    assert_eq!(unresolved.len(), 2);
+
+    // No member resolves: the group stays native.
+    let none = [
+        standard_recipe_operand(10, None),
+        standard_recipe_operand(11, None),
+        standard_recipe_operand(12, None),
+    ];
+    assert!(matches!(select(&none, &[]), EdgeSelection::Native(_)));
+
+    // Every member resolves without a group-level proof: the group stays native.
+    let all = [
+        standard_recipe_operand(10, Some(21)),
+        standard_recipe_operand(11, Some(22)),
+        standard_recipe_operand(12, Some(23)),
+    ];
+    assert!(matches!(select(&all, &[]), EdgeSelection::Native(_)));
 }
 
 #[test]
