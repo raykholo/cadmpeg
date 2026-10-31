@@ -1,0 +1,24 @@
+name: bin
+# Fork-only: build the cadmpeg CLI for the pushed commit and upload it.
+# Branch name bin/<features>/<tag> selects the cargo features (comma list, or "default").
+on:
+  push:
+    branches: ['bin/**']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal && rustup default 1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: |
+          f=$(echo "$GITHUB_REF_NAME" | cut -d/ -f2)
+          if [ "$f" = default ]; then flags=""; else flags="--no-default-features --features $f"; fi
+          cargo build --release --locked -p cadmpeg $flags
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadmpeg-linux-x86_64
+          path: target/release/cadmpeg
+          retention-days: 7
