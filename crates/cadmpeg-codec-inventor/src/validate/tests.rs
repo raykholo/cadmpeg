@@ -882,3 +882,5 @@ fn neutral_sweep_validation_runs_the_shared_operand_gate() -> TestResult {
     );
     Ok(())
 }
+
+mod sketch_curves;
