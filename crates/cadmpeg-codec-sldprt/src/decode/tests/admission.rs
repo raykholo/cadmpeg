@@ -35,6 +35,60 @@ fn retained_refusal_at(
     .into()
 }
 
+fn component_cache_source(section: &str) -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(0x41, section, b"<swSolidWorks/>"));
+    source.extend(make_block(
+        0x42,
+        "Contents/DisplayLists",
+        &display_list_payload(),
+    ));
+    source
+}
+
+#[test]
+fn assembly_caches_without_document_brep_spend_no_retained_bytes() {
+    for section in [
+        "swXmlContents/COMPINSTANCETREE",
+        "Contents/Config-0-MatesList",
+    ] {
+        let source = component_cache_source(section);
+        let scan = crate::test_support::container::scan(&source);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let collected = crate::decode::collect_display_sections(&ctx, &scan, false).unwrap();
+        assert!(collected.sections.is_empty());
+        assert_eq!(collected.summary.vertices, 0);
+        assert_eq!(collected.summary.triangles, 0);
+        assert_eq!(
+            collected.loss.unwrap().code,
+            crate::loss::SldprtLossCode::TessellationAssemblyCacheNative.kind()
+        );
+    }
+}
+
+#[test]
+fn part_caches_and_assembly_brep_caches_keep_display_geometry() {
+    for (section, has_brep) in [
+        ("Contents/Config-0", false),
+        ("swXmlContents/COMPINSTANCETREE", true),
+    ] {
+        let source = component_cache_source(section);
+        let scan = crate::test_support::container::scan(&source);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let collected = crate::decode::collect_display_sections(&ctx, &scan, has_brep).unwrap();
+        assert_eq!(collected.summary.vertices, 3);
+        assert_eq!(collected.summary.triangles, 1);
+        assert!(collected.loss.is_none());
+    }
+}
+
 #[test]
 fn native_loss_validation_admits_history_fixture() {
     let source = sldprt_with_body_and_history(&triangle_body());

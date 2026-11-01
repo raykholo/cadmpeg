@@ -2169,18 +2169,11 @@ own site, never a partition with its deltas. A partition that carries geometry
 is the result of the features that follow the import, and its LocalBodies are then that
 import's input, not the part.
 
-**Tolerance slots.** A plain stream can store real values in the FACE, EDGE and vertex-use
-tolerance slots (§4): faces `1e-8` or `0.0`, edges and vertices `2e-8` to `2.8e-4` m. It can
-instead store the null-real sentinel, as every partition does.
-
-A plain stream frames its records on the null-real sentinel, on `0.0`, or on a value in
+**Tolerance slots.** FACE, EDGE and vertex-use tolerance slots (§4) hold the null-real
+sentinel or a real value. FACE permits `0.0` and valued tolerances in partition and plain
+streams. A FACE or EDGE header frames on the sentinel, `0.0`, or a tolerance in
 `[1e-12, 1e-2]` m. A two-byte big-endian integer pair read as one f64 is a NORMAL value near
 1e-302, below that range.
-
-Partition and deltas streams frame records only on the sentinel.
-
-In every stream, a FACE or EDGE header frames only on a tolerance slot that holds the sentinel,
-`0.0`, or a value in that range.
 
 ---
 
@@ -2210,7 +2203,7 @@ Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 The `00 0c`, `00 0d`, `00 0e`, and `00 13` tags are Parasolid XT node types
 BODY, SHELL, FACE, and REGION. Their node pointers use one big-endian u16 for
-values `0` through `0x7ffe`. A larger pointer uses two big-endian u16 values:
+values `0` through `0x7fff`. A larger pointer uses two big-endian u16 values:
 the first has its high bit set and carries the low fifteen bits, and the
 second carries the remaining high bits. The decoded value is
 `(first & 0x7fff) | (second << 15)`. Values `0` and `1` are null-like
@@ -2231,6 +2224,9 @@ fin, previous, next, curve, next-on-curve, previous-on-curve, and owner.
 The complete VERTEX has five pointers before tolerance and its owner pointer
 after tolerance. A bare POINT stores its transmit index at body +0 and node ID at body +2.
 POINT has exactly four pointers before its coordinate vector.
+A node tag or stream boundary after the coordinate vector delimits a
+complete POINT when a wide index beginning with `ff` also frames a
+first-of-type prefix.
 Coordinate bytes do not extend that pointer list. Coordinates are finite
 big-endian f64 values in metres, with no format magnitude limit. A deltas
 POINT in the tripled form has no bare-pointer fallback.
@@ -2275,7 +2271,7 @@ companion deltas retain historical versions.
 A support surface belongs to a face through `face -> bridge -> bridge.refs[4] -> carrier`. Face and carrier attribute equality does not establish ownership. The carrier reference uses the bridge's site.
 
 The fixed body offsets above hold only while every pointer in the record is
-below `0x7fff`. A bare compact record stores its `attr` and every reference in
+at most `0x7fff`. A bare compact record stores its `attr` and every reference in
 the same variable-width pointer form as the XT ownership nodes, and so does a
 compact analytic carrier (§7.1). The `sequence`, the tolerance and the marker
 keep their widths, and each wide pointer moves the fields after it by two
@@ -2284,10 +2280,10 @@ bytes. A LocalBodies stream can hold a loop head that begins `00 0f f2 7e 00 01`
 narrow-attr FACE records carrying a pointer past `0x7ffe`. The deltas forms of
 §4.3 keep their fixed `[hi][lo][01]` cells.
 
-A record key is the u16 `attr`, so a pointer past `0xffff` has no key:
-a compact record that holds one does not frame, and a typed node whose own
-`attr` is past `0xffff` is neither framed nor counted. A framed FACE record
-that no decoded face carries is the loss `topology.face-records-unread`.
+A record key is the decoded stream-local `attr` in the 31-bit pointer domain. Node IDs, pointer cells and scalar payloads are fields of their enclosing node. A byte pair equal to a node tag inside those fields retains its field meaning.
+A wide record key and a wide reference use the same encoding. The optional
+first-of-type `ff` precedes the record key. A wide record key can also start
+with byte `ff`. The complete record fields determine the framing.
 
 ### 4.1 XT ownership nodes
 
@@ -2449,7 +2445,11 @@ identity. A LOOP belongs to the FACE named by its owning-FACE pointer.
 
 Top-level entity families include `00 4f` KEY nodes, `00 50` ATTRIB_DEF nodes,
 `00 51` ATTRIBUTE nodes, `00 52` INT_VALUES nodes, `00 53` REAL_VALUES
-nodes, and `00 54` CHAR_VALUES nodes. A `00 51` header is
+nodes, and `00 54` CHAR_VALUES nodes.
+
+ATTRIBUTE and value-array indices use the node pointer encoding of §4. The offsets below describe short pointers.
+
+A `00 51` header is
 `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, and `disc u16 BE`.
 
 Every node id and pointer in these records — a bare ATTRIBUTE's `attr`, `disc`
@@ -2457,7 +2457,7 @@ and slots, a KEY, ATTRIB_DEF or INT_VALUES node id, and a REAL_VALUES `attr` —
 takes the variable-width pointer form of §4: past `0x7ffe` it is 4 bytes, and
 each wide field moves the fields after it by two bytes. The counts, `seq` and
 the values keep their widths, so the u16 offsets in this section hold only
-while every pointer is below `0x7fff`. A REAL_VALUES record can carry a 4-byte `attr` (`00 53 00 00 00 03 bc bf 00 01`,
+while every pointer is at most `0x7fff`. A REAL_VALUES record can carry a 4-byte `attr` (`00 53 00 00 00 03 bc bf 00 01`,
 attr 48 319), following an ATTRIBUTE whose last slots are wide. The
 prefixed (deltas) ATTRIBUTE keeps its fixed header cells and `[01][hi][lo]`
 slots.
@@ -2631,9 +2631,9 @@ leave the body-history relation unresolved. A resolved relation adds that
 body to the named feature's output bodies without fabricating a body or
 replacing an explicit body scope.
 
-The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. An owner transmit index is admitted when exactly one typed ownership class claims it. A typed node candidate whose reference fields leave the u16 transmit-index space lies inside another record and claims no class. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
+The VERTEX owner is a non-null `SHELL_OR_BODY` reference: BODY for a non-acorn vertex, SHELL for an acorn vertex. Its FIN reference may be null. EDGE ownership uses the same union: BODY for a non-wire edge and SHELL for a wire edge. An owner transmit index is admitted when exactly one typed ownership class claims it. VERTEX tolerance is a double; the null-double sentinel (`-3.14158e13`) denotes an accurate vertex with tolerance half the modeller linear resolution.
 
-An INT_VALUES node has a six-byte prefix: its element count is u32 BE at body +0
+An INT_VALUES node has a six-byte prefix in the short-index form: its element count is u32 BE at body +0
 and its transmit index is u16 BE at body +4. Exactly that many u32 BE values
 follow at body +6. The count determines the complete payload extent; values
 that contain node-tag byte patterns remain integer data. The extent ends at
@@ -2756,7 +2756,7 @@ For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store 
 
 Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
-An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. After the compact header and orientation marker, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
+An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. The header stores the transmit index, a u32 node ID, five node pointers and the orientation marker. The header pointers and source-curve index use the node pointer encoding of §4. After the header, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m, and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
 
 A bounded wrapper whose endpoint evaluations match its vertices has its two source parameters as the edge's parameter range. A line source stores signed distance parameters in metres along its unit direction. The neutral line uses millimetres and multiplies these parameters by 1000. Other analytic parameters and NURBS parameters retain their stored values, except that a circle or ellipse interval may be stored on any equivalent angular branch, such as `[-1.47, 0]` for an arc ending at the seam from below; the neutral interval moves by whole turns to start within `[0, 2π)`. The wrapper interval follows source-curve orientation. The neutral interval is ascending. An end matches a vertex when it lies within that vertex's bound: the linear resolution, or the vertex's stored tolerance when it is a tolerant vertex (§7.6) and stores more. When the endpoint evaluations match the edge's ordered vertices in the opposite order, the neutral edge reverses its canonical vertices and every incident coedge sense; an edge shorter than its vertices' bounds matches both ways and takes the order whose worse end is nearer, and a closed edge, whose one vertex matches both ways equally, keeps its stored order. If neither order matches, the neutral edge has no parameter range.
 
@@ -2894,7 +2894,7 @@ The bounded curve's stored start and end points are the support evaluated throug
 
 A tolerant edge's neutral curve is the parametric curve on the support of its canonical fin's bounded SP_CURVE, else its partner fin's, over the bounded interval; a fin curve on a swept or spun construction is taken after one on any other support, and the edge runs from that interval's low end. A tolerant ring edge, with no vertex, seams at the low end; its bounded SP_CURVE's two stored end points lie within 1e-5 mm of each other. The curve is lifted from a fin to the edge, so it is derived rather than stored, and the edge carries its stored tolerance. A vertex whose bare vertex-use stores a value greater than zero in its tolerance slot is a tolerant vertex and carries that value, converted to millimetres, as its tolerance; the tripled vertex-use form is read with none.
 
-An ordinary edge whose own curve slot names an SP_CURVE directly, with no `00 85` between them, has no stored end points and no interval for it. Its curve is the support evaluated through the B-curve over the B-curve's whole knot domain, from knot `degree` to knot `count - degree - 1`: the edge's two vertices are the support's points at the two ends of the domain. Such an SP_CURVE holds the parametric curve on the support over the whole domain when the two vertices of every edge that names it lie within 1e-5 mm of the domain's two ends in exactly one order. It is derived like the tolerant edge's, with the cache below over that domain; the edge runs from the domain's low end and, being an ordinary edge, carries no tolerance. An SP_CURVE whose support no emitted face carries stays opaque, though such an edge still runs from the domain's low end.
+An ordinary edge whose own curve slot names an SP_CURVE directly, with no `00 85` between them, has no stored end points and no interval for it. Its curve is the support evaluated through the B-curve over the B-curve's whole knot domain, from knot `degree` to knot `count - degree - 1`: the edge's two vertices are the support's points at the two ends of the domain. Such an SP_CURVE holds the parametric curve on the support over the whole domain when the two vertices of every edge that names it lie within 1e-5 mm of the domain's two ends in exactly one order. It is derived like the tolerant edge's, with the cache below over that domain; the edge runs from the domain's low end and, being an ordinary edge, carries no tolerance. The support surface is an independent referenced node; a FACE can use another surface.
 
 An SP_CURVE is not admitted, and its edges keep an opaque curve, when an edge that names it has no vertex pair, has an end further than 1e-5 mm from its vertex, or has ends that fit in both orders (one vertex on a closed curve, which leaves the direction undetermined), or when a tolerant edge reaches it through a fin, whose vertices are promised only to the edge's tolerance. 
 
@@ -3068,4 +3068,4 @@ The placement is relative to the assembly model that contains the `swReference`.
 
 ### 11.4 Embedded components
 
-`ImportedComp/<name>` sections, and sections whose names end in `.sldprt` or `.sldasm` (ASCII case-insensitive), are complete embedded documents of the container of §1. An embedded document can be an assembly. The Parasolid streams of an embedded document belong to that document, not to the assembly document.
+`ImportedComp/<name>` sections, and sections whose names end in `.sldprt` or `.sldasm` (ASCII case-insensitive), are complete embedded documents of the container of §1. An embedded document can be an assembly. Its Parasolid streams and display lists belong to the embedded document. The document's `DisplayLists` or `Contents/DisplayLists` section carries its display tables.
