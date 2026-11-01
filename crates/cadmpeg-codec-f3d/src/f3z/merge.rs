@@ -212,14 +212,33 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
+        let mut legacy_table = table.clone();
+        legacy_table.references.retain(|reference| {
+            reference
+                .contained_poses
+                .iter()
+                .all(|pose| !xref::component_path_has_inline_local_type(&pose.frame_bytes))
+                && reference
+                    .owned_poses
+                    .iter()
+                    .all(|pose| !xref::component_path_has_inline_local_type(&pose.frame_bytes))
+        });
+        let mut left_identity = place_contained_poses_with_protected(
+            self.ctx,
+            parent_ir,
+            &legacy_table,
+            &mut parent_report.losses,
+            &mut self.operation_protected,
+            ContainedPass::Ordered,
+            None,
+        )?;
         crate::xref::operation_pose::project(
             self.ctx,
             parent_ir,
             &self.operation_poses,
-            &std::collections::BTreeSet::new(),
+            &self.operation_protected,
             &mut parent_report.losses,
         )?;
-        let mut left_identity = 0;
         for (boundary, member_table) in &self.component_path_tables {
             left_identity += place_contained_poses_with_protected(
                 self.ctx,
@@ -716,8 +735,12 @@ fn place_contained_poses_with_protected(
         .arena_iter_as_for_decode::<DesignComponentOccurrence>(ctx, "design_component_occurrences")
         .map(|carrier| carrier.map(|carrier| (carrier.id, u64::from(carrier.record_index))))
         .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let mut saved_current = BTreeSet::new();
     for reference in namespace.arena_iter_as_for_decode::<XrefReference>(ctx, "xref_references") {
         let reference = reference?;
+        if reference.current_pose.is_some() {
+            saved_current.insert(reference.id.clone());
+        }
         if let Some(source) = &reference.placement_source {
             records.insert(reference.id, source.carrier_record_index);
         }
@@ -939,15 +962,24 @@ fn place_contained_poses_with_protected(
                 .map(|pose| pose.owner_record_indices.len())
                 .max()
                 .unwrap_or(0);
+            let qualified = reference
+                .contained_poses
+                .iter()
+                .any(|pose| pass.reads(reference, pose) && !pose.owner_record_indices.is_empty());
+            let unqualified_snapshot = reference.current_pose.is_some()
+                && !reference.owned_poses.iter().any(|pose| {
+                    owners.starts_with(&pose.owner_record_indices)
+                        && unique_owners(&pose.owner_record_indices)
+                });
             let mut target_poses = BTreeMap::<usize, Vec<(usize, Transform, bool)>>::new();
             for (ordinal, pose) in reference.contained_poses.iter().enumerate() {
                 // A carrier lists the instance's owners from the innermost out, as
                 // far as it goes.
                 if !pass.reads(reference, pose)
                     || !owners.starts_with(&pose.owner_record_indices)
-                    || (independent
-                        && (!unique_owners(&pose.owner_record_indices)
-                            || pose.owner_record_indices.len() < reach))
+                    || !unique_owners(&pose.owner_record_indices)
+                    || pose.owner_record_indices.len() < reach
+                    || (pose.owner_record_indices.is_empty() && (qualified || unqualified_snapshot))
                 {
                     continue;
                 }
@@ -956,6 +988,14 @@ fn place_contained_poses_with_protected(
                 else {
                     continue;
                 };
+                if pose.owner_record_indices.is_empty()
+                    && ir.model.occurrences[*target]
+                        .native_ref
+                        .as_ref()
+                        .is_some_and(|id| saved_current.contains(id))
+                {
+                    continue;
+                }
                 let Some(stored) =
                     crate::design::components::neutral_affine(pose.transform.map_or(
                         crate::xref::IDENTITY_ROWS,

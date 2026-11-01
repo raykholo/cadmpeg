@@ -521,9 +521,14 @@ pub(crate) fn project_occurrences(
     let mut native_poses = 0usize;
     let at_root = |mut occurrence: Occurrence,
                    reference: &XrefReference,
-                   current_poses: &mut usize|
+                   current_poses: &mut usize,
+                   native_poses: &mut usize|
      -> Result<Occurrence, CodecError> {
         if let Some(pose) = &reference.current_pose {
+            if component_path_has_inline_local_type(&pose.frame_bytes) {
+                *native_poses += 1;
+                return Ok(occurrence);
+            }
             occurrence.transform =
                 crate::design::components::neutral_transform(pose.transform.map_or(
                     IDENTITY_ROWS,
@@ -539,9 +544,12 @@ pub(crate) fn project_occurrences(
             .as_ref()
             .and_then(|source| source.owner.as_ref().map(|owner| (source, owner)));
         let Some((source, owner)) = owner else {
-            projection
-                .occurrences
-                .push(at_root(occurrence, reference, &mut current_poses)?);
+            projection.occurrences.push(at_root(
+                occurrence,
+                reference,
+                &mut current_poses,
+                &mut native_poses,
+            )?);
             continue;
         };
         let components = sources.components.get(&source.stream);
@@ -551,9 +559,12 @@ pub(crate) fn project_occurrences(
                 .and_then(|record| components.roots.get(&record))
         });
         if root.is_some_and(|root| root.root_entity == owner.target) {
-            projection
-                .occurrences
-                .push(at_root(occurrence, reference, &mut current_poses)?);
+            projection.occurrences.push(at_root(
+                occurrence,
+                reference,
+                &mut current_poses,
+                &mut native_poses,
+            )?);
             continue;
         }
         let unique = components.is_some_and(|components| {
@@ -572,9 +583,12 @@ pub(crate) fn project_occurrences(
                 "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; placement remains at the document root",
                 source.carrier_record_index, source.stream, owner.target
             )));
-            projection
-                .occurrences
-                .push(at_root(occurrence, reference, &mut current_poses)?);
+            projection.occurrences.push(at_root(
+                occurrence,
+                reference,
+                &mut current_poses,
+                &mut native_poses,
+            )?);
             continue;
         };
         if reference.current_pose.is_some() {
@@ -618,7 +632,7 @@ pub(crate) fn project_occurrences(
     }
     if native_poses != 0 {
         projection.losses.push(F3dLossCode::XrefCurrentPoseNative.note(format!(
-            "{native_poses} external placement(s) below a local owner keep their occurrence-placement matrix in every projected instance; the world pose of their component-path carrier stays native"
+            "{native_poses} external placement(s) keep their occurrence-placement matrix: a local owner or an unresolved inline-qualified saved state keeps the component-path world pose native"
         )));
     }
     Ok(projection)
