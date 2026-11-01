@@ -2650,45 +2650,10 @@ type CollectedDisplaySections<'s> = Vec<(
     Vec<crate::tessellation::DisplayFace>,
 )>;
 
-struct DisplayCollection<'s> {
-    sections: CollectedDisplaySections<'s>,
-    summary: crate::tessellation::Summary,
-    loss: Option<cadmpeg_ir::report::loss::LossNote>,
-}
-
-fn has_component_sections(scan: &ContainerScan<'_>) -> bool {
-    scan.sections()
-        .filter_map(crate::container::Section::name)
-        .any(|name| {
-            let name = name.replace('\\', "/");
-            name == "swXmlContents/COMPINSTANCETREE" || {
-                let name = name.to_ascii_lowercase();
-                name.starts_with("contents/config-") && name.ends_with("-mateslist")
-            }
-        })
-}
-
 fn collect_display_sections<'s>(
     ctx: &DecodeContext<'_>,
     scan: &'s ContainerScan<'s>,
-    has_document_brep: bool,
-) -> Result<DisplayCollection<'s>, CodecError> {
-    if !has_document_brep && has_component_sections(scan) {
-        let has_display_cache = scan.sections().any(|section| {
-            section.name().is_some()
-                && crate::tessellation::is_document_display_section(section)
-                && !section.payload().is_empty()
-        });
-        return Ok(DisplayCollection {
-            sections: Vec::new(),
-            summary: crate::tessellation::Summary::default(),
-            loss: has_display_cache.then(|| {
-                SldprtLossCode::TessellationAssemblyCacheNative.note(
-                    "assembly display caches remain in native source data because the decoded B-rep is empty.",
-                )
-            }),
-        });
-    }
+) -> Result<(CollectedDisplaySections<'s>, crate::tessellation::Summary), CodecError> {
     let mut display_sections = Vec::new();
     let mut display_summary = crate::tessellation::Summary::default();
     for section in scan.sections() {
@@ -2706,11 +2671,7 @@ fn collect_display_sections<'s>(
         display_summary.opaque_extended_tables += summary.opaque_extended_tables;
         display_sections.push((section, faces));
     }
-    Ok(DisplayCollection {
-        sections: display_sections,
-        summary: display_summary,
-        loss: None,
-    })
+    Ok((display_sections, display_summary))
 }
 
 fn display_binding_channels(
@@ -3021,15 +2982,7 @@ fn build_geometry_ir(
         configuration_bodies,
     } = decoded;
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
-    let DisplayCollection {
-        sections: display_sections,
-        summary: display_summary,
-        loss: display_loss,
-    } = collect_display_sections(
-        ctx,
-        scan,
-        !brep.bodies.is_empty() || !brep.surfaces.is_empty(),
-    )?;
+    let (display_sections, display_summary) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(
         scan,
         classification,
@@ -3037,7 +2990,7 @@ fn build_geometry_ir(
         display_summary,
     )?);
     let mut annotations = std::mem::take(&mut brep.annotations);
-    let mut pmi_losses: Vec<_> = display_loss.into_iter().collect();
+    let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut lanes =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
@@ -4641,12 +4594,7 @@ fn build_metadata_ir(
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(ctx, &mut ir)?;
     if transfer_display {
-        let DisplayCollection {
-            sections: display_sections,
-            loss: display_loss,
-            ..
-        } = collect_display_sections(ctx, scan, false)?;
-        pmi_losses.extend(display_loss);
+        let (display_sections, _) = collect_display_sections(ctx, scan)?;
         let eligible = BTreeSet::new();
         let push = push_display_meshes(
             ctx,

@@ -124,8 +124,6 @@ pub(crate) enum SldprtLossCode {
     TessellationReusedTagAmbiguous,
     /// `DisplayLists` meshes transferred without B-rep geometry ownership.
     TessellationDisplayWithoutGeometry,
-    /// Preserve the native scope of component display caches.
-    TessellationAssemblyCacheNative,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// A canonical face has no explicit body relation.
@@ -276,7 +274,6 @@ impl SldprtLossCode {
         Self::TessellationOwnerWorkCapped,
         Self::TessellationReusedTagAmbiguous,
         Self::TessellationDisplayWithoutGeometry,
-        Self::TessellationAssemblyCacheNative,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFaceWithheld,
@@ -369,7 +366,6 @@ impl SldprtLossCode {
             Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
             Self::TessellationReusedTagAmbiguous => "tessellation.reused-tag-ambiguous",
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
-            Self::TessellationAssemblyCacheNative => "tessellation.assembly-cache-native",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyFaceWithheld => "topology.face-withheld",
@@ -424,7 +420,6 @@ impl SldprtLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::TessellationAssemblyCacheNative => Severity::Info,
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
@@ -517,7 +512,6 @@ impl SldprtLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::TessellationAssemblyCacheNative => LossTaxonomy::GeometryNotTransferred,
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
@@ -798,7 +792,6 @@ mod tests {
                 "tessellation.owner-work-capped",
                 "tessellation.reused-tag-ambiguous",
                 "tessellation.display-without-geometry",
-                "tessellation.assembly-cache-native",
                 "topology.body-hierarchy-derived",
                 "topology.face-unclaimed",
                 "topology.face-withheld",
