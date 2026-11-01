@@ -951,7 +951,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
 
-### DR-166. Ownerless fixed Fillet lanes across several operand groups
+### DR-175. Ownerless fixed Fillet lanes across several operand groups
 
 **Question.** How do ownerless fixed scalar lanes assign radius laws to several role-`0x0000000800000000` Fillet groups?
 
