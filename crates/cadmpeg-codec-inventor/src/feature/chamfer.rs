@@ -176,5 +176,24 @@ pub(crate) fn matches(
         )
 }
 
+pub(crate) fn explicit_selection_controls<'a>(
+    source: &PmDcFeature,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> bool {
+    [6, 9].into_iter().all(|slot| {
+        source
+            .properties
+            .references()
+            .get(slot)
+            .is_some_and(|reference| {
+                reference.qualified()
+                    && matches!(
+                        property(*reference).map(|p| &p.kind),
+                        Some(PmDcFeaturePropertyKind::Boolean { value: true, .. })
+                    )
+            })
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests;
