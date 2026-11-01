@@ -2077,7 +2077,14 @@ fn validate_features(
                 }),
                 _ => false,
             };
-            if !admitted {
+            let historical_valid = crate::feature::edge_selection::historical::valid(
+                feature,
+                raw_feature,
+                &ir.model.feature_input_topologies,
+                |id| data.pm_dc_feature_properties.iter().find(|p| p.id() == id),
+                property,
+            );
+            if !admitted || !historical_valid {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral edge treatment operands differ from their PmDc slots".into(),
