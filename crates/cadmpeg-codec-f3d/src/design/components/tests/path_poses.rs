@@ -536,7 +536,10 @@ fn two_consistent_assignments_are_refused() {
     carriers.push(module_at_first(400, 4));
     let unplaced = project(&carriers, &components, &[]);
     let rows = pose_in(&unplaced, &carriers, &[100], leaf_local());
-    let paths = [bare(900, 200, rows), bare(901, 200, rows)];
+    let mut paths = [bare(900, 200, rows), bare(901, 200, rows)];
+    for (path, discriminator) in paths.iter_mut().zip([7, 2]) {
+        path.elements[1].discriminator = discriminator;
+    }
     let projection = project(&carriers, &components, &paths);
     assert!(has(
         &projection,
@@ -547,10 +550,120 @@ fn two_consistent_assignments_are_refused() {
         F3dLossCode::LocalOccurrencePathPoseInferred
     ));
     assert!(!has(&projection, F3dLossCode::LocalOccurrencePathPose));
+    assert!(
+        message(&projection, F3dLossCode::LocalOccurrencePathPoseUnresolved)
+            .starts_with("2 component-path carrier(s)")
+    );
     for module in [100, 400] {
         let id = instance(&carriers, &[module, 200]);
         assert_close(local(&projection, &id), local(&unplaced, &id));
     }
+}
+
+#[test]
+fn owner_qualified_carriers_leave_one_instance_for_a_short_path() {
+    for qualified_count in [1_u32, 3] {
+        let (mut carriers, components) = fixture(1);
+        for ordinal in 0..qualified_count {
+            carriers.push(module_at_first(700 + u64::from(ordinal), 900 + ordinal));
+        }
+        let unplaced = project(&carriers, &components, &[]);
+        let rows = pose_in(&unplaced, &carriers, &[100], leaf_local());
+        let mut paths = vec![bare(900, 200, rows)];
+        for ordinal in 0..qualified_count {
+            paths.push(path(
+                901 + u64::from(ordinal),
+                &[
+                    (159, Kind::Component),
+                    (200, Kind::Occurrence),
+                    (700 + u64::from(ordinal), Kind::Occurrence),
+                ],
+                rows,
+            ));
+        }
+        for _ in 0..paths.len() {
+            paths.rotate_left(1);
+            let projection = project(&carriers, &components, &paths);
+            for module in std::iter::once(100).chain(700..700 + qualified_count) {
+                assert_close(
+                    world(&projection, &instance(&carriers, &[module, 200])),
+                    millimetres(rows),
+                );
+            }
+            assert!(
+                message(&projection, F3dLossCode::LocalOccurrencePathPoseInferred)
+                    .starts_with("1 component-path carrier(s)")
+            );
+            assert!(!has(
+                &projection,
+                F3dLossCode::LocalOccurrencePathPoseUnresolved
+            ));
+        }
+    }
+}
+
+#[test]
+fn short_paths_with_every_instance_claimed_keep_the_qualified_poses() {
+    let (carriers, components) = fixture(2);
+    let rows = pose(EYE, [2.0, 3.0, 4.0]);
+    let mut paths = vec![bare(900, 200, rows)];
+    for (record, module) in [(901, 100), (902, 400)] {
+        paths.push(path(
+            record,
+            &[
+                (159, Kind::Component),
+                (200, Kind::Occurrence),
+                (module, Kind::Occurrence),
+            ],
+            rows,
+        ));
+    }
+    let projection = project(&carriers, &components, &paths);
+    for module in [100, 400] {
+        assert_close(
+            world(&projection, &instance(&carriers, &[module, 200])),
+            millimetres(rows),
+        );
+    }
+    assert!(
+        message(&projection, F3dLossCode::LocalOccurrencePathPoseUnresolved)
+            .starts_with("1 component-path carrier(s)")
+    );
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+}
+
+#[test]
+fn two_short_paths_cannot_share_the_remaining_instance() {
+    let (carriers, components) = fixture(2);
+    let unplaced = project(&carriers, &components, &[]);
+    let rows = pose_in(&unplaced, &carriers, &[100], leaf_local());
+    let paths = [
+        bare(900, 200, rows),
+        bare(901, 200, rows),
+        path(
+            902,
+            &[
+                (159, Kind::Component),
+                (200, Kind::Occurrence),
+                (400, Kind::Occurrence),
+            ],
+            rows,
+        ),
+    ];
+    let projection = project(&carriers, &components, &paths);
+    let id = instance(&carriers, &[100, 200]);
+    assert_close(local(&projection, &id), local(&unplaced, &id));
+    assert!(
+        message(&projection, F3dLossCode::LocalOccurrencePathPoseUnresolved)
+            .starts_with("2 component-path carrier(s)")
+    );
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
 }
 
 #[test]

@@ -950,3 +950,15 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** None.
 
 **Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+
+### DR-173. Component-path assignment across symmetric instances
+
+**Question.** Which stored relation binds a short component-path carrier to an expanded occurrence when several assignments give equal definition-local poses?
+
+**Known.** Each path element retains its record identity and u32 instance discriminator. A public assembly has six short carriers for one target, four pairs for four targets, and four short carriers for another target. Each group admits two assignments with a common definition-local pose. The groups cover 18 expanded occurrences. Excluding instances claimed by owner-qualified paths resolves two further short carriers to their remaining instances. The decoder retains stored placements for the symmetric groups and reports their carriers as `assembly.local-occurrence-path-pose-unresolved`.
+
+**Need.** A stored relation that maps the element discriminator to one expanded occurrence, with controls that distinguish both symmetric assignments. DR-153 tracks the general discriminator mapping.
+
+**Conflict.** None.
+
+**Note.** Record order, discriminator order, and geometric proximity remain candidate explanations. Unique layout-consistency inference is reported as `assembly.local-occurrence-path-pose-inferred`.

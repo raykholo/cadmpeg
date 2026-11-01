@@ -983,8 +983,6 @@ impl<'a> Projector<'a> {
                 self.path_poses.disagreeing += 1;
             }
         }
-        // An assignment onto an instance that a single-instance carrier
-        // names is refused, so the group does not depend on that carrier.
         let mut groups = BTreeMap::<(&str, u64), Vec<(&DesignComponentPath, Vec<usize>)>>::new();
         for (path, candidates) in ambiguous {
             let Some(&first) = candidates.first() else {
@@ -1087,6 +1085,9 @@ impl<'a> Projector<'a> {
         for (path, candidates) in carriers {
             let mut row = Vec::new();
             for ordinal in candidates {
+                if claimed.contains(ordinal) {
+                    continue;
+                }
                 let key = instances[*ordinal].key.as_str();
                 if let Some(local) = self.path_local_pose(key, rows_of(path))? {
                     row.push((*ordinal, local.affine_rows()));
@@ -1108,9 +1109,7 @@ impl<'a> Projector<'a> {
             search.steps > MAX_PATH_ASSIGNMENT_STEPS,
             search.found.as_slice(),
         ) {
-            (false, [assignment])
-                if !assignment.iter().any(|ordinal| claimed.contains(ordinal)) =>
-            {
+            (false, [assignment]) => {
                 for (&carrier, &ordinal) in order.iter().zip(assignment) {
                     let key = instances[ordinal].key.as_str();
                     if let Some(local) = self.path_local_pose(key, rows_of(carriers[carrier].0))? {
