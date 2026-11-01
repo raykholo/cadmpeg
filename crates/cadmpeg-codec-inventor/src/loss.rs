@@ -88,7 +88,7 @@ pub(crate) enum InventorLossCode {
     FeatureExtrusionProfileNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
-    /// Thread annotations retain sizing and termination operands only natively.
+    /// Thread annotations retain handedness, termination, and unresolved sizing operands natively.
     FeatureThreadDefinitionPartial,
     /// Thicken selections, construction controls, or thickness side remain native.
     FeatureThickenOperandsNative,

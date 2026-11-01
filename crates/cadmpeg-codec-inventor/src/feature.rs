@@ -56,6 +56,7 @@ pub(crate) mod sheet_metal;
 pub(crate) mod split;
 pub(crate) mod tagging;
 pub(crate) mod thicken;
+pub(crate) mod thread;
 pub(crate) mod work_plane;
 
 pub(crate) mod composite;
@@ -189,6 +190,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
     pub(crate) dimensions: Vec<revolve::Dimension>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
+    pub(crate) thread_definitions: Vec<thread::Definition>,
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pub(crate) work_planes: Vec<PmDcWorkPlane>,
@@ -786,6 +788,18 @@ pub(crate) fn inventory(
                         )
                     })
                 }
+                thread::TYPE if version == 19 => thread::parse(ctx, record.payload, version)
+                    .and_then(|definition| {
+                        push_record(
+                            ctx,
+                            &mut inventory.thread_definitions,
+                            definition,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor thread definition",
+                        )
+                    }),
                 FEATURE_LABEL_TYPE => parse_label(ctx, record.payload, version).and_then(|label| {
                     push_record(
                         ctx,
@@ -2114,6 +2128,7 @@ impl FeatureFamily {
 #[derive(Default)]
 pub(crate) struct ProjectionIndex<'a> {
     result_model: Option<&'a cadmpeg_ir::document::Model>,
+    thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
     sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
@@ -2247,6 +2262,7 @@ pub(crate) fn project(
     }));
     let mut index = ProjectionIndex {
         result_model,
+        thread_definitions: &inventory.thread_definitions,
         edge_names: HashMap::new(),
         sketch_entities: if inventory.properties.iter().any(|property| {
             matches!(
@@ -3058,6 +3074,7 @@ fn project_thread(
         Ok(key) => key,
         Err(error) => return Some(Err(error)),
     };
+    let sizing = thread::sizing(source, label, index.thread_definitions);
     Some(Ok(Feature {
         product_definition: None,
         id: FeatureId::compose(
@@ -3075,11 +3092,11 @@ fn project_thread(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: cadmpeg_ir::features::FaceSelection::Native(faces.id()),
-                diameter: None,
+                diameter: sizing.as_ref().map(|value| value.diameter),
                 extent: None,
-                standard: None,
-                designation: None,
-                pitch: None,
+                standard: sizing.as_ref().map(|value| value.standard.clone()),
+                designation: sizing.as_ref().map(|value| value.designation.clone()),
+                pitch: sizing.as_ref().map(|value| value.pitch),
                 modeled: None,
             }),
         ),
@@ -5099,6 +5116,7 @@ pub(crate) mod tests {
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
             result_model: None,
+            thread_definitions: &[],
             edge_names: std::collections::HashMap::new(),
             dimensions: std::collections::HashMap::new(),
             sketch_entities: std::collections::HashMap::new(),
