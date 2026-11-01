@@ -1456,6 +1456,10 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// [`ArenaClass::Design`] arena; serialization and parsing refuse one that does.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CadIr {
+    /// Closed fragment of a larger document.
+    pub fragment: bool,
+    /// Metadata for a reproducible fragment.
+    pub repro: Option<Box<crate::repro::BundleMetadata>>,
     /// Source-container metadata.
     pub source: Option<SourceMeta>,
     /// Document-wide tolerances.
@@ -1480,6 +1484,10 @@ pub struct DesignBelowFullDepth {
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
+    #[serde(skip_serializing_if = "is_false")]
+    fragment: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repro: Option<&'a crate::repro::BundleMetadata>,
     ir_version: IrVersion,
     /// How much of the source the decode transferred.
     decode_depth: DecodeDepth,
@@ -1494,6 +1502,10 @@ struct CadIrWriteWire<'a> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CadIrReadWire {
+    #[serde(default, deserialize_with = "deserialize_fragment")]
+    fragment: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_repro")]
+    repro: Option<Box<crate::repro::BundleMetadata>>,
     #[serde(
         default,
         rename = "ir_version",
@@ -1516,6 +1528,8 @@ impl Serialize for CadIr {
         self.check_decode_depth()
             .map_err(serde::ser::Error::custom)?;
         CadIrWriteWire {
+            fragment: self.fragment,
+            repro: self.repro.as_deref(),
             ir_version: IrVersion,
             decode_depth: self.decode_depth,
             source: self.source.as_ref(),
@@ -1541,6 +1555,8 @@ impl TryFrom<CadIrReadWire> for CadIr {
 
     fn try_from(wire: CadIrReadWire) -> Result<Self, Self::Error> {
         let ir = Self {
+            fragment: wire.fragment.unwrap_or(false),
+            repro: wire.repro,
             source: wire.source,
             tolerances: wire.tolerances,
             model: wire.model,
@@ -1736,6 +1752,8 @@ impl CadIr {
     /// have classified source metadata use [`Self::decoded`].
     pub fn empty() -> Self {
         Self {
+            fragment: false,
+            repro: None,
             source: None,
             tolerances: Tolerances::default(),
             model: Model::default(),
@@ -1750,6 +1768,8 @@ impl CadIr {
     /// wrapper records the depth the backend reported.
     pub fn decoded(source: SourceMeta) -> Self {
         Self {
+            fragment: false,
+            repro: None,
             source: Some(source),
             tolerances: Tolerances::default(),
             model: Model::default(),
@@ -1917,3 +1937,14 @@ cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "
 cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
 
 mod identity_rewrite;
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+cadmpeg_core::named_optional_field!(deserialize_fragment, bool, "fragment");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_repro,
+    Box<crate::repro::BundleMetadata>,
+    "repro"
+);
