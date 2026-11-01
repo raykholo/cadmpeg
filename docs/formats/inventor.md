@@ -729,6 +729,8 @@ The slot-12 plane has zero entity flags, three zero u32 values through segment m
 
 In feature mode, the nonempty pattern participant list gives distinct ordered seeds. Each seed is a generic feature or pattern feature that precedes the mirror under the same model root. Slot 9 gives a nonempty ordered collection of distinct result surface-body records. In body mode, the pattern participant list is empty. Slot 10 gives a nonempty ordered collection of distinct source surface-body records. With a null slot 8, the source and result use the same surface-body identities. In both modes, the mirror label's participant list is empty.
 
+Feature-label class `da1419b4d211dad0600012a99dccefb0` identifies Coil. Its owner uses the generic feature record grammar of this section.
+
 ### 13.1 Feature history
 
 A model root (§11) also owns the browser feature tree of its model. The root label of a model root is the feature label whose owner reference selects the model root. The tree of the document model root is the part modeling history. The tree of a flat-pattern model root is the flat-pattern history. A segment has a history only when it has exactly one document model root.
