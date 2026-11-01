@@ -13,6 +13,23 @@ use super::{curve_ends, CurveEnds, PmDcSketchEntity, PmDcSketchEntityKind, Sketc
 use crate::loss::InventorLossCode;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState};
 
+pub(crate) fn is_non_geometric(entity: &PmDcSketchEntity) -> bool {
+    matches!(
+        entity.kind,
+        PmDcSketchEntityKind::Polygon { .. }
+            | PmDcSketchEntityKind::BlockInstance { .. }
+            | PmDcSketchEntityKind::BlockMember { .. }
+    )
+}
+
+pub(crate) fn is_non_geometric_relation(constraint: &super::PmDcSketchConstraint) -> bool {
+    matches!(
+        constraint.kind,
+        super::PmDcSketchConstraintKind::PolygonRelation { .. }
+            | super::PmDcSketchConstraintKind::BlockGroup { .. }
+    )
+}
+
 pub(crate) fn closed_ellipse(entity: &PmDcSketchEntity) -> bool {
     entity.identity.type_id == crate::record_identity::RecordTypeId::from_bytes(super::ELLIPSE_TYPE)
         && matches!(&entity.kind, PmDcSketchEntityKind::Ellipse { points, state: 1, .. }
