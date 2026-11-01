@@ -451,3 +451,40 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
         .iter()
         .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
 }
+
+#[test]
+fn component_path_snapshot_clears_provisional_operation_evidence_after_refusal() {
+    let (mut ir, poses) = model();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut Vec::new()).unwrap();
+    assert!(ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as::<XrefReference>("xref_references")
+        .unwrap()[0]
+        .operation_pose
+        .is_some());
+    ir.model.occurrences[0].transform = Transform::affine([
+        [1.0, 0.0, 0.0, 20.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
+    let before = ir.model.occurrences.clone();
+    let mut losses = Vec::new();
+    project(&ctx, &mut ir, &poses, &protected, &mut losses).unwrap();
+    assert_eq!(ir.model.occurrences, before);
+    let refs = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as::<XrefReference>("xref_references")
+        .unwrap();
+    assert!(refs[0].operation_pose.is_none());
+    assert!(reference_matches(&refs[0]));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
+}

@@ -212,14 +212,33 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
+        let mut legacy_table = table.clone();
+        legacy_table.references.retain(|reference| {
+            reference
+                .contained_poses
+                .iter()
+                .all(|pose| !xref::component_path_has_inline_local_type(&pose.frame_bytes))
+                && reference
+                    .owned_poses
+                    .iter()
+                    .all(|pose| !xref::component_path_has_inline_local_type(&pose.frame_bytes))
+        });
+        let mut left_identity = place_contained_poses_with_protected(
+            self.ctx,
+            parent_ir,
+            &legacy_table,
+            &mut parent_report.losses,
+            &mut self.operation_protected,
+            ContainedPass::Ordered,
+            None,
+        )?;
         crate::xref::operation_pose::project(
             self.ctx,
             parent_ir,
             &self.operation_poses,
-            &std::collections::BTreeSet::new(),
+            &self.operation_protected,
             &mut parent_report.losses,
         )?;
-        let mut left_identity = 0;
         for (boundary, member_table) in &self.component_path_tables {
             left_identity += place_contained_poses_with_protected(
                 self.ctx,
@@ -912,19 +931,14 @@ fn place_contained_poses_with_protected(
                     })?;
                     // Only the referenced design's own records: a member nested
                     // inside it has its own record indices.
-                    let own = occurrence.native_ref.as_deref().filter(|id| {
-                        if independent {
-                            member_scope.is_some()
-                                && occurrence
-                                    .id
-                                    .as_str()
-                                    .split_once("/model:")
-                                    .map(|(scope, _)| scope)
-                                    == member_scope
-                        } else {
-                            !id.strip_prefix("f3d:xref/")
-                                .is_some_and(|scoped| scoped.contains("/xref/"))
-                        }
+                    let own = occurrence.native_ref.as_deref().filter(|_| {
+                        member_scope.is_some()
+                            && occurrence
+                                .id
+                                .as_str()
+                                .split_once("/model:")
+                                .map(|(scope, _)| scope)
+                                == member_scope
                     });
                     if let Some(record) = own.and_then(|id| records.get(id)) {
                         inside.entry(*record).or_default().push((child, local));
@@ -939,15 +953,24 @@ fn place_contained_poses_with_protected(
                 .map(|pose| pose.owner_record_indices.len())
                 .max()
                 .unwrap_or(0);
+            let qualified = reference
+                .contained_poses
+                .iter()
+                .any(|pose| pass.reads(reference, pose) && !pose.owner_record_indices.is_empty());
+            let unqualified_snapshot = reference.current_pose.is_some()
+                && !reference.owned_poses.iter().any(|pose| {
+                    owners.starts_with(&pose.owner_record_indices)
+                        && unique_owners(&pose.owner_record_indices)
+                });
             let mut target_poses = BTreeMap::<usize, Vec<(usize, Transform, bool)>>::new();
             for (ordinal, pose) in reference.contained_poses.iter().enumerate() {
                 // A carrier lists the instance's owners from the innermost out, as
                 // far as it goes.
                 if !pass.reads(reference, pose)
                     || !owners.starts_with(&pose.owner_record_indices)
-                    || (independent
-                        && (!unique_owners(&pose.owner_record_indices)
-                            || pose.owner_record_indices.len() < reach))
+                    || !unique_owners(&pose.owner_record_indices)
+                    || pose.owner_record_indices.len() < reach
+                    || (pose.owner_record_indices.is_empty() && (qualified || unqualified_snapshot))
                 {
                     continue;
                 }

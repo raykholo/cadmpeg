@@ -1202,3 +1202,144 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
     )
     .is_err());
 }
+
+#[test]
+fn component_path_snapshot_with_an_unmatched_owner_keeps_the_stored_pose() {
+    let (ir, losses, _) = placed_reference(
+        reference(vec![
+            retained(11, 496, &[], translation(23.0, 4.0, 0.0)),
+            retained(12, 496, &[9300], translation(23.0, 4.0, 0.0)),
+        ]),
+        10.0,
+    );
+    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert_eq!(losses, [F3dLossCode::XrefContainedPoseNative.kind()]);
+}
+
+#[test]
+fn component_path_snapshot_without_owners_keeps_competing_current_frames_native() {
+    let mut reference = reference(vec![retained(12, 496, &[], translation(23.0, 4.0, 0.0))]);
+    let bytes = owned_carrier(11, &[], translation(10.0, 0.0, 0.0));
+    let pose =
+        crate::xref::component_path_pose(&bytes, Some(crate::metastream::MODERN_SERIALIZER_MAGIC))
+            .unwrap();
+    reference.current_pose = Some(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: pose.carrier_record_index,
+        frame_bytes: bytes.into(),
+        transform: pose.transform.map(|rows| rows.try_into().unwrap()),
+    });
+    let (ir, losses, _) = placed_reference(reference, 10.0);
+    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert_eq!(losses, [F3dLossCode::XrefContainedPoseNative.kind()]);
+}
+
+#[test]
+fn component_path_snapshot_binds_untagged_targets_in_the_expanded_member_scope() {
+    let (ir, losses, _) = placed_reference_edit(
+        reference(vec![retained(
+            12,
+            496,
+            &[9222],
+            translation(23.0, 4.0, 0.0),
+        )]),
+        10.0,
+        |ir| {
+            let before = "f3d:xref/role/occurrence-0";
+            let after = "f3d:xref/outer/occurrence-0/xref/part/occurrence-0";
+            for occurrence in &mut ir.model.occurrences {
+                occurrence.id = occurrence
+                    .id
+                    .as_str()
+                    .replace(before, after)
+                    .try_into()
+                    .unwrap();
+                if let OccurrenceParent::Occurrence { occurrence } = &mut occurrence.parent {
+                    *occurrence = occurrence
+                        .as_str()
+                        .replace(before, after)
+                        .try_into()
+                        .unwrap();
+                }
+                if let Some(native) = &mut occurrence.native_ref {
+                    *native = native.replace(before, after);
+                }
+            }
+        },
+    );
+    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 195.0).abs() < 1e-9);
+    assert_eq!(losses, [F3dLossCode::XrefContainedPose.kind()]);
+}
+
+#[test]
+fn component_path_snapshot_keeps_inline_qualified_bare_root_poses_native() {
+    for typed in [false, true] {
+        let mut bytes = owned_carrier(11, &[], translation(12.0, 0.0, 0.0));
+        if typed {
+            let mut at = 24;
+            crate::bytes::take_reference(&bytes, &mut at).unwrap();
+            at += 4;
+            bytes.splice(at..at + 11, inline_local(8506, PLACEMENT));
+        }
+        let pose = crate::xref::component_path_pose(
+            &bytes,
+            Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+        )
+        .unwrap();
+        let mut reference = reference(Vec::new());
+        reference.transform = Some(translation(7.0, 0.0, 0.0).try_into().unwrap());
+        reference.current_pose = Some(crate::records::xref::XrefCurrentPose {
+            carrier_record_index: pose.carrier_record_index,
+            frame_bytes: bytes.into(),
+            transform: pose.transform.map(|rows| rows.try_into().unwrap()),
+        });
+        let table = crate::xref::XrefTable {
+            references: vec![reference],
+            ..Default::default()
+        };
+        let components = std::collections::BTreeMap::new();
+        let sources = crate::design::components::LocalComponentSources {
+            scopes: &[],
+            occurrences: &[],
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: None,
+            hidden_bodies: None,
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        let projected = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
+        let expected = if typed { 70.0 } else { 120.0 };
+        assert!((projected.occurrences[0].transform.rows()[0][3] - expected).abs() < 1e-9);
+        let loss = if typed {
+            F3dLossCode::XrefCurrentPoseNative
+        } else {
+            F3dLossCode::XrefPlacementCurrentPose
+        };
+        assert_eq!(projected.losses.len(), 1);
+        assert_eq!(projected.losses[0].code, loss.kind());
+    }
+}
+
+#[test]
+fn component_path_snapshot_requires_an_own_path_to_match_this_instance() {
+    let mut reference = with_owned(
+        vec![retained(12, 496, &[], translation(23.0, 4.0, 0.0))],
+        vec![typed_owned(13, &[9300], translation(20.0, 4.0, 0.0))],
+    );
+    let bytes = owned_carrier(11, &[], translation(10.0, 0.0, 0.0));
+    let pose =
+        crate::xref::component_path_pose(&bytes, Some(crate::metastream::MODERN_SERIALIZER_MAGIC))
+            .unwrap();
+    reference.current_pose = Some(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: pose.carrier_record_index,
+        frame_bytes: bytes.into(),
+        transform: pose.transform.map(|rows| rows.try_into().unwrap()),
+    });
+    let (ir, losses, _) = placed_reference(reference, 10.0);
+    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert!(losses.contains(&F3dLossCode::XrefOwnedPoseNative.kind()));
+    assert!(losses.contains(&F3dLossCode::XrefContainedPoseNative.kind()));
+}

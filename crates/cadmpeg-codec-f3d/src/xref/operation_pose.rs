@@ -685,23 +685,29 @@ pub(crate) fn project(
     for name in ["xref_references", "design_component_occurrences"] {
         if let Some(records) = ns.arenas_mut().get_mut(name) {
             for r in records {
-                if !applied.contains(r.id()) {
+                if !applied.contains(r.id()) && !refused.contains(r.id()) {
                     continue;
                 }
-                let Some(pose) = poses.get(r.id()) else {
-                    continue;
-                };
-                let operation = crate::records::xref::XrefOperationPose {
-                    carrier_record_index: pose.carrier,
-                    frame_bytes: pose.frame.clone().into(),
-                    transform: Some(pose.matrix.try_into().map_err(CodecError::NotImplemented)?),
-                };
                 let mut fields = r.copy_fields(ctx)?;
-                fields.insert(
-                    "operation_pose".into(),
-                    serde_json::to_value(operation)
-                        .map_err(|e| CodecError::malformed(e.to_string()))?,
-                );
+                if applied.contains(r.id()) {
+                    let Some(pose) = poses.get(r.id()) else {
+                        continue;
+                    };
+                    let operation = crate::records::xref::XrefOperationPose {
+                        carrier_record_index: pose.carrier,
+                        frame_bytes: pose.frame.clone().into(),
+                        transform: Some(
+                            pose.matrix.try_into().map_err(CodecError::NotImplemented)?,
+                        ),
+                    };
+                    fields.insert(
+                        "operation_pose".into(),
+                        serde_json::to_value(operation)
+                            .map_err(|e| CodecError::malformed(e.to_string()))?,
+                    );
+                } else {
+                    fields.remove("operation_pose");
+                }
                 *r = cadmpeg_ir::NativeRecord::new(
                     cadmpeg_ir::ids::Identity::new(r.id().to_owned())
                         .map_err(CodecError::malformed)?,
