@@ -2276,6 +2276,12 @@ fn project_fillet_arm(
         EdgeSelection, FeatureDefinition, FeatureOperation,
     };
 
+    if parameters.is_empty() && crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+        scope, inputs.construction_groups,
+    ) {
+        return native_scope_definition(scope, parameters);
+    }
+
     if parameters.is_empty() {
         if let Some(definition) = project_full_round_fillet(
             scope,

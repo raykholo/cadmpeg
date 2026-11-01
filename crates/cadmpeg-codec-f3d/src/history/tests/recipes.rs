@@ -1241,8 +1241,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     feature.native_ref = Some(scale_scope.id.clone());
-    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs)
-        .unwrap();
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs);
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
@@ -1303,8 +1302,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     super::super::bind_feature_body_selections(
         std::slice::from_mut(&mut move_feature),
         &move_inputs,
-    )
-    .unwrap();
+    );
     assert!(matches!(
         move_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MoveBody {
