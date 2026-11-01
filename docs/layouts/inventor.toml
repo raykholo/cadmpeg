@@ -4521,3 +4521,17 @@ offset = 4
 type = "u32"
 source = "spec"
 anchor = "a parameter reference, then ends"
+
+[[record]]
+name = "pm_dc_coil_property_slots"
+kind = "slot"
+section = "13"
+anchor = "In segment major version 19, its type-2 property vector has 20 slots"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/coil.rs"
+note = "Property-vector indices use the generic feature reference-list grammar. Each slot occupies one packed reference after the variable list prefix."
+
+[[record.field]]
+name = "slots"
+type = "u32[20]"
+source = "spec"
+anchor = "In segment major version 19, its type-2 property vector has 20 slots"
