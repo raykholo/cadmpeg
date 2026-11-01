@@ -248,6 +248,16 @@ impl DesignConstructionOperandGroup {
         self.frame.role_offset()
     }
 
+    /// Whether the group carries a pattern seed through auxiliary paths.
+    pub(crate) fn is_path_carried_seed(&self) -> bool {
+        self.role() == DesignOperandRole::PATH_CARRIED_SEED
+            && self.extrude_role().is_none()
+            && self.members().is_empty()
+            && self.frame.auxiliary_records.len() == 2
+            && self.frame.trailing_records().len() == 1
+            && !self.frame.variant
+    }
+
     /// The source role code.
     pub(crate) fn role(&self) -> DesignOperandRole {
         self.operand_role.source()

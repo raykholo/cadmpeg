@@ -429,6 +429,8 @@ impl DesignOperandRole {
     pub(crate) const ROLE_0X21: Self = Self(0x0000_0021_0000_0000);
     /// Scope-dependent role code 0x43.
     pub(crate) const ROLE_0X43: Self = Self(0x0000_0043_0000_0000);
+    /// Pattern seeds carried by ordered auxiliary paths.
+    pub(crate) const PATH_CARRIED_SEED: Self = Self(0x0000_0100_0000_0000);
 
     /// Wrap the stored u64 role code.
     pub(crate) const fn from_raw(raw: u64) -> Self {

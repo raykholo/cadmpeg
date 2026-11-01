@@ -582,6 +582,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.hole_extent_losses);
+    for scope in &design.design_parameter_scopes {
+        if crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+            scope, &design.design_construction_operand_groups,
+        ) {
+            losses.push(F3dLossCode::FeatureFixedFilletAssignmentNative.note(format!(
+                "scope {} retains its fixed Fillet scalar lanes and operand groups because their radius assignment is unresolved", scope.id
+            )));
+        }
+    }
     model.features = projected.features;
     model.parameters = projected.parameters;
     if projected.unordered_parameter_scopes != 0 {
@@ -692,7 +701,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &scope_histories,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
-    crate::history::bind_feature_body_selections(
+    losses.extend(crate::history::bind_feature_body_selections(
         &mut model.features,
         &crate::history::FeatureBodySelectionInputs {
             scopes: &design.design_parameter_scopes,
@@ -705,7 +714,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             regions: geometry.regions,
             shells: geometry.shells,
         },
-    )?;
+    ));
     crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
