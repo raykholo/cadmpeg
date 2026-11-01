@@ -4781,6 +4781,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         let native_stream = design_stream(&group.id);
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
         let header = records_by_index.get(&(native_stream, group.record_index));
+        let path_carried_seed = scope.is_some_and(|scope| {
+            matches!(
+                scope.kind(),
+                records::feature::scope::DesignFeatureKind::CPattern
+                    | records::feature::scope::DesignFeatureKind::RPattern
+            ) && group.is_path_carried_seed()
+        });
         let frame = &group.frame;
         let member_run_end = group.members().last().map_or_else(
             || frame.member_count_offset.checked_add(4),
@@ -5043,12 +5050,12 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     design::DesignFeatureFamily::CircularPattern
                     | design::DesignFeatureFamily::RectangularPattern,
                 ) => {
-                    matches!(
+                    (path_carried_seed || matches!(
                         group.role(),
                         DesignOperandRole::BODIES_A
                             | DesignOperandRole::BODIES_B
                             | DesignOperandRole::ROLE_0X10
-                    ) && group.extrude_role().is_none()
+                    )) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Mirror) => {
                     mirror_group_role_admitted(group.role()) && group.extrude_role().is_none()
@@ -5225,7 +5232,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         }) && header.is_some_and(|header| {
             header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
         }) && frame_valid
-            && !group.members().is_empty()
+            && (!group.members().is_empty() || path_carried_seed)
             && {
                 let mut seen = HashSet::new();
                 for member in group.members() {
@@ -6310,7 +6317,28 @@ fn validate_fillet_operand_groups<'a>(
                         || (fixed.groups.len() == 1
                             && (sole_compact_group_shape || in_selection_pair)))
             });
+        let retained_fixed_assignment = !has_parameter_owner
+            && scope.is_some_and(|scope| {
+                design::decode::operands::fixed_fillet_assignment_is_unresolved(
+                    scope,
+                    &native.design_construction_operand_groups,
+                ) && ctx
+                    .ir
+                    .model
+                    .features
+                    .iter()
+                    .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+                    .all(|feature| {
+                        matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { .. }
+                            )
+                        )
+                    })
+            });
         if is_fillet
+            && !retained_fixed_assignment
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
             && !has_radius_assignment
