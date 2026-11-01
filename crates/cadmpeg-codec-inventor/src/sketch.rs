@@ -1514,6 +1514,7 @@ pub(crate) fn project(
     }
 
     let mut projected_entities = Vec::new();
+    let mut block_curves = Vec::new();
     let mut unresolved_entities = 0usize;
     for entity in &inventory.entities {
         let key = (
@@ -1545,6 +1546,20 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         }
+        if curve::is_non_geometric(entity) {
+            unresolved_entities += 1;
+            if let Some(id) = sketch_id(sketch) {
+                let count = block_definition_curves(entity, &inventory.entities).len();
+                ctx.charge_entities(
+                    u64::try_from(count).map_err(CodecError::malformed)?,
+                    "project Inventor sketch block curves",
+                )?;
+                if let Some(placed) = place_block_curves(entity, &id, inventory, &raw_entities) {
+                    block_curves.push(placed);
+                }
+            }
+            continue;
+        }
         let Some(geometry) = project_geometry(entity, &raw_entities) else {
             unresolved_entities += 1;
             continue;
@@ -1562,27 +1577,6 @@ pub(crate) fn project(
         );
     }
 
-    // Placed block curves stay out of the native-keyed indexes: two instances
-    // of one definition place copies of the same curve records.
-    let mut block_curves = Vec::new();
-    for entity in &projected_entities {
-        let Some(instance) = entity.native_ref.as_deref().and_then(|native| {
-            inventory.entities.iter().find(|raw| {
-                matches!(raw.kind, PmDcSketchEntityKind::BlockInstance { .. }) && raw.id() == native
-            })
-        }) else {
-            continue;
-        };
-        let count = block_definition_curves(instance, &inventory.entities).len();
-        ctx.charge_entities(
-            u64::try_from(count).map_err(CodecError::malformed)?,
-            "project Inventor sketch block curves",
-        )?;
-        if let Some(placed) = place_block_curves(instance, &entity.sketch, inventory, &raw_entities)
-        {
-            block_curves.push(placed);
-        }
-    }
     let projected_by_native = projected_entities
         .iter()
         .filter_map(|entity| entity.native_ref.as_deref().map(|native| (native, entity)))
@@ -1612,7 +1606,9 @@ pub(crate) fn project(
                     .and_then(Option::as_ref)
                     .copied()
             }) {
-                raw_referenced_entities.push(raw);
+                if !curve::is_non_geometric(raw) {
+                    raw_referenced_entities.push(raw);
+                }
             }
         }
         let mut referenced_entities = Vec::new();
@@ -1778,7 +1774,16 @@ pub(crate) fn project(
                 return false;
             }
             let key = (raw.identity.segment_token.as_str(), ordinal);
-            projected_entity_keys.contains(&key) || projected_constraint_keys.contains(&key)
+            projected_entity_keys.contains(&key)
+                || projected_constraint_keys.contains(&key)
+                || raw_entities
+                    .get(&key)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|source| curve::is_non_geometric(source))
+                || raw_constraints
+                    .get(&key)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|source| curve::is_non_geometric_relation(source))
         })
     });
     unresolved_sketches =
@@ -1860,6 +1865,18 @@ pub(crate) fn project(
     })
 }
 
+pub(crate) fn graph_loss(
+    sketches: usize,
+    entities: usize,
+    constraints: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (sketches != 0 || entities != 0 || constraints != 0).then(|| {
+        crate::loss::InventorLossCode::SketchGraphOpen.note(format!(
+            "Retained {sketches} Inventor sketch record(s), {entities} sketch-entity record(s), and {constraints} sketch-constraint record(s) whose neutral graph is not closed."
+        ))
+    })
+}
+
 /// The loss for distance dimensions that stay native because they are
 /// measured to an axis line.
 pub(crate) fn axis_distance_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
@@ -1904,7 +1921,7 @@ fn project_constraint(
         };
     }
 
-    if !constraint_maps_supported(constraint) {
+    if curve::is_non_geometric_relation(constraint) || !constraint_maps_supported(constraint) {
         return None;
     }
     let resolve = |reference: PmDcReference| {
@@ -2288,73 +2305,8 @@ fn project_constraint(
                 first,
             )
         }
-        PmDcSketchConstraintKind::BlockGroup { ref members } => {
-            let entities = members
-                .references()
-                .iter()
-                .map(|member| resolve(*member))
-                .collect::<Option<Vec<_>>>()?;
-            let (first, rest) = entities.split_first()?;
-            if rest.iter().any(|entity| entity.sketch != first.sketch) {
-                return None;
-            }
-            (
-                SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sketch_block")?,
-                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
-                    native_flags: Some(u64::from(constraint.header.content.flags)),
-                    native_properties: std::collections::BTreeMap::new(),
-                    entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-                    parameter: None,
-                    operands: members
-                        .references()
-                        .iter()
-                        .map(|member| {
-                            native_operand(
-                                constraint,
-                                cadmpeg_core::nonblank_literal!("member"),
-                                *member,
-                            )
-                        })
-                        .collect(),
-                },
-                None,
-                [*first, *first],
-            )
-        }
-        PmDcSketchConstraintKind::PolygonRelation {
-            first,
-            second,
-            reference,
-            polygon,
-            ..
-        } => {
-            let members = [resolve(first)?, resolve(second)?];
-            let [polygon, repeated] = polygon;
-            if polygon != repeated {
-                return None;
-            }
-            let (reference, polygon) = (resolve(reference)?, resolve(polygon)?);
-            if [reference, polygon]
-                .iter()
-                .any(|entity| entity.sketch != members[0].sketch)
-            {
-                return None;
-            }
-            (
-                SketchConstraintDefinitionInput::Polygon {
-                    polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(
-                        [members[0], members[1], reference, polygon]
-                            .iter()
-                            .map(|entity| entity.id().clone())
-                            .collect(),
-                    )
-                    .ok()?,
-                },
-                None,
-                members,
-            )
-        }
+        PmDcSketchConstraintKind::BlockGroup { .. }
+        | PmDcSketchConstraintKind::PolygonRelation { .. } => return None,
         PmDcSketchConstraintKind::Symmetric {
             first,
             second,
@@ -2630,15 +2582,9 @@ fn project_placed_geometry(
                 .ok()?,
             )
         }
-        PmDcSketchEntityKind::BlockInstance { .. } => Some(SketchGeometry::native(
-            cadmpeg_core::nonblank_literal!("sketch_block_instance"),
-        )),
-        PmDcSketchEntityKind::BlockMember { .. } => Some(SketchGeometry::native(
-            cadmpeg_core::nonblank_literal!("sketch_block_member"),
-        )),
-        PmDcSketchEntityKind::Polygon { .. } => Some(SketchGeometry::native(
-            cadmpeg_core::nonblank_literal!("polygon"),
-        )),
+        PmDcSketchEntityKind::BlockInstance { .. }
+        | PmDcSketchEntityKind::BlockMember { .. }
+        | PmDcSketchEntityKind::Polygon { .. } => None,
     }
 }
 
@@ -5195,6 +5141,7 @@ mod tests {
 
     mod axis_distance;
     mod construction_flags;
+    mod non_geometric;
     mod point_tail_projection;
     mod serialization;
 }
