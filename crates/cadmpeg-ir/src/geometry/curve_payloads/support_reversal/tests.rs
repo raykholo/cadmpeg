@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::geometry::curve_payloads::{
-    SilhouetteCurveConstruction, SurfaceOffsetCurveConstruction,
+    SilhouetteCurveConstruction, SpringCurvePayload, SurfaceOffsetCurveConstruction,
     ThreeSurfaceIntersectionCurvePayload, TwoSidedOffsetCurveConstruction,
 };
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
 use crate::geometry::{
     CacheContract, CacheFirstCurveForm, CacheFirstCurveParameterization, IntcurveSupportContext,
     IntcurveSupportSide, ProceduralCurveDefinition, RevisionCacheForm, SilhouetteKind,
-    SupportPcurve,
+    SpringLayout, SupportPcurve,
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point2, Vector3};
@@ -77,6 +77,16 @@ fn definitions() -> Vec<ProceduralCurveDefinition> {
             )
             .expect("silhouette"),
         ),
+        ProceduralCurveDefinition::Spring(
+            SpringCurvePayload::try_new(
+                SpringLayout::CacheFirst {
+                    context: context(),
+                    form: form.clone(),
+                },
+                0,
+            )
+            .expect("cache-first spring"),
+        ),
         ProceduralCurveDefinition::SurfaceOffset(
             SurfaceOffsetCurveConstruction::try_new(
                 context(),
@@ -121,6 +131,27 @@ fn context_families_reverse_about_zero_and_back() {
             }
             ProceduralCurveDefinition::TwoSidedOffset(payload) => assert_context(payload.context()),
             ProceduralCurveDefinition::Silhouette(payload) => assert_context(payload.context()),
+            ProceduralCurveDefinition::Spring(payload) => {
+                assert_context(payload.support_context());
+                let SpringLayout::CacheFirst { context, form } = payload.layout() else {
+                    panic!("cache-first spring")
+                };
+                assert_eq!(context, payload.support_context());
+                assert_eq!(form.solved_range, [None, FiniteReal::new(-1.5)]);
+                assert!(matches!(
+                    form.cache,
+                    RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+                        interval,
+                        ..
+                    }) if interval == [FiniteReal::new(-4.0), FiniteReal::new(-1.0)]
+                ));
+                assert_eq!(payload.direction(), &0);
+                let restored: ProceduralCurveDefinition = serde_json::from_value(
+                    serde_json::to_value(&reversed).expect("serialize spring"),
+                )
+                .expect("deserialize spring");
+                assert_eq!(restored, reversed);
+            }
             ProceduralCurveDefinition::SurfaceOffset(payload) => {
                 assert_context(payload.context());
                 assert_eq!(
