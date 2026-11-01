@@ -494,3 +494,56 @@ fn a_selected_face_group_stays_refused_outside_the_patterns() {
     let native = pattern_native(Scale, Role::ROLE_0X10, None);
     assert_eq!(invalid_group_records(&native).len(), 1);
 }
+
+#[test]
+fn pattern_path_seed_group_admits_empty_members_and_checks_its_tail() {
+    use crate::records::{decal::DesignRecordHeader, feature::scope::DesignFeatureKind};
+    let mut value = native(true, false);
+    value.design_parameter_scopes[0]
+        .try_edit(|draft| {
+            draft.payload = DesignFeatureKind::RPattern.try_into().unwrap();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut group = serde_json::to_value(&value.design_construction_operand_groups[0]).unwrap();
+    group["members"] = serde_json::json!([]);
+    group["member_offsets"] = serde_json::json!([]);
+    group["role"] = serde_json::json!(0x0000_0100_0000_0000_u64);
+    group["role_offset"] = serde_json::json!(1060);
+    group["paired_byte_offset"] = serde_json::json!(1100);
+    group["frame"]["auxiliary_record_indices"] = serde_json::json!([101, 102]);
+    group["frame"]["auxiliary_record_offsets"] = serde_json::json!([1026, 1037]);
+    group["frame"]["trailing_record_indices"] = serde_json::json!([103]);
+    group["frame"]["trailing_record_offsets"] = serde_json::json!([1050]);
+    group["frame"]["opaque_index_offset"] = serde_json::json!(1078);
+    group["frame"]["opaque_scalar_offset"] = serde_json::json!(1082);
+    value.design_construction_operand_groups[0] = serde_json::from_value(group).unwrap();
+    for index in [102, 103] {
+        value.design_record_headers.push(DesignRecordHeader {
+            id: format!("f3d:Design/BulkStream.dat:design-record-header#{index}"),
+            record_index: index,
+            class_tag: "277".to_owned().try_into().unwrap(),
+            byte_offset: u64::from(index) * 100,
+        });
+    }
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let check = |native: &crate::native::F3dNative| {
+            let ctx = super::super::Ctx::new(&ir, native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            findings
+        };
+        assert!(check(&value).is_empty());
+        let mut invalid = value.clone();
+        invalid.design_construction_operand_groups[0].frame.variant = true;
+        assert_eq!(check(&invalid).len(), 1);
+        value.design_parameter_scopes[0]
+            .try_edit(|draft| {
+                draft.payload = DesignFeatureKind::Hole.try_into().unwrap();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        assert_eq!(check(&value).len(), 1);
+    });
+}
