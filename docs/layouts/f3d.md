@@ -8281,6 +8281,19 @@ Parsed by:
 | 20 | 1 | `separator` | `u8` | little | spec | A pathless occurrence placement · value `0` |
 | 21 | 4 | `control` | `u32` | little | spec | A pathless occurrence placement · value `1` |
 
+## `assembly_version_three_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 21 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `expanded` | `u8` | little | spec | an expansion byte `E` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

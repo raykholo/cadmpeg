@@ -7877,3 +7877,14 @@ pub(crate) mod pathless_external_placement_prefix {
     /// Stated value of `control` (`u32`). Spec §1.4.
     pub(crate) const CONTROL_VALUE: u32 = 0x0000_0001;
 }
+
+/// Byte offsets for the `assembly_version_three_prefix` record.
+///
+/// Spec §Assembly operands. Record length 21 B.
+pub(crate) mod assembly_version_three_prefix {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 21;
+    /// Stated value of `zero_run` (`bytes[9]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 9] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
