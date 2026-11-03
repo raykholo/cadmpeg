@@ -26,7 +26,7 @@
 //! an id comes into being, and it reconstructs an id that some producer pinned.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -387,6 +387,8 @@ pub enum LayerInstance {
 pub struct DialectLayers {
     primary: DialectMatch,
     extra: Vec<DialectMatch>,
+    #[serde(skip)]
+    keys: BTreeSet<(String, Option<String>)>,
 }
 
 #[derive(Deserialize)]
@@ -442,9 +444,14 @@ impl DialectLayers {
     /// Constructs dialect layers with one primary and no extra layers.
     #[must_use]
     pub fn of(primary: DialectMatch) -> Self {
+        let keys = BTreeSet::from([(
+            primary.format().to_owned(),
+            primary.instance().map(str::to_owned),
+        )]);
         Self {
             primary,
             extra: Vec::new(),
+            keys,
         }
     }
 
@@ -453,12 +460,11 @@ impl DialectLayers {
     /// The first layer for a key remains authoritative. A duplicate is
     /// returned unchanged so its producer can report the collision.
     pub fn insert(&mut self, layer: DialectMatch) -> Result<(), DialectLayerError> {
-        if Self::same_key(&self.primary, &layer)
-            || self
-                .extra
-                .iter()
-                .any(|existing| Self::same_key(existing, &layer))
-        {
+        let key = (
+            layer.format().to_owned(),
+            layer.instance().map(str::to_owned),
+        );
+        if !self.keys.insert(key) {
             return Err(DialectLayerError::Duplicate(layer));
         }
         self.extra.push(layer);
@@ -469,10 +475,6 @@ impl DialectLayers {
     pub fn with(mut self, layer: DialectMatch) -> Result<Self, DialectLayerError> {
         self.insert(layer)?;
         Ok(self)
-    }
-
-    fn same_key(existing: &DialectMatch, layer: &DialectMatch) -> bool {
-        existing.format() == layer.format() && existing.instance == layer.instance
     }
 
     /// Returns the report's primary format layer.
@@ -918,6 +920,39 @@ mod tests {
             }
         );
         assert_eq!(self_named.using(), Some(dialect));
+    }
+
+    #[test]
+    fn dialect_layer_index_survives_clone_and_wire_read() {
+        let mut layers = DialectLayers::of(layer("rhino"));
+        for instance in ["z", "a", "m"] {
+            layers
+                .insert(layer("acis").with_instance(instance))
+                .unwrap();
+        }
+        let wire = serde_json::to_string(&layers).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&wire)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            2
+        );
+        for mut copy in [
+            layers.clone(),
+            serde_json::from_str::<DialectLayers>(&wire).unwrap(),
+        ] {
+            assert!(copy.insert(layer("acis").with_instance("a")).is_err());
+            assert_eq!(serde_json::to_string(&copy).unwrap(), wire);
+            copy.insert(layer("acis").with_instance("next")).unwrap();
+            assert_eq!(
+                copy.iter()
+                    .filter_map(|entry| entry.instance())
+                    .collect::<Vec<_>>(),
+                ["z", "a", "m", "next"]
+            );
+        }
     }
 
     #[test]

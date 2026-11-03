@@ -565,6 +565,7 @@ fn directory_admission(
                 .collect(),
         ),
         central_headers: None,
+        central_run: CentralRun::default(),
     };
     for end in candidates {
         match central_directory_inventory(ctx, bytes, end, &mut search) {
@@ -599,6 +600,13 @@ struct DirectorySearch {
     /// Every central-header signature offset, in order, once a candidate's
     /// directory is not at its canonical start.
     central_headers: Option<Vec<usize>>,
+    central_run: CentralRun,
+}
+
+#[derive(Default)]
+struct CentralRun {
+    start: Option<u64>,
+    ends: Vec<u64>,
 }
 
 impl DirectorySearch {
@@ -621,6 +629,85 @@ impl DirectorySearch {
             .copied()
             .filter(|&offset| offset + 4 <= end)
     }
+    fn central_end(
+        &mut self,
+        bytes: &[u8],
+        start: u64,
+        count: u64,
+        directory_end: u64,
+    ) -> Result<u64, CodecError> {
+        if count == 0 {
+            return Ok(start);
+        }
+        if self.central_run.start != Some(start) {
+            self.central_run.start = Some(start);
+            self.central_run.ends.clear();
+        }
+        let ends = &mut self.central_run.ends;
+        if let Ok(index) = usize::try_from(count - 1) {
+            if let Some(&end) = ends.get(index) {
+                return central_end_within(end, directory_end);
+            }
+        }
+        let mut offset = ends.last().copied().unwrap_or(start);
+        if !ends.is_empty() {
+            central_end_within(offset, directory_end)?;
+        }
+        for _ in cadmpeg_core::decode::u64_from_index(ends.len())..count {
+            if signature_at(bytes, offset) != Some(*b"PK\x01\x02") {
+                return Err(CodecError::Malformed("ZIP central header is absent".into()));
+            }
+            let name_len = u64::from(u16_at(
+                bytes,
+                offset
+                    + cadmpeg_core::decode::u64_from_index(
+                        crate::layout::central_header::NAME_LENGTH,
+                    ),
+            )?);
+            let extra_len = u64::from(u16_at(
+                bytes,
+                offset
+                    + cadmpeg_core::decode::u64_from_index(
+                        crate::layout::central_header::EXTRA_LENGTH,
+                    ),
+            )?);
+            let comment_len = u64::from(u16_at(
+                bytes,
+                offset
+                    + cadmpeg_core::decode::u64_from_index(
+                        crate::layout::central_header::COMMENT_LENGTH,
+                    ),
+            )?);
+            let name_start = offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(
+                    crate::layout::central_header::LEN,
+                ))
+                .ok_or_else(|| {
+                    CodecError::Malformed("ZIP central-header offset overflow".into())
+                })?;
+            let name_end = name_start
+                .checked_add(name_len)
+                .ok_or_else(|| CodecError::Malformed("ZIP central-name offset overflow".into()))?;
+            offset = name_end
+                .checked_add(extra_len)
+                .and_then(|value| value.checked_add(comment_len))
+                .ok_or_else(|| {
+                    CodecError::Malformed("ZIP central-record offset overflow".into())
+                })?;
+            ends.push(offset);
+            central_end_within(offset, directory_end)?;
+        }
+        Ok(offset)
+    }
+}
+
+fn central_end_within(end: u64, directory_end: u64) -> Result<u64, CodecError> {
+    if end > directory_end {
+        return Err(CodecError::Malformed(
+            "ZIP central record exceeds directory".into(),
+        ));
+    }
+    Ok(end)
 }
 
 fn zip64_locator_at(bytes: &[u8], end: usize) -> Option<usize> {
@@ -695,29 +782,7 @@ fn central_directory_inventory(
         cadmpeg_core::decode::u64_from_index(start)
     };
     let entries_start = offset;
-    for _ in 0..count {
-        if signature_at(bytes, offset) != Some(*b"PK\x01\x02") {
-            return Err(CodecError::Malformed("ZIP central header is absent".into()));
-        }
-        let name_len = u64::from(u16_at(bytes, offset + 28)?);
-        let extra_len = u64::from(u16_at(bytes, offset + 30)?);
-        let comment_len = u64::from(u16_at(bytes, offset + 32)?);
-        let name_start = offset
-            .checked_add(46)
-            .ok_or_else(|| CodecError::Malformed("ZIP central-header offset overflow".into()))?;
-        let name_end = name_start
-            .checked_add(name_len)
-            .ok_or_else(|| CodecError::Malformed("ZIP central-name offset overflow".into()))?;
-        offset = name_end
-            .checked_add(extra_len)
-            .and_then(|value| value.checked_add(comment_len))
-            .ok_or_else(|| CodecError::Malformed("ZIP central-record offset overflow".into()))?;
-        if offset > directory_end {
-            return Err(CodecError::Malformed(
-                "ZIP central record exceeds directory".into(),
-            ));
-        }
-    }
+    offset = search.central_end(bytes, offset, count, directory_end)?;
     let declared_end = entries_start
         .checked_add(directory_size)
         .ok_or_else(|| CodecError::malformed("ZIP declared directory end overflows"))?;

@@ -24,8 +24,11 @@ pub(super) fn next_header(bytes: &[u8], start: usize, table_complete: bool) -> O
         }
         let end = tail
             .iter()
-            .position(|byte| *byte == b'\n')
+            .position(|byte| matches!(byte, b'\n' | b'#' | b'{' | b'}' | b'@'))
             .unwrap_or(tail.len());
+        if tail.get(end).is_some_and(|byte| *byte != b'\n') {
+            return None;
+        }
         let line = &tail[..end];
 
         let mut words = line

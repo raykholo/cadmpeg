@@ -2195,6 +2195,28 @@ fn type_record(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn same_line_records_after_the_declared_count_keep_typed_points() {
+        let point = "point $-1 -1 $-1 10 0 0 #";
+        let make = |separator: &str| {
+            let body = [point, point, point].join(separator);
+            String::from_utf8(asm_stream(&body))
+                .unwrap()
+                .replacen("23200 0 2 2", "23200 1 2 2", 1)
+                .into_bytes()
+        };
+        let lines = parse(&make("\n")).unwrap();
+        let same_line = parse(&make(" ")).unwrap();
+        assert_eq!(same_line.records.len(), 3);
+        for (actual, expected) in same_line.records.iter().zip(&lines.records) {
+            assert_eq!(actual.tokens, expected.tokens);
+            assert!(actual
+                .tokens
+                .iter()
+                .any(|token| matches!(token, Token::Position(_))));
+        }
+    }
+
+    #[test]
     fn sat_subtype_typing_refuses_depth_before_recursive_descent() {
         let prefix = "{ cyl_spl_sur 0 intcurve forward { int_int_cur 0 full nubs 1 open 2 0 2 1 2 0 0 0 1 0 0 2 0 0 3 0 0 0 spline forward ";
         for (repetitions, limit) in [(1, 0), (4096, 2)] {

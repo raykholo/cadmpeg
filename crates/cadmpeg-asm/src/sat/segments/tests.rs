@@ -79,3 +79,13 @@ fn table_rebasing_keeps_entity_and_subtype_references_in_their_stream() {
     assert_eq!(records[3].tokens[3], Token::Long(1));
     assert_eq!(records[3].tokens[7], Token::Long(3));
 }
+
+#[test]
+fn record_delimiters_end_header_lookahead_on_the_current_line() {
+    for delimiter in ["#", "{", "}", "@"] {
+        let text = format!("result {delimiter} 700 1 0 0\n104 3 0 0\n");
+        assert!(next_header(text.as_bytes(), 0, true).is_none());
+    }
+    let description = b"result details\n104 3 0 0\n";
+    assert_eq!(next_header(description, 0, true), Some(15));
+}

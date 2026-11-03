@@ -440,17 +440,37 @@ struct BodyMapRecord {
     bindings: Vec<BodyBinding>,
 }
 
-fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
-    meta.types.iter().any(|design_type| {
-        design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(type_guid)
-            && design_type
-                .entities
-                .values()
-                .any(|registered| *registered == entity)
-    })
+struct BodyMapTypes {
+    entities: HashMap<String, HashSet<u64>>,
+}
+
+impl BodyMapTypes {
+    fn new(meta: &crate::metastream::MetaStream) -> Self {
+        let mut entities = HashMap::<String, HashSet<u64>>::new();
+        for design_type in &meta.types {
+            if ![
+                crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
+                crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+            ]
+            .iter()
+            .any(|guid| design_type.type_guid.as_str().eq_ignore_ascii_case(guid))
+            {
+                continue;
+            }
+            entities
+                .entry(design_type.type_guid.as_str().to_ascii_lowercase())
+                .or_default()
+                .extend(design_type.entities.values().copied());
+        }
+        Self { entities }
+    }
+
+    fn has_type(&self, entity: u64, type_guid: &str) -> bool {
+        self.entities
+            .get(&type_guid.to_ascii_lowercase())
+            .is_some_and(|entities| entities.contains(&entity))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -524,7 +544,7 @@ fn local_reference_candidates(
 }
 
 fn reference_has_type(
-    meta: &crate::metastream::MetaStream,
+    types: &BodyMapTypes,
     reference: &LocalReferenceCandidate,
     expected_type_guid: &str,
 ) -> bool {
@@ -532,7 +552,7 @@ fn reference_has_type(
         .inline_type_guid
         .as_deref()
         .is_none_or(|guid| guid.eq_ignore_ascii_case(expected_type_guid))
-        && entity_has_type(meta, reference.target, expected_type_guid)
+        && types.has_type(reference.target, expected_type_guid)
 }
 
 /// Parse every exactly framed sibling body-map record that binds an `.smb`
@@ -541,6 +561,7 @@ fn snapshot_body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
+    let types = BodyMapTypes::new(meta);
     let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let mut primary_by_entity = HashMap::new();
     for (ordinal, frame) in frames.iter().enumerate() {
@@ -607,7 +628,7 @@ fn snapshot_body_map_records(
                 )));
             }
             if let Some(record) =
-                parse_snapshot_body_map_frame(bytes, meta, frame.start, frame.end, entity)?
+                parse_snapshot_body_map_frame(bytes, &types, frame.start, frame.end, entity)?
             {
                 out.push(record);
             }
@@ -618,7 +639,7 @@ fn snapshot_body_map_records(
 
 fn parse_snapshot_body_map_frame(
     bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
+    types: &BodyMapTypes,
     start: usize,
     end: usize,
     entity: u64,
@@ -637,7 +658,7 @@ fn parse_snapshot_body_map_frame(
         };
         if companion.target != companion_entity
             || !reference_has_type(
-                meta,
+                types,
                 &companion,
                 crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
             )
@@ -667,8 +688,7 @@ fn parse_snapshot_body_map_frame(
         };
         if pairs.chunks_exact(16).any(|pair| {
             View::u64_le_at(pair, 8).is_none_or(|body_entity| {
-                !entity_has_type(
-                    meta,
+                !types.has_type(
                     body_entity,
                     crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
                 )
@@ -682,7 +702,7 @@ fn parse_snapshot_body_map_frame(
                 continue;
             };
             if !reference_has_type(
-                meta,
+                types,
                 &container,
                 crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             ) || !bytes
@@ -753,6 +773,7 @@ fn body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
+    let types = BodyMapTypes::new(meta);
     let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
@@ -847,7 +868,7 @@ fn body_map_records(
 
             let mut matched = None;
             for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
-                let Some(bindings) = parse_body_map_frame(bytes, meta, start, end, prefix_len)?
+                let Some(bindings) = parse_body_map_frame(bytes, &types, start, end, prefix_len)?
                 else {
                     continue;
                 };
@@ -991,7 +1012,7 @@ pub(crate) fn design_model_selection(
 
 fn parse_body_map_frame(
     bytes: &[u8],
-    meta: &crate::metastream::MetaStream,
+    types: &BodyMapTypes,
     start: usize,
     end: usize,
     prefix_len: usize,
@@ -1048,7 +1069,7 @@ fn parse_body_map_frame(
     let mut typed_name = None;
     for reference in local_reference_candidates(bytes, pairs_end, true) {
         if !reference_has_type(
-            meta,
+            types,
             &reference,
             crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
         ) {
@@ -1746,6 +1767,28 @@ mod tests {
     }
 
     #[test]
+    fn body_map_type_membership_unions_duplicate_rows_and_ascii_case() {
+        let mut meta = body_map_metadata();
+        let mut duplicate = meta.types[1].clone();
+        duplicate.type_guid = BREP_CONTAINER_TYPE_GUID
+            .to_ascii_lowercase()
+            .try_into()
+            .unwrap();
+        duplicate.entities = crate::records::identity::ReferenceRun::located(vec![
+            crate::records::identity::Located {
+                value: 701,
+                offset: 0,
+            },
+        ]);
+        meta.types.push(duplicate);
+        let types = super::BodyMapTypes::new(&meta);
+        for (entity, expected) in [(700, true), (701, true), (900, false), (702, false)] {
+            assert_eq!(types.has_type(entity, BREP_CONTAINER_TYPE_GUID), expected);
+        }
+        assert!(!types.has_type(700, BODY_PRESENTATION_TYPE_GUID));
+    }
+
+    #[test]
     fn snapshot_selection_classifies_each_archive_basename_once() {
         let archive = snapshot_selection_archive(
             &[("BREP.first.smb", 1), ("BREP.second.smb", 1)],
@@ -2007,10 +2050,15 @@ mod tests {
     fn both_empty_body_map_prefixes_have_no_pairs_or_brep_basename() {
         for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
             let bytes = body_map_bytes(prefix_len, 0, &[]);
-            let frame =
-                parse_body_map_frame(&bytes, &body_map_metadata(), 0, bytes.len(), prefix_len)
-                    .expect("empty body-map frame")
-                    .expect("supported empty body-map variant");
+            let frame = parse_body_map_frame(
+                &bytes,
+                &super::BodyMapTypes::new(&body_map_metadata()),
+                0,
+                bytes.len(),
+                prefix_len,
+            )
+            .expect("empty body-map frame")
+            .expect("supported empty body-map variant");
             assert!(frame.bindings.is_empty());
             assert!(body_bindings(&bytes, &body_map_metadata())
                 .expect("empty typed body map")

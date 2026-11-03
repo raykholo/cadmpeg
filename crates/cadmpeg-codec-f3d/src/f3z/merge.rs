@@ -307,11 +307,14 @@ impl MergeSession<'_, '_> {
     ) -> Result<usize, CodecError> {
         use cadmpeg_ir::products::PrototypeReference;
 
+        let designs = table.designs_by_path();
         let mut merged = 0usize;
         for placement in placements {
             let reference = placement.reference;
             let occurrence = placement.scope;
-            let label = xref::design_for(table, reference)
+            let label = designs
+                .get(reference.relative_path.as_str())
+                .copied()
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
                 });

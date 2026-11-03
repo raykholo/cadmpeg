@@ -509,14 +509,11 @@ pub(crate) fn metadata_for_bulk_stream(
     let prefix = bulk_entry_name
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
-    let Some(meta_entry) = scan
-        .entries
-        .iter()
-        .find(|entry| entry.name.strip_prefix(prefix) == Some("MetaStream.dat"))
-    else {
+    let name = format!("{prefix}MetaStream.dat");
+    if !scan.has_entry(&name) {
         return Ok(None);
-    };
-    scan.parsed_metastream(&meta_entry.name).map(Some)
+    }
+    scan.parsed_metastream(&name).map(Some)
 }
 
 /// One live Design record selected by the primary index and resolved through

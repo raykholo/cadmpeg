@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! F3Z manifest resolution and archive-member dialect classification.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeCheckpoint, DecodeContext};
 use cadmpeg_core::dialect::DialectLayers;
@@ -183,70 +183,85 @@ pub(super) fn classify_members<'a>(
         .map(|entry| entry.name.as_str())
         .filter(|name| crate::container::is_f3d_name(name))
     {
-        let checkpoint = ctx.checkpoint();
-        let arena = DecodeArena::new();
-        let root = if scan.has_entry(member_path) {
-            scan.member_view(&arena, member_path)
-        } else {
-            Err(CodecError::malformed(format_args!(
-                "f3z document member {member_path} is not readable"
-            )))
-        };
-        let classified = root.and_then(|view| {
-            ctx.with_arena(&arena, |local| {
-                let member_scan = crate::container::scan(local, view)?;
-                Ok(
-                    crate::dialect::classify_layers(&member_scan).map(|(layers, losses)| {
-                        let metadata = with_metadata
-                            .then(|| Box::new(member_metadata(&checkpoint, &arena, &member_scan)));
-                        (
-                            layers,
-                            losses,
-                            member_scan.declared_working_bytes(),
-                            metadata,
-                        )
-                    }),
-                )
-            })
-        });
-        let classified = match classified {
-            Ok(classified) => classified,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => {
-                let message = format!("{error}");
-                super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+        super::observer::classifying(member_path, |timing| {
+            let checkpoint = ctx.checkpoint();
+            let arena = DecodeArena::new();
+            let classified = {
+                let root = super::observer::timed(&mut timing.nested_scan, || {
+                    if scan.has_entry(member_path) {
+                        scan.member_view(&arena, member_path)
+                    } else {
+                        Err(CodecError::malformed(format_args!(
+                            "f3z document member {member_path} is not readable"
+                        )))
+                    }
+                });
+                root.and_then(|view| {
+                    ctx.with_arena(&arena, |local| {
+                        let member_scan = super::observer::timed(&mut timing.nested_scan, || {
+                            crate::container::scan(local, view)
+                        })?;
+                        Ok(super::observer::timed(&mut timing.layers, || {
+                            crate::dialect::classify_layers(&member_scan)
+                        })
+                        .map(|(layers, losses)| {
+                            let metadata = with_metadata.then(|| {
+                                super::observer::timed(&mut timing.metadata, || {
+                                    Box::new(member_metadata(&checkpoint, &arena, &member_scan))
+                                })
+                            });
+                            (
+                                layers,
+                                losses,
+                                member_scan.declared_working_bytes(),
+                                metadata,
+                            )
+                        }))
+                    })
+                })
+            };
+            let classified = match classified {
+                Ok(classified) => classified,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => {
+                    let message = format!("{error}");
+                    super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                         "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
                     ));
-                members.insert(
-                    member_path.to_owned(),
-                    ClassifiedMember::Unreadable(message),
-                );
-                continue;
+                    members.insert(
+                        member_path.to_owned(),
+                        ClassifiedMember::Unreadable(message),
+                    );
+                    return Ok(());
+                }
+            };
+            let (member_layers, mut member_losses, working_bytes, metadata) = classified?;
+            if let Some(metadata) = &metadata {
+                let facts = u64_from_index(metadata.references.len() + 1);
+                ctx.charge_entities(facts, "cache F3Z member metadata")?;
             }
-        };
-        let (member_layers, mut member_losses, working_bytes, metadata) = classified?;
-        if let Some(metadata) = &metadata {
-            let facts = u64_from_index(metadata.references.len() + 1);
-            ctx.charge_entities(facts, "cache F3Z member metadata")?;
-        }
-        for loss in &mut member_losses {
-            loss.message = format!("archive member {member_path}: {}", loss.message);
-        }
-        losses.append(&mut member_losses);
-        losses.extend(merge_member_layers(
-            &mut layers,
-            &member_layers,
-            member_path,
-        ));
+            super::observer::timed(&mut timing.layers, || {
+                for loss in &mut member_losses {
+                    loss.message = format!("archive member {member_path}: {}", loss.message);
+                }
+                losses.append(&mut member_losses);
+                losses.extend(merge_member_layers(
+                    &mut layers,
+                    &member_layers,
+                    member_path,
+                ));
+            });
 
-        members.insert(
-            member_path.to_owned(),
-            ClassifiedMember::Scanned {
-                checkpoint,
-                working_bytes,
-                metadata,
-            },
-        );
+            members.insert(
+                member_path.to_owned(),
+                ClassifiedMember::Scanned {
+                    checkpoint,
+                    working_bytes,
+                    metadata,
+                },
+            );
+            Ok(())
+        })?;
     }
     losses.extend(crate::dialect::dialect_losses(&layers));
     crate::report::header_losses(scan, &mut losses)?;
@@ -317,23 +332,20 @@ fn model_root_member(
         })?;
     let mut candidates = Vec::new();
     for graph in description.design_description.design_graphs {
-        let mut root = None;
-        for object in &graph.design_objects {
-            let mut is_root = false;
-            for id in &graph.root_ids {
-                if *id == object.id {
-                    is_root = true;
-                    break;
-                }
-            }
-            if is_root && object.relative_path == archive_root {
-                root = Some(object);
-                break;
-            }
-        }
+        let root_ids = graph.root_ids.iter().copied().collect::<HashSet<_>>();
+        let root = graph
+            .design_objects
+            .iter()
+            .find(|object| root_ids.contains(&object.id) && object.relative_path == archive_root);
         let Some(root) = root else {
             continue;
         };
+        let derived_ids = root
+            .references
+            .iter()
+            .filter(|reference| reference.reference_type == "DERIVED")
+            .flat_map(|reference| reference.ids.iter().copied())
+            .collect::<HashSet<_>>();
         for object in &graph.design_objects {
             if !object.content_type.eq_ignore_ascii_case("f3d")
                 || !crate::container::is_f3d_name(&object.relative_path)
@@ -341,23 +353,7 @@ fn model_root_member(
             {
                 continue;
             }
-            let mut derived = false;
-            for reference in root
-                .references
-                .iter()
-                .filter(|reference| reference.reference_type == "DERIVED")
-            {
-                for id in &reference.ids {
-                    if *id == object.id {
-                        derived = true;
-                        break;
-                    }
-                }
-                if derived {
-                    break;
-                }
-            }
-            if derived {
+            if derived_ids.contains(&object.id) {
                 candidates.push(object.relative_path.clone());
             }
         }
@@ -401,6 +397,33 @@ mod tests {
                 assert_eq!(limit.operation, "parse F3Z manifest JSON");
                 assert_eq!(Some(limit), ctx.resource_refusal());
             });
+        });
+    }
+    #[test]
+    fn drawing_root_repeated_ids_keep_one_derived_model() {
+        use std::io::{Cursor, Write};
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[11,11],"designObjects":[{"id":11,"relativePath":"drawing.f2d","contentType":"f2d","references":[{"type":"DERIVED","ids":[22,22]}]},{"id":22,"relativePath":"selected.f3d","contentType":"f3d","references":[]},{"id":33,"relativePath":"other.f3d","contentType":"f3d","references":[]}]}]}}"#;
+        for (name, bytes) in [
+            ("Manifest.json", br#"{"root":"drawing.f2d"}"#.as_slice()),
+            ("DesignDescription.json", description.as_slice()),
+            ("drawing.f2d", b"drawing".as_slice()),
+            ("selected.f3d", b"selected".as_slice()),
+            ("other.f3d", b"other".as_slice()),
+        ] {
+            zip.start_file(name, stored).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        let bytes = zip.finish().unwrap().into_inner();
+        crate::test_support::with_decode_context(|ctx| {
+            let scan =
+                crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                    .unwrap();
+            assert_eq!(
+                super::model_root(ctx, &scan).unwrap(),
+                ("selected.f3d".to_owned(), Some("drawing.f2d".to_owned()))
+            );
         });
     }
 }

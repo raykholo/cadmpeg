@@ -4269,9 +4269,10 @@ fn apply_assembly_classification(
             table.references.len()
         ),
     );
+    let designs = table.designs_by_path();
     for reference in &table.references {
         let property_note = XrefPropertyNote(reference);
-        match crate::xref::design_for(table, reference) {
+        match designs.get(reference.relative_path.as_str()).copied() {
             Some(design) => report.notes.push(format!(
                 "xref {}: {} -> {} (lineage {}, version {}, {})",
                 reference.ordinal,

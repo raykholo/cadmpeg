@@ -12,7 +12,7 @@ pub(crate) mod operation_pose;
 
 use cadmpeg_core::container::ContainerRole;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::Deserialize;
 
@@ -449,16 +449,17 @@ pub(crate) fn is_assembly(
     Ok(docstruct(ctx, scan)?.is_some_and(|docstruct| docstruct.doc_type == "assembly-design"))
 }
 
-/// The lineage/version design entry for one reference: the entry whose
-/// `target_file_name` equals the reference's `relative_path`.
-pub(crate) fn design_for<'a>(
-    table: &'a XrefTable,
-    reference: &XrefReference,
-) -> Option<&'a XrefDesign> {
-    table
-        .designs
-        .iter()
-        .find(|design| design.target_file_name == reference.relative_path)
+impl XrefTable {
+    /// The first design for each exact target path.
+    pub(crate) fn designs_by_path(&self) -> HashMap<&str, &XrefDesign> {
+        let mut designs = HashMap::new();
+        for design in &self.designs {
+            designs
+                .entry(design.target_file_name.as_str())
+                .or_insert(design);
+        }
+        designs
+    }
 }
 
 /// External product structure projected into local component instance paths.
@@ -763,22 +764,17 @@ fn bind_occurrences(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let meta_entry = entry
+        let meta_name = entry
             .name
             .strip_suffix("BulkStream.dat")
-            .and_then(|prefix| {
-                scan.entries
-                    .iter()
-                    .find(|candidate| candidate.name.strip_prefix(prefix) == Some("MetaStream.dat"))
-            });
-        let (serializer_magic, headers, carriers) = if let Some(meta_entry) = meta_entry {
-            let meta = scan.parsed_metastream(&meta_entry.name)?;
-            let meta_bytes = scan.entry_bytes(&meta_entry.name)?;
+            .map(|prefix| format!("{prefix}MetaStream.dat"));
+        let metadata = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?;
+        let (serializer_magic, headers, carriers) = if let Some(meta) = metadata {
+            let meta_name = meta_name
+                .ok_or_else(|| CodecError::malformed("Design stream has no BulkStream suffix"))?;
+            let meta_bytes = scan.entry_bytes(&meta_name)?;
             (
-                Some(crate::metastream::serializer_magic(
-                    meta_bytes,
-                    &meta_entry.name,
-                )?),
+                Some(crate::metastream::serializer_magic(meta_bytes, &meta_name)?),
                 typed_occurrence_placement_records(bytes, &meta)?,
                 typed_records(bytes, &meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?,
             )
@@ -811,6 +807,26 @@ fn bind_occurrences(
             (poses, contained, owned),
         ));
     }
+    let placements_by_role = streams
+        .iter()
+        .map(|(placements, _, _, _)| placement_indices_by_role(placements))
+        .collect::<Vec<_>>();
+    let pose_indices = streams
+        .iter()
+        .map(|(_, _, _, (poses, contained, owned))| {
+            (
+                index_by_key(poses, |pose| {
+                    (pose.placement_record_index, pose.role.as_str())
+                }),
+                index_by_key(contained, |pose| {
+                    (pose.placement_record_index, pose.role.as_str())
+                }),
+                index_by_key(owned, |pose| {
+                    (pose.placement_record_index, pose.role.as_str())
+                }),
+            )
+        })
+        .collect::<Vec<_>>();
     let mut expanded = Vec::new();
     let placement_failures = streams
         .iter()
@@ -837,7 +853,14 @@ fn bind_occurrences(
     let mut ambiguous_current_poses = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
-        for (placements, _, stream, (poses, contained, owned)) in &streams {
+        for (stream_index, (placements, _, stream, _)) in streams.iter().enumerate() {
+            let (poses, contained, owned) = &pose_indices[stream_index];
+            let matching = placements_by_role[stream_index]
+                .get(reference.neutron_role.as_str())
+                .into_iter()
+                .flatten()
+                .map(|&index| &placements[index])
+                .collect::<Vec<_>>();
             let direct = select_component_insert_transforms(
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
@@ -847,19 +870,36 @@ fn bind_occurrences(
                 stream,
                 &reference.neutron_role,
             );
-            let structured_count =
-                superseded_placement_count(&direct, placements, &reference.neutron_role);
+            let structured_count = superseded_placement_count(
+                &direct,
+                matching.iter().copied(),
+                &reference.neutron_role,
+            );
             if !direct.is_empty() && structured_count != 0 {
                 placement_overrides.push(PlacementOverride {
                     ordinal: reference.ordinal,
                     count: structured_count,
                 });
             }
-            let selected =
-                occurrence_transforms_with_precedence(direct, placements, &reference.neutron_role);
+            let selected = occurrence_transforms_with_precedence(
+                direct,
+                matching.iter().copied(),
+                &reference.neutron_role,
+            );
 
             for placement in selected {
-                let pose = match current_pose(poses, &placement, &reference.neutron_role) {
+                let pose = match current_pose(
+                    poses
+                        .get(&(
+                            placement.carrier_record_index,
+                            reference.neutron_role.as_str(),
+                        ))
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                    &placement,
+                    &reference.neutron_role,
+                ) {
                     CurrentPose::One(pose) => Some(pose),
                     CurrentPose::None => None,
                     CurrentPose::Ambiguous(carriers) => {
@@ -868,11 +908,13 @@ fn bind_occurrences(
                     }
                 };
                 let contained = contained
-                    .iter()
-                    .filter(|pose| {
-                        pose.placement_record_index == placement.carrier_record_index
-                            && pose.role == reference.neutron_role.as_str()
-                    })
+                    .get(&(
+                        placement.carrier_record_index,
+                        reference.neutron_role.as_str(),
+                    ))
+                    .into_iter()
+                    .flatten()
+                    .copied()
                     .filter_map(|pose| {
                         Some(crate::records::xref::XrefContainedPose {
                             carrier_record_index: pose.carrier_record_index,
@@ -888,11 +930,13 @@ fn bind_occurrences(
                     })
                     .collect::<Vec<_>>();
                 let owned = owned
-                    .iter()
-                    .filter(|pose| {
-                        pose.placement_record_index == placement.carrier_record_index
-                            && pose.role == reference.neutron_role.as_str()
-                    })
+                    .get(&(
+                        placement.carrier_record_index,
+                        reference.neutron_role.as_str(),
+                    ))
+                    .into_iter()
+                    .flatten()
+                    .copied()
                     .filter_map(|pose| {
                         Some(crate::records::xref::XrefOwnedPose {
                             carrier_record_index: pose.carrier_record_index,
@@ -952,6 +996,30 @@ fn bind_occurrences(
     Ok(())
 }
 
+fn placement_indices_by_role(placements: &[OccurrencePlacement]) -> HashMap<&str, Vec<usize>> {
+    let mut roles = HashMap::<&str, Vec<usize>>::new();
+    for (index, placement) in placements.iter().enumerate() {
+        for role in &placement.link_names {
+            let placements = roles.entry(role).or_default();
+            if placements.last() != Some(&index) {
+                placements.push(index);
+            }
+        }
+    }
+    roles
+}
+
+fn index_by_key<'a, T>(
+    values: &'a [T],
+    key: impl Fn(&'a T) -> (u64, &'a str),
+) -> HashMap<(u64, &'a str), Vec<&'a T>> {
+    let mut index = HashMap::<_, Vec<_>>::new();
+    for value in values {
+        index.entry(key(value)).or_default().push(value);
+    }
+    index
+}
+
 /// The component-path carriers that name one placement.
 enum CurrentPose {
     None,
@@ -962,13 +1030,13 @@ enum CurrentPose {
 
 /// The current pose of one placement: the unique component-path carrier in the
 /// same Design stream whose path names this placement record and role.
-fn current_pose(
-    poses: &[ComponentPathPose],
+fn current_pose<'a>(
+    poses: impl IntoIterator<Item = &'a ComponentPathPose>,
     placement: &OccurrencePlacement,
     role: &str,
 ) -> CurrentPose {
     let matching = poses
-        .iter()
+        .into_iter()
         .filter(|pose| {
             pose.placement_record_index == placement.carrier_record_index && pose.role == role
         })
@@ -1023,15 +1091,15 @@ where
 }
 
 /// Apply a scope transform once to its carrier and keep the other placements.
-fn occurrence_transforms_with_precedence(
+fn occurrence_transforms_with_precedence<'a>(
     direct: Vec<(u64, [[f64; 4]; 4])>,
-    placements: &[OccurrencePlacement],
+    placements: impl IntoIterator<Item = &'a OccurrencePlacement>,
     role: &str,
 ) -> Vec<OccurrencePlacement> {
     let mut selected = Vec::new();
     let mut overridden = HashSet::new();
     for placement in placements
-        .iter()
+        .into_iter()
         .filter(|placement| placement.link_names.iter().any(|name| name == role))
     {
         let mut placement = placement.clone();
@@ -1062,13 +1130,13 @@ fn occurrence_transforms_with_precedence(
 }
 
 /// Count placements whose carrier also has a scope-bound transform.
-fn superseded_placement_count(
+fn superseded_placement_count<'a>(
     direct: &[(u64, [[f64; 4]; 4])],
-    placements: &[OccurrencePlacement],
+    placements: impl IntoIterator<Item = &'a OccurrencePlacement>,
     role: &str,
 ) -> usize {
     placements
-        .iter()
+        .into_iter()
         .filter(|placement| {
             placement.link_names.iter().any(|name| name == role)
                 && direct

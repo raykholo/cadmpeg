@@ -656,3 +656,37 @@ fn nested_archive_members_keep_distinct_address_spaces() {
 }
 
 mod compression;
+
+#[test]
+fn shared_directory_prefixes_keep_counts_and_candidate_bounds() {
+    let bytes = archive_bytes();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let snapshot = ArchiveSnapshot::new(&ctx, root).unwrap();
+    let start = snapshot.central_start;
+    let end = cadmpeg_core::decode::u64_from_index(bytes.len() - crate::layout::end_record::LEN);
+    let mut search = super::DirectorySearch {
+        zip64_records: super::probe::Zip64Records::new(Default::default()),
+        central_headers: None,
+        central_run: Default::default(),
+    };
+    let first = search.central_end(&bytes, start, 1, end).unwrap();
+    assert_eq!(search.central_end(&bytes, start, 3, end).unwrap(), end);
+    assert_eq!(search.central_end(&bytes, start, 1, first).unwrap(), first);
+    let error = search.central_end(&bytes, start, 3, end - 1).unwrap_err();
+    assert!(
+        matches!(error, CodecError::Malformed(message) if message == "ZIP central record exceeds directory")
+    );
+    let error = search.central_end(&bytes, start, 4, end).unwrap_err();
+    assert!(
+        matches!(error, CodecError::Malformed(message) if message == "ZIP central header is absent")
+    );
+    assert_eq!(search.central_run.ends.len(), 3);
+    assert_eq!(search.central_end(&bytes, start, 0, 0).unwrap(), start);
+    let second = snapshot.entries[1].central_start;
+    assert_eq!(search.central_end(&bytes, second, 2, end).unwrap(), end);
+    assert_eq!(search.central_run.ends.len(), 2);
+    assert_eq!(search.central_end(&bytes, start, 3, end).unwrap(), end);
+    assert_eq!(search.central_run.ends.len(), 3);
+}
