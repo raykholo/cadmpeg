@@ -565,6 +565,32 @@ fn a_mirror_plane_stays_unresolved_when_the_table_cannot_rule_out_an_origin() {
 }
 
 #[test]
+fn a_mirror_plane_stays_unresolved_on_a_member_missing_from_a_partial_run() {
+    let meta = "f3d:Design/MetaStream.dat";
+    let mut types = crate::test_support::origin_types::origin_design_types(meta, 39);
+    types.extend(crate::test_support::origin_types::origin_design_types(
+        meta, 900,
+    ));
+    types.pop();
+    assert_eq!(bound_mirror_plane_with(903, None, 903, &types), None);
+    assert!(bound_mirror_plane_with(10, None, 10, &types).is_some());
+}
+
+#[test]
+fn a_mirror_plane_stays_unresolved_on_a_conflicting_registration_in_both_row_orders() {
+    let meta = "f3d:Design/MetaStream.dat";
+    let origin = crate::test_support::origin_types::origin_design_types(meta, 39);
+    let other = crate::test_support::origin_types::other_type_row(meta, 42);
+    let mut first = vec![other.clone()];
+    first.extend(origin.iter().cloned());
+    let mut last = origin;
+    last.push(other);
+    for types in [first, last] {
+        assert_eq!(bound_mirror_plane_with(42, None, 42, &types), None);
+    }
+}
+
+#[test]
 fn an_origin_axis_identity_does_not_resolve_a_mirror_plane_through_history() {
     let origin =
         crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 39);
