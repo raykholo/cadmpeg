@@ -3642,7 +3642,23 @@ fn resolve_profile_curve_arrangement_regions(
                 scoped.ctx,
             )?
             else {
-                return Ok(None);
+                let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
+                    source,
+                    resolution.sketch_entities,
+                    program,
+                    scoped.linear_tolerance,
+                    scoped.profile_work,
+                    scoped.ctx,
+                )?
+                else {
+                    return Ok(None);
+                };
+                for region in split {
+                    if !regions.contains(&region) {
+                        regions.push(region);
+                    }
+                }
+                continue;
             };
             if !regions.contains(&region) {
                 regions.push(region);
