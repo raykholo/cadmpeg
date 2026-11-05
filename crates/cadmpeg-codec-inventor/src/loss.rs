@@ -58,6 +58,9 @@ pub(crate) enum InventorLossCode {
     /// A distance dimension measured to an axis line stores twice the distance
     /// between its operands; the dimension stays native.
     SketchAxisDistanceNative,
+    /// A construction line stores a carrier that its endpoints do not lie on;
+    /// the line stays native.
+    SketchConstructionCarrierConflict,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
     /// A sketch entity retains unresolved curve construction operands.
@@ -262,6 +265,7 @@ impl InventorLossCode {
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
+        Self::SketchConstructionCarrierConflict,
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
@@ -374,6 +378,7 @@ impl InventorLossCode {
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
+            Self::SketchConstructionCarrierConflict => "sketch.construction-carrier-conflict",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
@@ -562,6 +567,7 @@ impl InventorLossCode {
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
+            | Self::SketchConstructionCarrierConflict
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
