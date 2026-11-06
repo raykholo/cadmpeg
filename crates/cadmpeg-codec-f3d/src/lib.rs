@@ -263,3 +263,59 @@ mod golden_tests;
 mod integration_tests;
 #[cfg(test)]
 mod test_support;
+
+/// TEMPORARY measurement hook.
+pub fn measure_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    width: cadmpeg_asm::kernel_header::RefWidth,
+) -> String {
+    use crate::history as h;
+    let mut allowance = u64::MAX;
+    let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
+    let history = match h::decode(ctx, bytes, "m", width, &mut allowance, &work) {
+        Ok(Some(history)) => history,
+        Ok(None) => return "history=none".into(),
+        Err(e) => return format!("history=err({e})"),
+    };
+    let states = history.states();
+    let n = states.len();
+    let archive = match h::decode_record_archive(ctx, states, bytes, width) {
+        Ok(Some(a)) => a,
+        Ok(None) => return format!("states={n} archive=none"),
+        Err(e) => return format!("states={n} archive=err({e})"),
+    };
+    let active = match h::archived_active_record_count(states) {
+        Ok(Some(c)) => c,
+        _ => match h::insert_only_active_record_count(states) {
+            Some(c) => c,
+            None => return format!("states={n} active_count=none"),
+        },
+    };
+    let mut archived_ids: Vec<_> = states
+        .iter()
+        .flat_map(|s| &s.records)
+        .filter_map(|r| r.revision_id)
+        .collect();
+    archived_ids.sort_unstable();
+    let (mut visited, mut closed, mut first_bodies, mut last_bodies) = (0usize, 0usize, 0usize, None);
+    let complete = h::walk_entity_versions(states, active as i64, &archived_ids, |_, versions| {
+        visited += 1;
+        let table = cadmpeg_asm::history::materialize_record_table(versions, |r| archive.get(&r));
+        if let Some(t) = table {
+            closed += 1;
+            let bodies = t.iter().filter(|r| r.name == "body").count();
+            if visited == 1 {
+                first_bodies = bodies;
+            }
+            last_bodies = Some(bodies);
+        } else {
+            last_bodies = None;
+        }
+    });
+    format!(
+        "states={n} complete={complete} visited={visited} closed={closed} earliest_closed={} earliest_bodies={} head_bodies={first_bodies}",
+        last_bodies.is_some(),
+        last_bodies.map_or(-1, |b| b as i64)
+    )
+}

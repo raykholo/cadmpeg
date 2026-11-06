@@ -124,6 +124,9 @@ pub(crate) fn decode_kernel_carrier(
             ))
         })
     })?;
+    if std::env::var_os("CADMPEG_HIST").is_some() {
+        eprintln!("HIST family={} {}", carrier.family.label(), cadmpeg_codec_f3d::measure_carrier(ctx, bytes, width));
+    }
     let stream = format!(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
