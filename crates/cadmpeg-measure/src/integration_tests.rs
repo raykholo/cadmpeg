@@ -11,6 +11,7 @@ mod cube;
 mod cylinders;
 mod declared;
 mod findings;
+mod history_bodies;
 mod mass;
 mod nurbs;
 mod occurrences;

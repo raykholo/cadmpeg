@@ -417,6 +417,7 @@ fn blank(source_index: u32) -> FeatureHistoryState {
         state_after: None,
         state_before: None,
         body_key: None,
+        history_body: None,
         binding: Binding::Bound,
     }
 }
@@ -651,7 +652,7 @@ fn the_join_resolves_split_and_base_body_keys_through_their_links() {
     let carrier = ActiveCarrierRecord::NotApplicable {
         id: "fixture".to_owned(),
     };
-    assert!(validate(&records, &features, &carrier)
+    assert!(validate(&records, &features, &carrier, &[])
         .iter()
         .all(|finding| finding.contains("active carrier")));
 
@@ -703,10 +704,10 @@ fn a_validated_arena_refuses_a_forged_record() {
         detail: "none".to_owned(),
     };
     let records = join(&index(), &inputs);
-    let ok: Vec<_> = validate(&records, &features, &carrier);
+    let ok: Vec<_> = validate(&records, &features, &carrier, &[]);
     assert_eq!(ok.len(), 1, "{ok:?}");
     let selected = |records: &[FeatureHistoryState]| {
-        validate(records, &features, &carrier)
+        validate(records, &features, &carrier, &[])
             .into_iter()
             .filter(|finding| !finding.contains("active carrier"))
             .collect::<Vec<_>>()
