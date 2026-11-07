@@ -3682,6 +3682,7 @@ fn resolve_profile_curve_arrangement_regions(
     };
     let mut regions = Vec::new();
     let mut assumed = false;
+    let mut pieces = None;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3697,49 +3698,73 @@ fn resolve_profile_curve_arrangement_regions(
             return Ok(None);
         }
         for loops in selection.regions() {
-            let [loop_] = loops.as_slice() else {
+            let Some(end) = loops
+                .iter()
+                .try_fold(cursor, |end, loop_| end.checked_add(loop_.entries.len()))
+            else {
                 return Ok(None);
             };
-            if !loop_.outer {
-                return Ok(None);
-            }
-            let Some(end) = cursor.checked_add(loop_.entries.len()) else {
-                return Ok(None);
-            };
-            let Some(program) = curves.get(cursor..end) else {
+            let Some(region_curves) = curves.get(cursor..end) else {
                 return Ok(None);
             };
             cursor = end;
-            let Some(region) = crate::design::geometry::arrangement_region_matching_curve_program(
+            let single_exterior = matches!(loops.as_slice(), [loop_] if loop_.outer);
+            if single_exterior {
+                if let Some(region) =
+                    crate::design::geometry::arrangement_region_matching_curve_program(
+                        source,
+                        resolution.sketch_entities,
+                        region_curves,
+                        scoped.linear_tolerance,
+                        scoped.profile_work,
+                        scoped.ctx,
+                    )?
+                {
+                    if !regions.contains(&region) {
+                        regions.push(region);
+                    }
+                    continue;
+                }
+            }
+            if pieces.is_none() {
+                pieces = Some(crate::design::geometry::pieces::PieceArrangement::new(
+                    source,
+                    resolution.sketch_entities,
+                    scoped.linear_tolerance,
+                    scoped.profile_work,
+                    scoped.ctx,
+                )?);
+            }
+            if let Some(region) = pieces
+                .as_ref()
+                .and_then(Option::as_ref)
+                .zip(stored_piece_loops(loops, region_curves))
+                .and_then(|(arrangement, stored)| arrangement.region(&stored))
+            {
+                if !regions.contains(&region) {
+                    regions.push(region);
+                }
+                continue;
+            }
+            if !single_exterior {
+                return Ok(None);
+            }
+            let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
                 source,
                 resolution.sketch_entities,
-                program,
+                region_curves,
                 scoped.linear_tolerance,
                 scoped.profile_work,
                 scoped.ctx,
             )?
             else {
-                let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
-                    source,
-                    resolution.sketch_entities,
-                    program,
-                    scoped.linear_tolerance,
-                    scoped.profile_work,
-                    scoped.ctx,
-                )?
-                else {
-                    return Ok(None);
-                };
-                assumed = true;
-                for region in split {
-                    if !regions.contains(&region) {
-                        regions.push(region);
-                    }
-                }
-                continue;
+                return Ok(None);
             };
-            if !regions.contains(&region) {
-                regions.push(region);
+            assumed = true;
+            for region in split {
+                if !regions.contains(&region) {
+                    regions.push(region);
+                }
             }
         }
     }
@@ -3753,6 +3778,39 @@ fn resolve_profile_curve_arrangement_regions(
         scoped.profile_work.note_crossing_loop_assumed();
     }
     Ok(profile)
+}
+
+/// The stored piece loops of one region, with the curve of every entry.
+/// `None` when an entry has a traversal flag other than 0 or 1 or an
+/// ordinal outside its piece count.
+fn stored_piece_loops(
+    loops: &[crate::records::topology::entity_selection::DesignProfileCurveLoop],
+    curves: &[cadmpeg_ir::sketches::SketchEntityId],
+) -> Option<Vec<crate::design::geometry::pieces::StoredLoop>> {
+    use crate::design::geometry::pieces::{StoredLoop, StoredPiece};
+
+    let mut curves = curves.iter();
+    let mut stored = Vec::new();
+    for loop_ in loops {
+        let mut pieces = Vec::new();
+        for entry in &loop_.entries {
+            let [direction, piece, count] = entry.entry_fields;
+            if direction > 1 || piece == 0 || piece > count {
+                return None;
+            }
+            pieces.push(StoredPiece {
+                curve: curves.next()?.clone(),
+                piece,
+                pieces: count,
+                reversed: direction == 1,
+            });
+        }
+        stored.push(StoredLoop {
+            outer: loop_.outer,
+            pieces,
+        });
+    }
+    Some(stored)
 }
 
 fn resolve_profile_curve_path(

@@ -2,6 +2,7 @@
 
 mod cast_limits;
 mod profile_program;
+mod stored_pieces;
 
 use super::analytic_segment_intersections;
 use super::angle_strictly_inside_arc;

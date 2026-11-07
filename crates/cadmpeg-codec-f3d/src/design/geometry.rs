@@ -221,6 +221,31 @@ struct SketchArrangementFace {
     /// face. The face walk gives no hole rings, so the face alone is not the
     /// region it bounds.
     encloses_island: bool,
+    /// Root node of the connected part the face walk belongs to.
+    component: usize,
+    /// Root node and position of every other connected part that lies inside
+    /// the face.
+    islands: Vec<(usize, Point2)>,
+}
+
+/// One piece of a curve between consecutive arrangement nodes, before the
+/// retention walk removes pieces that bound no cycle.
+#[derive(Clone)]
+struct SketchArrangementPiece {
+    entity: cadmpeg_ir::sketches::SketchEntityId,
+    /// Parameter endpoints in ascending order.
+    range: [f64; 2],
+    /// Arrangement nodes at the lower and the upper parameter endpoint.
+    nodes: [usize; 2],
+    /// Entities of coincident edges merged into this piece.
+    coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
+}
+
+/// The bounded faces of a sketch arrangement together with every curve piece
+/// that took part in it.
+struct SketchArrangement {
+    faces: Vec<SketchArrangementFace>,
+    pieces: Vec<SketchArrangementPiece>,
 }
 
 pub(super) fn arrangement_region_containing_points(
@@ -486,6 +511,31 @@ pub(super) fn atomic_sketch_regions(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<AtomicSketchRegion>>, CodecError> {
+    let Some(arrangement) = all_curve_arrangement(sketch, entities, tolerance, work, ctx)? else {
+        return Ok(None);
+    };
+    Ok(Some(
+        arrangement
+            .faces
+            .into_iter()
+            .map(|face| AtomicSketchRegion {
+                boundary: face.boundary,
+                polyline: face.polyline,
+                encloses_island: face.encloses_island,
+            })
+            .collect(),
+    ))
+}
+
+/// The arrangement of every non-construction curve of `sketch`, profiled or
+/// not, split at every crossing.
+fn all_curve_arrangement(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<SketchArrangement>, CodecError> {
     let segments = entities
         .iter()
         .filter(|entity| entity.sketch == sketch.id && !entity.construction)
@@ -522,19 +572,7 @@ pub(super) fn atomic_sketch_regions(
             }
         }
     }
-    let faces = geometric!(sketch_arrangement_faces_with_nodes(
-        sketch, entities, tolerance, work, ctx, nodes, true
-    )?);
-    Ok(Some(
-        faces
-            .into_iter()
-            .map(|face| AtomicSketchRegion {
-                boundary: face.boundary,
-                polyline: face.polyline,
-                encloses_island: face.encloses_island,
-            })
-            .collect(),
-    ))
+    sketch_arrangement_with_nodes(sketch, entities, tolerance, work, ctx, nodes, true)
 }
 
 /// Most atomic regions whose boundaries lie in one stored loop that the
@@ -660,9 +698,24 @@ fn sketch_arrangement_faces_with_nodes(
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-    mut nodes: Vec<Point2>,
+    nodes: Vec<Point2>,
     all_curves: bool,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
+    Ok(
+        sketch_arrangement_with_nodes(sketch, entities, tolerance, work, ctx, nodes, all_curves)?
+            .map(|arrangement| arrangement.faces),
+    )
+}
+
+fn sketch_arrangement_with_nodes(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+    mut nodes: Vec<Point2>,
+    all_curves: bool,
+) -> Result<Option<SketchArrangement>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
@@ -832,6 +885,28 @@ fn sketch_arrangement_faces_with_nodes(
         }
         edges.push(edge);
     }
+    let pieces = edges
+        .iter()
+        .map(|edge| {
+            let [first, second] = edge.boundary.parameter_range.endpoints();
+            let nodes = if edge.boundary.reversed {
+                [edge.nodes[1], edge.nodes[0]]
+            } else {
+                edge.nodes
+            };
+            let (range, nodes) = if first <= second {
+                ([first, second], nodes)
+            } else {
+                ([second, first], [nodes[1], nodes[0]])
+            };
+            SketchArrangementPiece {
+                entity: edge.boundary.entity.clone(),
+                range,
+                nodes,
+                coincident: edge.coincident.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), &work.arrangement, ctx)?;
     if work.arrangement.exhausted() {
         work.arrangement_skipped.set(true);
@@ -1018,20 +1093,24 @@ fn sketch_arrangement_faces_with_nodes(
                 // Proven-disjoint components lie wholly inside or outside
                 // the face, so one node of each decides.
                 let own = component[edges[edge_index].nodes[0]];
-                let encloses_island = component_roots
+                let islands = component_roots
                     .iter()
-                    .any(|root| *root != own && point_in_polygon(nodes[*root], &polyline));
+                    .filter(|root| **root != own && point_in_polygon(nodes[**root], &polyline))
+                    .map(|root| (*root, nodes[*root]))
+                    .collect::<Vec<_>>();
                 faces.push(SketchArrangementFace {
                     boundary,
                     fragments,
                     coincident,
                     polyline,
-                    encloses_island,
+                    encloses_island: !islands.is_empty(),
+                    component: own,
+                    islands,
                 });
             }
         }
     }
-    Ok((!faces.is_empty()).then_some(faces))
+    Ok((!faces.is_empty()).then_some(SketchArrangement { faces, pieces }))
 }
 
 fn arrangement_edges_meet_only_at_nodes(
@@ -4561,6 +4640,8 @@ fn union_endpoint_nodes(parents: &mut [usize], first: usize, second: usize) {
         parents[second] = first;
     }
 }
+
+pub(in crate::design) mod pieces;
 
 #[cfg(test)]
 mod tests;
