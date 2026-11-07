@@ -546,6 +546,7 @@ pub(super) fn inventory(
             if let Ok(source) = historical::source(record.payload, version) {
                 *selector_sources.entry(source).or_default() += 1;
             }
+            if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG sel {}", historical::diagnose(ctx, record.payload, version)); }
             let stored = match historical::parse(ctx, record.payload, version) {
                 Ok(stored) => stored,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),

@@ -95,6 +95,40 @@ pub(super) fn parse(
     }))
 }
 
+pub(super) fn diagnose(ctx: &DecodeContext<'_>, payload: View<'_>, version: u8) -> String {
+    let mut c = Cursor::new(payload);
+    let h = match state_content_header(&mut c, version) {
+        Ok(h) => h,
+        Err(e) => return format!("header-err {e}"),
+    };
+    let mut out = format!("src={} v={}", h.source_index, version);
+    macro_rules! t { ($e:expr, $n:expr) => { match $e { Ok(v) => v, Err(e) => { out.push_str(&format!(" ERR@{} {}", $n, e)); return out; } } } }
+    let st = t!(c.i32("s"), "state");
+    let en = t!(c.u8("e"), "enabled");
+    let fm = t!(c.u8("f"), "form");
+    out.push_str(&format!(" st={st} en={en} fm={fm}"));
+    let _b = t!(c.reference("b"), "body");
+    let topo = t!(c.u32("t"), "topo");
+    out.push_str(&format!(" topo={topo}"));
+    if super::selector_has_qualifier(version) {
+        let q = t!(c.u32("q"), "qual");
+        out.push_str(&format!(" qual={q}"));
+    }
+    let nf = t!(c.u32("n"), "naming");
+    out.push_str(&format!(" nf={nf}"));
+    let g = t!(u32_list_with_context(ctx, &mut c, 8, "g"), "gens");
+    let sc = t!(u32_list_with_context(ctx, &mut c, 8, "s"), "sec");
+    out.push_str(&format!(" gens={:?} sec={:?}", g.values(), sc.values()));
+    let sfx = t!(c.u8("x"), "suffix");
+    out.push_str(&format!(" sfx={sfx}"));
+    let _i = t!(c.reference("i"), "item");
+    let _x = t!(c.reference("x"), "ctx");
+    let k = t!(c.u32("k"), "key");
+    out.push_str(&format!(" key={k}"));
+    if let Err(e) = c.finish("fin") { out.push_str(&format!(" FINISH-ERR {e}")); }
+    out
+}
+
 /// Whether every secondary name of the selector is a feature source index of its segment.
 pub(super) fn secondary_names_known(selector: &StoredSelector, features: &HashSet<u32>) -> bool {
     selector
@@ -170,6 +204,7 @@ pub(super) fn selected(
             continue;
         };
         let Some(owners) = matches.get(&(selector.source, selector.key)) else {
+            if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG join src={} gens={:?} NOMATCH", selector.source, selector.generators); }
             continue;
         };
         let Some(owner) = owners.iter().min().copied() else {
@@ -200,8 +235,10 @@ pub(super) fn selected(
             }
         }
         let Some(geometry) = geometry.filter(|_| agree) else {
+            if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG join src={} gens={:?} owners={} NOGEOM-or-DISAGREE", selector.source, selector.generators, owners.len()); }
             continue;
         };
+        if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG join src={} gens={:?} owners={} OK", selector.source, selector.generators, owners.len()); }
         let Some(item) = selector.item.record_ordinal() else {
             continue;
         };
@@ -345,6 +382,7 @@ pub(crate) fn project(
                 .as_ref()
                 .copied()
         }) {
+            if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG feat {} CONTROLS-FAIL", feature.id.as_str()); }
             continue;
         }
         let state = state_id(source)?;
@@ -366,6 +404,7 @@ pub(crate) fn project(
                     .as_ref()
                     .copied()
             }) else {
+                if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG feat {} COLLECTION-SHAPE", feature.id.as_str()); }
                 continue;
             };
             let samples = selected
@@ -379,6 +418,10 @@ pub(crate) fn project(
                 })
                 .collect::<Option<Vec<_>>>();
             let Some(samples) = samples else {
+                if std::env::var_os("SELDBG").is_some() {
+                    let miss = selected.iter().filter(|(item, src)| inventory.edge_inputs.historical.get(&(token.to_owned(), *src)).map_or(true, |e| e.item != *item)).map(|(_, s)| *s).collect::<Vec<_>>();
+                    eprintln!("SELDBG feat {} MISSING-SOURCES {:?} of {}", feature.id.as_str(), miss, selected.len());
+                }
                 continue;
             };
             let mut group_owners = HashSet::new();
@@ -388,8 +431,10 @@ pub(crate) fn project(
                         .get(&edge.owner)
                         .is_some_and(|previous| previous != source)
             }) {
+                if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG feat {} OWNER-CONFLICT", feature.id.as_str()); }
                 continue;
             }
+            if std::env::var_os("SELDBG").is_some() { eprintln!("SELDBG feat {} PROJECTED {}", feature.id.as_str(), samples.len()); }
             let mut edges = Vec::new();
             for (selected_source, edge) in samples {
                 revision_sources.insert(edge.owner, selected_source);
