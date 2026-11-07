@@ -646,7 +646,7 @@ pub(crate) fn valid_alignment(
                 .checked_sub(link.locator_byte_offset)
                 .and_then(|length| usize::try_from(length).ok())
                 .and_then(|length| {
-                    crate::design::assembly::RigidGroupLocatorLayout::admit_assemble(
+                    crate::design::assembly::RigidGroupLocatorLayout::admit(
                         types.get(&u64::from(link.locator_record_index)).copied(),
                         length,
                     )

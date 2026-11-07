@@ -8606,6 +8606,24 @@ pub(crate) mod assembly_wide_null_matrix_locator {
     pub(crate) const ZERO_TAIL: usize = 213;
 }
 
+/// Byte offsets for the `assembly_wide_null_identity_locator` record.
+///
+/// Spec §Assembly operands. Record length 87 B.
+pub(crate) mod assembly_wide_null_identity_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 87;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 57;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 59;
+    /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 70;
+    /// Offset of `discriminator` (`u32`). Spec §Assembly operands.
+    pub(crate) const DISCRIMINATOR: usize = 81;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 85;
+}
+
 /// Byte offsets for the `assembly_locator_prefix_two` record.
 ///
 /// Spec §Assembly operands.

@@ -8842,6 +8842,27 @@ Unstated regions:
 
 - `0..56` (56 B): Common wide prefix.
 
+## `assembly_wide_null_identity_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 87 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 1 | `construction_reference` | `u8` | little | spec | This null-construction identity locator spans 87 bytes. |
+| 57 | 1 | `identity_flag` | `u8` | little | spec | This null-construction identity locator spans 87 bytes. |
+| 58 | 1 | `zero_separator` | `u8` | little | spec | This null-construction identity locator spans 87 bytes. |
+| 59 | 11 | `scope_backlink` | `bytes[11]` | little | spec | This null-construction identity locator spans 87 bytes. |
+| 70 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | This null-construction identity locator spans 87 bytes. |
+| 81 | 4 | `discriminator` | `u32` | little | spec | This null-construction identity locator spans 87 bytes. |
+| 85 | 2 | `zero_tail` | `bytes[2]` | little | spec | This null-construction identity locator spans 87 bytes. |
+
+Unstated regions:
+
+- `0..56` (56 B): Common wide prefix.
+
 ## `assembly_locator_prefix_two`
 
 Spec §Assembly operands · layout: byte offsets · size: not stated
