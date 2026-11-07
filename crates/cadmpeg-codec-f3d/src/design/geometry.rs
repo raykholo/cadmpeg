@@ -54,6 +54,8 @@ pub(crate) struct ProfileGeometryWork {
     crossing_loop_skipped_selections: Cell<usize>,
     crossing_loop_assumed: Cell<bool>,
     crossing_loop_assumed_selections: Cell<usize>,
+    piece_join_assumed: Cell<bool>,
+    piece_join_assumed_selections: Cell<usize>,
     cut_regions_assumed: Cell<bool>,
     cut_regions_assumed_selections: Cell<usize>,
     cap_outline_assumed: Cell<bool>,
@@ -78,6 +80,8 @@ impl ProfileGeometryWork {
             crossing_loop_skipped_selections: Cell::new(0),
             crossing_loop_assumed: Cell::new(false),
             crossing_loop_assumed_selections: Cell::new(0),
+            piece_join_assumed: Cell::new(false),
+            piece_join_assumed_selections: Cell::new(0),
             cut_regions_assumed: Cell::new(false),
             cut_regions_assumed_selections: Cell::new(0),
             cap_outline_assumed: Cell::new(false),
@@ -108,6 +112,10 @@ impl ProfileGeometryWork {
                 &self.crossing_loop_assumed_selections,
             ),
             (
+                &self.piece_join_assumed,
+                &self.piece_join_assumed_selections,
+            ),
+            (
                 &self.cut_regions_assumed,
                 &self.cut_regions_assumed_selections,
             ),
@@ -128,6 +136,12 @@ impl ProfileGeometryWork {
 
     /// Record that the open selection took regions from a self-crossing
     /// stored loop split by curve-use counts.
+    /// Record that the open selection joined stored loops to faces through
+    /// the assumed reading of their entry operands.
+    pub(crate) fn note_piece_join_assumed(&self) {
+        self.piece_join_assumed.set(true);
+    }
+
     pub(crate) fn note_crossing_loop_assumed(&self) {
         self.crossing_loop_assumed.set(true);
     }
@@ -175,6 +189,12 @@ impl ProfileGeometryWork {
         if crossing_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCrossingLoopAssumed.note(format!(
                 "{crossing_assumed} extrude profile selection(s) split a self-crossing stored loop into atomic regions by curve-use counts; the stored curve order of the loop was not checked, and atomic faces that enclose an island were assumed not to be selected."
+            )));
+        }
+        let piece_assumed = self.piece_join_assumed_selections.get();
+        if piece_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfilePieceJoinAssumed.note(format!(
+                "{piece_assumed} extrude profile selection(s) joined stored loops to atomic faces by reading each entry's operands as a traversal flag, a piece ordinal and a piece count; that reading is assumed (DR-124), and the listed entry order was not checked."
             )));
         }
         let cut_assumed = self.cut_regions_assumed_selections.get();

@@ -3683,6 +3683,7 @@ fn resolve_profile_curve_arrangement_regions(
     let mut regions = Vec::new();
     let mut assumed = false;
     let mut pieces = None;
+    let mut piece_join = false;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3741,6 +3742,7 @@ fn resolve_profile_curve_arrangement_regions(
                 .zip(stored_piece_loops(loops, region_curves))
                 .and_then(|(arrangement, stored)| arrangement.region(&stored))
             {
+                piece_join = true;
                 if !regions.contains(&region) {
                     regions.push(region);
                 }
@@ -3776,6 +3778,9 @@ fn resolve_profile_curve_arrangement_regions(
         .map(ProfileRef::Planar);
     if assumed && profile.is_some() {
         scoped.profile_work.note_crossing_loop_assumed();
+    }
+    if piece_join && profile.is_some() {
+        scoped.profile_work.note_piece_join_assumed();
     }
     Ok(profile)
 }

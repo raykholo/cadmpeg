@@ -318,6 +318,8 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCrossingLoopCapped,
     /// Extrude profile selections split a self-crossing loop by curve-use counts alone.
     FeatureProfileCrossingLoopAssumed,
+    /// Extrude profile selections joined stored loops to faces through the assumed reading of their entry operands.
+    FeatureProfilePieceJoinAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// Extrude profile selections compared part of a cap outline by samples alone.
@@ -694,6 +696,7 @@ impl F3dLossCode {
         Self::FeatureProfileDensificationCapped,
         Self::FeatureProfileCrossingLoopCapped,
         Self::FeatureProfileCrossingLoopAssumed,
+        Self::FeatureProfilePieceJoinAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileCapOutlineAssumed,
         Self::FeatureProfileCapCarrierAssumed,
@@ -969,6 +972,7 @@ impl F3dLossCode {
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
             Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
+            Self::FeatureProfilePieceJoinAssumed => "feature.profile-piece-join-assumed",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
@@ -1261,6 +1265,7 @@ impl F3dLossCode {
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
+            | Self::FeatureProfilePieceJoinAssumed
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -1473,6 +1478,7 @@ impl F3dLossCode {
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
+            | Self::FeatureProfilePieceJoinAssumed
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -1781,6 +1787,7 @@ mod tests {
                 "feature.profile-densification-capped",
                 "feature.profile-crossing-loop-capped",
                 "feature.profile-crossing-loop-assumed",
+                "feature.profile-piece-join-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-cap-outline-assumed",
                 "feature.profile-cap-carrier-assumed",
