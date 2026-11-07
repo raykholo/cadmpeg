@@ -503,14 +503,6 @@ pub(crate) struct RigidGroupLocatorLayout {
 
 impl RigidGroupLocatorLayout {
     pub(crate) fn admit(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
-        Self::admit_form(registered, length, false)
-    }
-
-    pub(crate) fn admit_assemble(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
-        Self::admit_form(registered, length, true)
-    }
-
-    fn admit_form(registered: Option<(&str, u32)>, length: usize, assemble: bool) -> Option<Self> {
         use crate::layout::assembly_compact_rigid_group_identity_locator as compact_identity;
         use crate::layout::assembly_compact_rigid_group_locator as compact;
         use crate::layout::assembly_null_typed_rigid_group_identity_locator as null_identity;
@@ -519,6 +511,7 @@ impl RigidGroupLocatorLayout {
         use crate::layout::assembly_ordinary_rigid_group_identity_locator as ordinary_identity;
         use crate::layout::assembly_typed_rigid_group_identity_locator as typed_identity;
         use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_matrix;
+        use crate::layout::assembly_wide_null_identity_locator as wide_null_identity;
         use crate::layout::assembly_wide_null_matrix_locator as wide_null;
         use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
         use crate::layout::assembly_wide_operand_path_locator as wide;
@@ -617,7 +610,17 @@ impl RigidGroupLocatorLayout {
                 null_identity::DISCRIMINATOR,
                 null_identity::ZERO_TAIL,
             ),
-            (5, wide_null::LEN) if assemble => (
+            (5, wide_null_identity::LEN) => (
+                false,
+                None,
+                wide_null_identity::IDENTITY_FLAG,
+                None,
+                wide_null_identity::SCOPE_BACKLINK,
+                wide_null_identity::WRAPPER_REFERENCE,
+                wide_null_identity::DISCRIMINATOR,
+                wide_null_identity::ZERO_TAIL,
+            ),
+            (5, wide_null::LEN) => (
                 false,
                 None,
                 wide_null::IDENTITY_FLAG,
@@ -1602,16 +1605,21 @@ fn unique_scope<'a>(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn null_wide_locator_admission_is_specific_to_assemble() {
+    fn null_wide_locators_admit_their_exact_lengths() {
         let guid = "2E3AC990-483D-4A55-8662-C064B976A957";
         let registered = Some((guid, 5));
-        assert!(super::RigidGroupLocatorLayout::admit(registered, 215).is_none());
-        let layout = super::RigidGroupLocatorLayout::admit_assemble(registered, 215).unwrap();
-        assert_eq!(layout.offsets(), (215, 187, 198, 209, 213));
-        assert_eq!(layout.transform, Some(58));
-        assert!(layout.null_construction);
-        assert!(super::RigidGroupLocatorLayout::admit_assemble(registered, 214).is_none());
-        assert!(super::RigidGroupLocatorLayout::admit_assemble(Some((guid, 4)), 215).is_none());
+        let matrix = super::RigidGroupLocatorLayout::admit(registered, 215).unwrap();
+        assert_eq!(matrix.offsets(), (215, 187, 198, 209, 213));
+        assert_eq!(matrix.transform, Some(58));
+        assert!(matrix.null_construction);
+        let identity = super::RigidGroupLocatorLayout::admit(registered, 87).unwrap();
+        assert_eq!(identity.offsets(), (87, 59, 70, 81, 85));
+        assert_eq!(identity.transform, None);
+        assert!(identity.null_construction);
+        for length in [86, 88, 214, 216] {
+            assert!(super::RigidGroupLocatorLayout::admit(registered, length).is_none());
+        }
+        assert!(super::RigidGroupLocatorLayout::admit(Some((guid, 4)), 215).is_none());
     }
 
     #[test]

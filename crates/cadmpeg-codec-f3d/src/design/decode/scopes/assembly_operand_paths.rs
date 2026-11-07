@@ -228,17 +228,10 @@ fn exact_assembly_operand_path_envelope(
         let group_layout = if crate::design::assembly::rigid_as_built_scope(scope)
             || super::assembly_v3::registered(scope, stream_types)
         {
-            Some(if assemble {
-                RigidGroupLocatorLayout::admit_assemble(
-                    registered_locator.copied(),
-                    locator_end.checked_sub(locator_at)?,
-                )?
-            } else {
-                RigidGroupLocatorLayout::admit(
-                    registered_locator.copied(),
-                    locator_end.checked_sub(locator_at)?,
-                )?
-            })
+            Some(RigidGroupLocatorLayout::admit(
+                registered_locator.copied(),
+                locator_end.checked_sub(locator_at)?,
+            )?)
         } else {
             None
         };
@@ -255,7 +248,9 @@ fn exact_assembly_operand_path_envelope(
             }
         }
         let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
-            if let Some(layout) = group_layout.filter(|layout| layout.wide && assemble) {
+            if let Some(layout) =
+                group_layout.filter(|layout| layout.wide && (assemble || layout.null_construction))
+            {
                 if bytes
                     .get(
                         locator_at.checked_add(wide_locator::ZERO_RUN_28)?
