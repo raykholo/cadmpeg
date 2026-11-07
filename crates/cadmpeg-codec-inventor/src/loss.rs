@@ -104,6 +104,8 @@ pub(crate) enum InventorLossCode {
     FeatureFaceJoinRepeatedAttribute,
     /// A selected face has a generated-name family that shares no feature with its selector.
     FeatureFaceJoinUnsharedFamily,
+    /// A selected face has several matched owners of identical surface geometry.
+    FeatureFaceJoinIdenticalOwners,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -300,6 +302,7 @@ impl InventorLossCode {
         Self::FeatureMoveFaceSelectionNative,
         Self::FeatureFaceJoinRepeatedAttribute,
         Self::FeatureFaceJoinUnsharedFamily,
+        Self::FeatureFaceJoinIdenticalOwners,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureExtrusionTargetFaceNative,
@@ -428,6 +431,7 @@ impl InventorLossCode {
             Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
             Self::FeatureFaceJoinRepeatedAttribute => "feature.face-join-repeated-attribute",
             Self::FeatureFaceJoinUnsharedFamily => "feature.face-join-unshared-family",
+            Self::FeatureFaceJoinIdenticalOwners => "feature.face-join-identical-owners",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -556,6 +560,7 @@ impl InventorLossCode {
             | Self::FeatureMoveFaceSelectionNative
             | Self::FeatureFaceJoinRepeatedAttribute
             | Self::FeatureFaceJoinUnsharedFamily
+            | Self::FeatureFaceJoinIdenticalOwners
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureExtrusionTargetFaceNative
@@ -715,6 +720,7 @@ mod tests {
                 "feature.move-face-selection-native",
                 "feature.face-join-repeated-attribute",
                 "feature.face-join-unshared-family",
+                "feature.face-join-identical-owners",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.extrusion-target-face-native",
