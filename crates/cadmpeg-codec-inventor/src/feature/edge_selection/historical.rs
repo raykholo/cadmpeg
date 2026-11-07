@@ -20,7 +20,7 @@ use super::{geometry::EdgeGeometry, PmDcFeaturePropertyKind};
 use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcReference};
 
 /// The largest generator array that a direct edge selector stores.
-const MAX_SELECTOR_GENERATORS: usize = 4;
+const MAX_SELECTOR_GENERATORS: usize = 64;
 
 pub(super) struct StoredSelector {
     pub(super) source: u32,
