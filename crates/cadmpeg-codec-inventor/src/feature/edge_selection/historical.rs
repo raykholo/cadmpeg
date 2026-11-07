@@ -46,12 +46,13 @@ pub(super) fn parse(
         return Ok(None);
     }
     let body = cursor.reference("edge selector body")?;
-    if cursor.u32("edge selector topology")? != 2
-        || (super::selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
-        || cursor.u32("edge selector naming form")? != 2
+    let topology = cursor.u32("edge selector topology")?;
+    if (super::selector_has_qualifier(version) && cursor.u32("edge selector qualifier")? != 0)
+        || cursor.u32("edge selector naming form")? != topology
     {
         return Ok(None);
     }
+    if std::env::var_os("SELDBG").is_some() && topology != 2 { eprintln!("SELDBG word src={} word={} v={}", header.source_index, topology, version); }
     let generators = u32_list_with_context(ctx, &mut cursor, 8, "edge selector generators")?;
     let secondary = u32_list_with_context(ctx, &mut cursor, 8, "edge selector secondary names")?;
     let mut distinct = HashSet::new();
