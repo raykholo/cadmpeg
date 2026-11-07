@@ -100,6 +100,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionNative,
     /// An edge-treatment input edge has several matched owners of identical geometry.
     FeatureEdgeOwnerIdenticalGeometry,
+    /// An input edge rests on the assumption that extra selector generators do not change it.
+    FeatureEdgeSelectorGeneratorsAssumed,
     /// A Move Face feature retains a face operand that does not join exactly one stored face revision.
     FeatureMoveFaceSelectionNative,
     /// A selected face rests on the assumption that its matched revision is the input face.
@@ -312,6 +314,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOwnerIdenticalGeometry,
+        Self::FeatureEdgeSelectorGeneratorsAssumed,
         Self::FeatureMoveFaceSelectionNative,
         Self::FeatureFaceJoinInputRevisionAssumed,
         Self::FeatureFaceJoinRepeatedAttribute,
@@ -450,6 +453,9 @@ impl InventorLossCode {
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
+            Self::FeatureEdgeSelectorGeneratorsAssumed => {
+                "feature.edge-selector-generators-assumed"
+            }
             Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
             Self::FeatureFaceJoinInputRevisionAssumed => "feature.face-join-input-revision-assumed",
             Self::FeatureFaceJoinRepeatedAttribute => "feature.face-join-repeated-attribute",
@@ -584,6 +590,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOwnerIdenticalGeometry
+            | Self::FeatureEdgeSelectorGeneratorsAssumed
             | Self::FeatureMoveFaceSelectionNative
             | Self::FeatureFaceJoinInputRevisionAssumed
             | Self::FeatureFaceJoinRepeatedAttribute
@@ -750,6 +757,7 @@ mod tests {
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
                 "feature.edge-owner-identical-geometry",
+                "feature.edge-selector-generators-assumed",
                 "feature.move-face-selection-native",
                 "feature.face-join-input-revision-assumed",
                 "feature.face-join-repeated-attribute",
