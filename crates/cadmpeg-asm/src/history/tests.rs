@@ -808,3 +808,10 @@ fn chain_framing_reports_absent_and_unframed_histories() {
         ));
     }
 }
+
+#[test]
+fn old_ref_names_the_old_entity_of_update_and_delete_only() {
+    assert_eq!(EntityChange::Insert { new: 7 }.old_ref(), None);
+    assert_eq!(EntityChange::Delete { old: 8 }.old_ref(), Some(8));
+    assert_eq!(EntityChange::Update { old: 9, new: 7 }.old_ref(), Some(9));
+}
