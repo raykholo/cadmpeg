@@ -8656,7 +8656,7 @@ pub(crate) mod assembly_wide_null_identity_locator {
     pub(crate) const SCOPE_BACKLINK: usize = 59;
     /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const WRAPPER_REFERENCE: usize = 70;
-    /// Offset of `discriminator` (`u32`). Spec §Assembly operands.
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const DISCRIMINATOR: usize = 81;
     /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
     pub(crate) const ZERO_TAIL: usize = 85;
