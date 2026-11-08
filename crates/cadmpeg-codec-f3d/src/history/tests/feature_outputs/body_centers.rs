@@ -119,3 +119,58 @@ fn body_centers_come_from_the_history_bound_to_each_scope() {
         );
     }
 }
+
+#[test]
+fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
+    let first_scope = scope_between(3, 2);
+    let mut second_scope = first_scope.clone();
+    second_scope.id = "f3d:Other/BulkStream.dat:design-parameter-scope#3".into();
+    let blob = |guid: &str| format!("{guid}.smbh");
+    let feature = |scope: &crate::records::feature::scope::DesignParameterScope, guid: &str| {
+        let mut feature = base_feature();
+        feature.id = crate::ids::neutral_feature_id(scope);
+        feature.native_ref = Some(scope.id.clone());
+        feature.evaluation.set_outputs(
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
+                &format!("f3d:brep/{}/brep:entity#1", blob(guid)),
+            )
+            .unwrap()])
+            .unwrap(),
+        );
+        feature
+    };
+    let mut features = [
+        feature(&first_scope, "aaaa"),
+        feature(&second_scope, "bbbb"),
+    ];
+    let history_id = |guid: &str| {
+        format!(
+            "f3d:Breps.BlobParts/BREP.{}:asm-history#0000000001",
+            blob(guid)
+        )
+    };
+    // The second blob's history comes first, so a reading by state id alone
+    // would give both features the same centre.
+    let mut histories = [
+        pillow_history(&history_id("bbbb"), 10.0),
+        pillow_history(&history_id("aaaa"), 0.0),
+    ];
+    bind_feature_outputs(
+        &mut features,
+        &[first_scope, second_scope],
+        &mut histories,
+        &[],
+        &std::collections::HashMap::new(),
+        None,
+    )
+    .unwrap();
+    for (feature, expected) in features.iter().zip(["100:1,0,1", "100:11,0,1"]) {
+        assert_eq!(
+            feature
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+                .map(String::as_str),
+            Some(expected)
+        );
+    }
+}
