@@ -1477,6 +1477,11 @@ fn project_qualified_operands(
             DesignAssemblyOperandQualifier::OccurrencePath { path } => {
                 let root_guid = &path.occurrence_guids().first()?.value;
                 if path.is_root() {
+                    // A null-construction operand projects only through a
+                    // concrete carrier; the root path names none.
+                    if require_carrier {
+                        return None;
+                    }
                     return Some(JointOperand::root(
                         root_guid.as_str().to_owned(),
                         path.occurrence_guids()[1..]
@@ -2263,6 +2268,18 @@ mod tests {
             operands[0].container,
             cadmpeg_ir::products::OperandContainer::Root {}
         ));
+        // A null-construction operand needs a concrete carrier, and the root
+        // path names none.
+        assert!(super::project_qualified_operands(
+            qualifiers.each_ref(),
+            [true, false],
+            "Design/BulkStream.dat",
+            &std::collections::BTreeMap::new(),
+            &[],
+            &inserts,
+            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[]),
+        )
+        .is_none());
         let mut rooted = scopes(true, false);
         rooted[0]
             .try_edit(|draft| {
