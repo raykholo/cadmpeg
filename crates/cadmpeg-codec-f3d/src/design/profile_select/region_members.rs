@@ -16,7 +16,7 @@ pub(super) fn resolve(
     entities: &[SketchEntity],
     resolution: ScopedExtrudeProfileResolution<'_>,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
-    let Some(selection) = &profile.region_selection else {
+    let Some(selection) = profile.settled_region_selection() else {
         return Ok(None);
     };
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {

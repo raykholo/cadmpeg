@@ -738,15 +738,7 @@ pub(crate) fn bind_extrude_profile_selections(
                         if let Some((operand, stream)) = scope
                             .extrude_profile()
                             .zip(native_stream(&scope.id))
-                            .filter(|(operand, _)| {
-                                // The member lists of further regions have no
-                                // settled reading; such a selection takes the
-                                // group path below.
-                                operand
-                                    .region_selection
-                                    .as_ref()
-                                    .is_some_and(|selection| !selection.has_further_regions())
-                            })
+                            .filter(|(operand, _)| operand.settled_region_selection().is_some())
                         {
                             // An unresolved member-list reading leaves the
                             // selection to the group path below.
@@ -4240,7 +4232,7 @@ fn resolved_sketch_profile_regions(
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<Vec<u32>> {
-    let selection = profile.region_selection.as_ref()?;
+    let selection = profile.settled_region_selection()?;
     if selection.has_extended_incidence() {
         return None;
     }
@@ -4345,7 +4337,10 @@ fn resolved_spatial_sketch_profile_regions(
     spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
     resolution: &SketchProfileResolution<'_>,
 ) -> Option<Vec<u32>> {
-    let Some(selection) = profile.region_selection.as_ref() else {
+    if profile.region_selection.is_some() && profile.settled_region_selection().is_none() {
+        return None;
+    }
+    let Some(selection) = profile.settled_region_selection() else {
         if spatial_sketch.profiles.is_empty() {
             return None;
         }

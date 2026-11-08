@@ -65,6 +65,14 @@ impl Clone for DesignSketchProfileOperand {
 }
 
 impl DesignSketchProfileOperand {
+    /// The nested region selection when its member lists have a settled
+    /// reading: no group stores further regions.
+    pub(crate) fn settled_region_selection(&self) -> Option<&DesignSketchProfileRegionSelection> {
+        self.region_selection
+            .as_ref()
+            .filter(|selection| !selection.has_further_regions())
+    }
+
     pub(crate) fn try_new(draft: DesignSketchProfileOperandDraft) -> Result<Self, String> {
         if !(draft.byte_offset < draft.asset_id_offset
             && draft.asset_id_offset < draft.entity_reference_offset
