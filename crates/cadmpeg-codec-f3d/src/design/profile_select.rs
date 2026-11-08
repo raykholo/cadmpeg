@@ -4244,7 +4244,11 @@ fn resolved_sketch_profile_regions(
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<Vec<u32>> {
-    let selection = profile.settled_region_selection()?;
+    // One profile per member list reads only the single-group form: groups
+    // that describe one profile would name it once per group.
+    let selection = profile
+        .settled_region_selection()
+        .filter(|selection| selection.has_single_group_form())?;
     if selection.has_extended_incidence() {
         return None;
     }
