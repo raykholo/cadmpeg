@@ -1808,9 +1808,12 @@ fn output_brep_source(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         else {
             return None;
         };
-        bodies.iter().map(|body| body.as_str()).collect()
+        bodies.iter().map(cadmpeg_ir::ids::BodyId::as_str).collect()
     } else {
-        outputs.iter().map(|body| body.as_str()).collect()
+        outputs
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect()
     };
     let mut sources = bodies.iter().map(|body| {
         body.strip_prefix("f3d:brep/")
