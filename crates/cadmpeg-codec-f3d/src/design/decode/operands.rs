@@ -5488,8 +5488,17 @@ pub(in crate::design) fn parse_sketch_profile(
     if matches.next().is_some() {
         return None;
     }
+    // A nested selection that is present but does not read refuses the
+    // operand: without it the record would read as the whole Sketch.
     let region_selection =
-        parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
+        match sketch_profile_region_selection_at(bytes, header.record_index, paired_at) {
+            Some(_) => Some(parse_sketch_profile_region_selection(
+                bytes,
+                header.record_index,
+                paired_at,
+            )?),
+            None => None,
+        };
     let entity_id_text = entity.entity_id.as_str().to_owned();
     DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
@@ -5509,6 +5518,42 @@ pub(in crate::design) fn parse_sketch_profile(
         },
     )
     .ok()
+}
+
+/// The offset of the nested `N+3` profile-region selection of sketch-profile
+/// record `N`: the records `N+1`, `N+2` and `N+3` follow its paired header in
+/// that order, and `N+3` starts with ten zero bytes and a marked reference to
+/// `N`. `None` when the record has no nested selection.
+fn sketch_profile_region_selection_at(
+    bytes: &[u8],
+    profile_record_index: u32,
+    paired_at: usize,
+) -> Option<usize> {
+    let next_header = |position, expected| {
+        let at = next_indexed_record_offset(bytes, position)?;
+        (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
+    };
+    let nested_one_at = next_header(
+        paired_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(1)?,
+    )?;
+    let nested_two_at = next_header(
+        nested_one_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(2)?,
+    )?;
+    let selection_at = next_header(
+        nested_two_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(3)?,
+    )?;
+    (bytes.get(
+        selection_at + region_selection::ZERO_RUN_10
+            ..selection_at + region_selection::PROFILE_REFERENCE_MARKER,
+    )? == [0; 10]
+        && marked_record_reference(
+            bytes,
+            selection_at + region_selection::PROFILE_REFERENCE_MARKER,
+        ) == Some(profile_record_index))
+    .then_some(selection_at)
 }
 
 fn parse_sketch_profile_region_selection(

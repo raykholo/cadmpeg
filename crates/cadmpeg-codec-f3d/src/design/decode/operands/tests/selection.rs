@@ -7,6 +7,7 @@ use crate::design::decode::operands::parse_entity_selection_operand;
 
 use crate::design::decode::operands::parse_sketch_profile;
 use crate::design::decode::operands::parse_sketch_profile_region_selection;
+use crate::design::decode::operands::sketch_profile_region_selection_at;
 
 use crate::records::decal::DesignRecordHeader;
 use crate::records::entity_header::DesignEntityHeader;
@@ -1019,6 +1020,20 @@ fn sketch_profile_region_selection_reads_every_group_and_further_region() {
     // A further-region count that the bytes do not hold refuses the record.
     let (short, _) = grouped_region_selection_frame(2);
     assert_eq!(parse_sketch_profile_region_selection(&short, 100, 0), None);
+}
+
+#[test]
+fn an_unreadable_nested_selection_is_still_located() {
+    let (bytes, selection_at) = grouped_region_selection_frame(2);
+    assert_eq!(
+        sketch_profile_region_selection_at(&bytes, 100, 0),
+        Some(selection_at)
+    );
+    assert_eq!(parse_sketch_profile_region_selection(&bytes, 100, 0), None);
+    let mut unmarked = bytes;
+    unmarked[selection_at
+        + crate::layout::sketch_profile_region_selection_prefix::PROFILE_REFERENCE_MARKER] = 0;
+    assert_eq!(sketch_profile_region_selection_at(&unmarked, 100, 0), None);
 }
 
 #[test]
