@@ -2333,6 +2333,8 @@ with identity or 225 bytes with a matrix.
 A positive-count null-construction member path projects only through a
 concrete local occurrence carrier or placement carrier join. Without that
 join, the member remains native and contributes to `AssemblyJointUnprojected`.
+A root path supplies no carrier: a null-construction operand with a root path
+keeps its joint native.
 A null construction reference does not select deletion or suppression.
 A document identity does not select an occurrence.
 
