@@ -306,7 +306,11 @@ pub(crate) struct DesignSketchProfileRegionSelection {
 pub(crate) struct DesignSketchProfileRegion {
     /// Byte offset of the ring count of the region this list starts, when it
     /// is the first ring of a region.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_ring_count_offset"
+    )]
     pub(crate) ring_count_offset: Option<u64>,
     /// Byte offset of this list's member count.
     pub(crate) member_count_offset: u64,
@@ -316,7 +320,11 @@ pub(crate) struct DesignSketchProfileRegion {
     pub(crate) flag: bool,
     /// Byte offset of the further-region count after this list, when it is
     /// the last ring of a group's first region.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_further_region_count_offset"
+    )]
     pub(crate) further_region_count_offset: Option<u64>,
 }
 
@@ -329,7 +337,7 @@ impl DesignSketchProfileRegionSelection {
             .iter()
             .filter(|ring| ring.ring_count_offset.is_some())
             .count();
-        starts > usize::try_from(self.group_count).unwrap_or(usize::MAX)
+        u64::try_from(starts).is_ok_and(|starts| starts > u64::from(self.group_count))
     }
 
     pub(crate) fn has_extended_incidence(&self) -> bool {
@@ -458,6 +466,12 @@ impl From<DesignSketchProfileRegionMember> for DesignSketchProfileRegionMemberWi
 }
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_ring_count_offset, u64, "ring_count_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_further_region_count_offset,
+    u64,
+    "further_region_count_offset"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_region_selection,
     DesignSketchProfileRegionSelection,

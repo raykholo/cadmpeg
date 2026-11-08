@@ -463,7 +463,9 @@ fn valid_sketch_profile_region_selection(
             .iter()
             .filter(|ring| ring.further_region_count_offset.is_some())
             .count()
-            != usize::try_from(selection.group_count).unwrap_or(usize::MAX)
+            .try_into()
+            .ok()
+            != Some(selection.group_count)
     {
         return false;
     }
