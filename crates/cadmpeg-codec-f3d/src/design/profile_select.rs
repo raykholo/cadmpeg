@@ -740,17 +740,29 @@ pub(crate) fn bind_extrude_profile_selections(
                             .zip(native_stream(&scope.id))
                             .filter(|(operand, _)| operand.settled_region_selection().is_some())
                         {
-                            // An unresolved member-list reading leaves the
-                            // selection to the group path below.
-                            if let Some(selected) = region_members::resolve(
+                            let selected = region_members::resolve(
                                 stream,
                                 operand,
                                 sketch,
                                 curve_resolution.curve_identities,
                                 curve_resolution.sketch_entities,
                                 scoped_resolution,
-                            )? {
-                                *profile = ProfileRef::Planar(selected);
+                            )?;
+                            // A single-group selection that does not resolve
+                            // stays native. Other forms leave the selection
+                            // to the group path below.
+                            let single_group = operand
+                                .region_selection
+                                .as_ref()
+                                .is_some_and(crate::records::topology::sketch_profile::DesignSketchProfileRegionSelection::has_single_group_form);
+                            if selected.is_some() || single_group {
+                                *profile = ProfileRef::Planar(selected.unwrap_or_else(|| {
+                                    PlanarProfileRef::sketch_selection(
+                                        sketch_id.clone(),
+                                        vec![scope.id.clone()],
+                                    )
+                                    .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
+                                }));
                                 break 'feature_edit;
                             }
                         }

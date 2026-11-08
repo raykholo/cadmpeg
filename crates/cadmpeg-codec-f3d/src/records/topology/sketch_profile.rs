@@ -339,6 +339,18 @@ pub(crate) struct DesignSketchProfileRegion {
 impl DesignSketchProfileRegionSelection {
     /// Whether a group stores further regions after its first region: the
     /// selection starts more regions than it has groups.
+    /// Whether the selection has the single-group form with one region and
+    /// every ring but the last flagged `1`: the only form read before groups
+    /// and further regions were.
+    pub(crate) fn has_single_group_form(&self) -> bool {
+        self.group_count == 1
+            && !self.has_further_regions()
+            && self
+                .regions
+                .split_last()
+                .is_some_and(|(_, earlier)| earlier.iter().all(|ring| ring.flag))
+    }
+
     pub(crate) fn has_further_regions(&self) -> bool {
         let starts = self
             .regions
