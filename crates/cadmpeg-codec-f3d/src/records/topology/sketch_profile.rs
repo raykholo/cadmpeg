@@ -321,6 +321,17 @@ pub(crate) struct DesignSketchProfileRegion {
 }
 
 impl DesignSketchProfileRegionSelection {
+    /// Whether a group stores further regions after its first region: the
+    /// selection starts more regions than it has groups.
+    pub(crate) fn has_further_regions(&self) -> bool {
+        let starts = self
+            .regions
+            .iter()
+            .filter(|ring| ring.ring_count_offset.is_some())
+            .count();
+        starts > usize::try_from(self.group_count).unwrap_or(usize::MAX)
+    }
+
     pub(crate) fn has_extended_incidence(&self) -> bool {
         self.regions
             .iter()

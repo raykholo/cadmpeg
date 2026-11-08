@@ -738,7 +738,15 @@ pub(crate) fn bind_extrude_profile_selections(
                         if let Some((operand, stream)) = scope
                             .extrude_profile()
                             .zip(native_stream(&scope.id))
-                            .filter(|(operand, _)| operand.region_selection.is_some())
+                            .filter(|(operand, _)| {
+                                // The member lists of further regions have no
+                                // settled reading; such a selection takes the
+                                // group path below.
+                                operand
+                                    .region_selection
+                                    .as_ref()
+                                    .is_some_and(|selection| !selection.has_further_regions())
+                            })
                         {
                             let selected = region_members::resolve(
                                 stream,
@@ -810,6 +818,20 @@ pub(crate) fn bind_extrude_profile_selections(
                         break 'feature_edit;
                     }
                     if matching_groups.is_empty() {
+                        // A stored region selection is a subset of the
+                        // Sketch, so it never reads as the whole Sketch.
+                        if scope
+                            .extrude_profile()
+                            .is_some_and(|operand| operand.region_selection.is_some())
+                        {
+                            *profile = ProfileRef::Planar(
+                                PlanarProfileRef::sketch_selection(
+                                    sketch_id.clone(),
+                                    vec![scope.id.clone()],
+                                )
+                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())),
+                            );
+                        }
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
