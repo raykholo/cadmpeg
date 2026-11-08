@@ -1144,15 +1144,18 @@ pub(crate) fn bind_feature_outputs(
         }
     }
     let mut feature_edge_midpoints = HashMap::<usize, Vec<cadmpeg_ir::math::Point3>>::new();
-    let mut state_deleted_bodies = HashMap::<i64, Vec<i64>>::new();
-    let mut state_solid_bodies = HashMap::<i64, BTreeSet<i64>>::new();
-    let mut state_body_centers = HashMap::<i64, Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
-    let mut state_exact_bodies = HashMap::<i64, BTreeSet<i64>>::new();
-    let mut state_body_bounds =
-        HashMap::<i64, Vec<(i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3))>>::new();
+    let mut state_deleted_bodies = HashMap::<(usize, i64), Vec<i64>>::new();
+    let mut state_solid_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
+    let mut state_body_centers =
+        HashMap::<(usize, i64), Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
+    let mut state_exact_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
+    let mut state_body_bounds = HashMap::<
+        (usize, i64),
+        Vec<(i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3))>,
+    >::new();
     let mut state_inserted_plane =
-        HashMap::<i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>::new();
-    let mut state_solid_outputs = HashMap::<i64, Vec<i64>>::new();
+        HashMap::<(usize, i64), (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>::new();
+    let mut state_solid_outputs = HashMap::<(usize, i64), Vec<i64>>::new();
     let mut state_outputs = HashMap::<(usize, i64), Option<Vec<i64>>>::new();
     for (history_index, history) in histories.iter_mut().enumerate() {
         let mut by_node = HashMap::new();
@@ -1185,7 +1188,8 @@ pub(crate) fn bind_feature_outputs(
                             .filter(|&b| prev_index.is_solid(b))
                             .collect();
                         if !whole_deleted.is_empty() {
-                            state_deleted_bodies.insert(state.state_id, whole_deleted);
+                            state_deleted_bodies
+                                .insert((history_index, state.state_id), whole_deleted);
                         }
                     }
                 }
@@ -1278,8 +1282,8 @@ pub(crate) fn bind_feature_outputs(
                         })
                         .collect();
                     if !centers.is_empty() {
-                        state_body_centers.insert(cur_state_id, centers);
-                        state_exact_bodies.insert(cur_state_id, exact_bodies);
+                        state_body_centers.insert((history_index, cur_state_id), centers);
+                        state_exact_bodies.insert((history_index, cur_state_id), exact_bodies);
                     }
                     if let Some(transition) = history.states()[index].transition.as_ref() {
                         for &fid in &transition.topology.faces.inserted {
@@ -1291,8 +1295,10 @@ pub(crate) fn bind_feature_outputs(
                                     .iter()
                                     .find(|s| s.surface == fs.carrier)
                                 {
-                                    state_inserted_plane
-                                        .insert(cur_state_id, (sp.origin, sp.normal));
+                                    state_inserted_plane.insert(
+                                        (history_index, cur_state_id),
+                                        (sp.origin, sp.normal),
+                                    );
                                     break;
                                 }
                             }
@@ -1300,9 +1306,12 @@ pub(crate) fn bind_feature_outputs(
                     }
                 }
                 if !bounds_list.is_empty() {
-                    state_body_bounds.insert(cur_state_id, bounds_list);
+                    state_body_bounds.insert((history_index, cur_state_id), bounds_list);
                 }
-                state_solid_bodies.insert(cur_state_id, solid_edges.into_keys().collect());
+                state_solid_bodies.insert(
+                    (history_index, cur_state_id),
+                    solid_edges.into_keys().collect(),
+                );
             }
             let mut next_deletions = None;
             let outputs = (|| {
@@ -1345,9 +1354,10 @@ pub(crate) fn bind_feature_outputs(
                 if previous.is_some() {
                     affected.extend(deleted_bodies?);
                 }
-                let prev_solid =
-                    previous.and_then(|p| state_solid_bodies.get(&history.states()[p].state_id));
-                let cur_solid = state_solid_bodies.get(&state.state_id);
+                let prev_solid = previous.and_then(|p| {
+                    state_solid_bodies.get(&(history_index, history.states()[p].state_id))
+                });
+                let cur_solid = state_solid_bodies.get(&(history_index, state.state_id));
                 let solid_affected: Vec<i64> = affected
                     .iter()
                     .copied()
@@ -1368,7 +1378,7 @@ pub(crate) fn bind_feature_outputs(
                 continue;
             };
             if !solid_affected.is_empty() {
-                state_solid_outputs.insert(state_id, solid_affected);
+                state_solid_outputs.insert((history_index, state_id), solid_affected);
             }
             state_outputs
                 .entry((history_index, state_id))
@@ -1397,17 +1407,42 @@ pub(crate) fn bind_feature_outputs(
     }
     let mut ordered_indices: Vec<usize> = (0..features.len()).collect();
     ordered_indices.sort_by_key(|&i| features[i].ordinal);
-    let mut prev_feature_solid: Option<&BTreeSet<i64>> = None;
-    let mut absorbed_bodies: BTreeSet<i64> = BTreeSet::new();
-    let mut absorbed_into = BTreeMap::<i64, i64>::new();
+    // ASM state and body identities are scoped to their history, so each
+    // feature reads the measurements of its own history only.
+    let feature_histories = features
+        .iter()
+        .map(|feature| {
+            let (state_id, previous_state_id) = feature_history_states(feature, scopes)?;
+            feature_history_index(
+                feature.native_ref.as_deref()?,
+                state_id,
+                previous_state_id,
+                scope_histories,
+                histories,
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut walks = HashMap::<Option<usize>, HistoryFeatureWalk<'_>>::new();
     for idx in ordered_indices {
         let feature = &mut features[idx];
         let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
             continue;
         };
+        // A feature without one history keeps no measured property.
+        let history_index = feature_histories[idx];
+        let HistoryFeatureWalk {
+            prev_feature_solid,
+            absorbed_bodies,
+            absorbed_into,
+        } = walks.entry(history_index).or_default();
+        let state_key = history_index.map(|history| (history, state_id));
+        let previous_key = history_index.map(|history| (history, previous_state_id));
         let mut newly_absorbed = BTreeSet::new();
-        let before_bds = state_body_bounds.get(&previous_state_id);
-        if let (Some(prev_bds), Some(cur_bds)) = (before_bds, state_body_bounds.get(&state_id)) {
+        let before_bds = previous_key.and_then(|key| state_body_bounds.get(&key));
+        if let (Some(prev_bds), Some(cur_bds)) = (
+            before_bds,
+            state_key.and_then(|key| state_body_bounds.get(&key)),
+        ) {
             for (b1, (cmin, cmax)) in cur_bds {
                 if absorbed_bodies.contains(b1) {
                     continue;
@@ -1483,7 +1518,7 @@ pub(crate) fn bind_feature_outputs(
                 .entry(cadmpeg_core::nonblank_literal!("edge_midpoints"))
                 .or_insert(formatted);
         }
-        if let Some(centers) = state_body_centers.get(&state_id) {
+        if let Some(centers) = state_key.and_then(|key| state_body_centers.get(&key)) {
             let formatted = centers
                 .iter()
                 .filter(|(b, _)| !absorbed_bodies.contains(b) && !newly_absorbed.contains(b))
@@ -1496,8 +1531,8 @@ pub(crate) fn bind_feature_outputs(
                     .entry(cadmpeg_core::nonblank_literal!("body_centers"))
                     .or_insert(formatted);
             }
-            let exact = state_exact_bodies
-                .get(&state_id)
+            let exact = state_key
+                .and_then(|key| state_exact_bodies.get(&key))
                 .into_iter()
                 .flatten()
                 .filter(|b| {
@@ -1516,34 +1551,34 @@ pub(crate) fn bind_feature_outputs(
             }
         }
         if is_split_body {
-            if let Some((o, n)) = state_inserted_plane.get(&state_id) {
+            if let Some((o, n)) = state_key.and_then(|key| state_inserted_plane.get(&key)) {
                 feature
                     .source_properties
                     .entry(cadmpeg_core::nonblank_literal!("split_plane"))
                     .or_insert_with(|| format!("{},{},{};{},{},{}", o.x, o.y, o.z, n.x, n.y, n.z));
             }
         }
-        let before_solid = state_solid_bodies
-            .get(&previous_state_id)
-            .or(prev_feature_solid);
-        let after_solid = state_solid_bodies.get(&state_id);
+        let before_solid = previous_key
+            .and_then(|key| state_solid_bodies.get(&key))
+            .or(*prev_feature_solid);
+        let after_solid = state_key.and_then(|key| state_solid_bodies.get(&key));
         let mut deleted_set = BTreeSet::new();
         if let (Some(before), Some(after)) = (before_solid, after_solid) {
             for &b in before.difference(after) {
                 deleted_set.insert(b);
             }
-        } else if let Some(del) = state_deleted_bodies.get(&state_id) {
+        } else if let Some(del) = state_key.and_then(|key| state_deleted_bodies.get(&key)) {
             for &b in del {
                 deleted_set.insert(b);
             }
         }
-        if let (Some(prev_feat), Some(after)) = (prev_feature_solid, after_solid) {
+        if let (Some(prev_feat), Some(after)) = (*prev_feature_solid, after_solid) {
             for &b in prev_feat.difference(after) {
                 deleted_set.insert(b);
             }
         }
         if after_solid.is_some() {
-            prev_feature_solid = after_solid;
+            *prev_feature_solid = after_solid;
         }
         if !deleted_set.is_empty() {
             let formatted = deleted_set
@@ -1574,7 +1609,7 @@ pub(crate) fn bind_feature_outputs(
                 }
             });
         }
-        if let Some(solid_outputs) = state_solid_outputs.get(&state_id) {
+        if let Some(solid_outputs) = state_key.and_then(|key| state_solid_outputs.get(&key)) {
             let mut filtered: Vec<i64> = if let (Some(before), Some(after)) =
                 (before_solid, after_solid)
             {
@@ -1610,7 +1645,7 @@ pub(crate) fn bind_feature_outputs(
                 filtered.sort_unstable();
             }
             if is_cut_extrude {
-                for (&abs_b, &host_b) in &absorbed_into {
+                for (&abs_b, &host_b) in absorbed_into.iter() {
                     if filtered.contains(&host_b) && !filtered.contains(&abs_b) {
                         filtered.push(abs_b);
                     }
@@ -1709,6 +1744,37 @@ fn combine_states_applied_operation(
 }
 
 /// The history state a feature's scope produces and the state it follows.
+/// Per-history state of the ordered feature walk in `bind_feature_outputs`.
+#[derive(Default)]
+struct HistoryFeatureWalk<'a> {
+    prev_feature_solid: Option<&'a BTreeSet<i64>>,
+    absorbed_bodies: BTreeSet<i64>,
+    absorbed_into: BTreeMap<i64, i64>,
+}
+
+/// The index of the one history that holds a feature's state pair: the
+/// history bound to its scope, or else the only history with that pair.
+fn feature_history_index(
+    scope: &str,
+    state_id: i64,
+    previous_state_id: i64,
+    scope_histories: &HashMap<String, String>,
+    histories: &[AsmHistory],
+) -> Option<usize> {
+    let (history, _, previous) = if scope_histories.contains_key(scope) {
+        bound_history_state_pair(
+            scope,
+            state_id,
+            previous_state_id,
+            scope_histories,
+            histories,
+        )
+    } else {
+        unique_history_state_pair(histories, state_id, previous_state_id)
+    }?;
+    history_state_indexes(histories, history, previous).map(|(index, _)| index)
+}
+
 fn feature_history_states(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &[crate::records::feature::scope::DesignParameterScope],

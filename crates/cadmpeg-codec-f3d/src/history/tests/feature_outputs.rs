@@ -1995,6 +1995,7 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
     assert_eq!(feature.evaluation.outputs(), &[body.id]);
 }
 
+mod body_centers;
 mod edge_midpoints;
 mod saved_edges;
 mod stored_results;
