@@ -946,6 +946,81 @@ fn sketch_profile_region_selection_requires_every_delimiter() {
     assert!(parse_sketch_profile_region_selection(&flag_1_terminator, 100, 0).is_some());
 }
 
+/// Two groups: one single-ring region, then a two-ring region with one further
+/// single-ring region.
+fn grouped_region_selection_frame(further_count: u32) -> (Vec<u8>, usize) {
+    let profile_record_index = 100;
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"266", profile_record_index);
+    indexed_header(&mut bytes, *b"263", profile_record_index + 1);
+    indexed_header(&mut bytes, *b"259", profile_record_index + 2);
+    let selection_at = bytes.len();
+    indexed_header(&mut bytes, *b"327", profile_record_index + 3);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&profile_record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    // First group: one region of one ring, no further regions.
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut bytes, 70, [0, 1, 1]);
+    bytes.push(1);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    // Second group: a region with an exterior and a hole ring.
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut bytes, 80, [0, 1, 1]);
+    bytes.push(1);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut bytes, 81, [0, 1, 1]);
+    bytes.push(0);
+    bytes.extend_from_slice(&further_count.to_le_bytes());
+    // Its further region.
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut bytes, 90, [0, 1, 1]);
+    bytes.push(1);
+    indexed_header(&mut bytes, *b"261", profile_record_index + 3);
+    (bytes, selection_at)
+}
+
+#[test]
+fn sketch_profile_region_selection_reads_every_group_and_further_region() {
+    let (bytes, selection_at) = grouped_region_selection_frame(1);
+    let selection =
+        parse_sketch_profile_region_selection(&bytes, 100, 0).expect("grouped selection");
+    assert_eq!(selection.group_count, 2);
+    assert_eq!(
+        selection
+            .regions
+            .iter()
+            .map(|ring| (ring.members[0].curve_primary_id.get(), ring.flag))
+            .collect::<Vec<_>>(),
+        [(70, true), (80, true), (81, false), (90, true)]
+    );
+    let start = |offset: usize| Some(u64_from_index(selection_at + offset));
+    assert_eq!(
+        selection
+            .regions
+            .iter()
+            .map(|ring| ring.ring_count_offset)
+            .collect::<Vec<_>>(),
+        [start(36), start(89), None, start(187)]
+    );
+    assert_eq!(
+        selection
+            .regions
+            .iter()
+            .map(|ring| ring.further_region_count_offset)
+            .collect::<Vec<_>>(),
+        [start(85), None, start(183), None]
+    );
+    // A further-region count that the bytes do not hold refuses the record.
+    let (short, _) = grouped_region_selection_frame(2);
+    assert_eq!(parse_sketch_profile_region_selection(&short, 100, 0), None);
+}
+
 #[test]
 fn sketch_profile_region_selection_derives_companion_after_header_shaped_member() {
     let (mut bytes, selection_at, _, _) = region_selection_frame();

@@ -2442,7 +2442,7 @@ Offsets are relative to the primary indexed header. The variable reference table
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40.
+Offsets are relative to the N+3 selection header. The first group starts at offset 36 with the ring count of its first region; its first ring starts at offset 40.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2451,14 +2451,14 @@ Offsets are relative to the N+3 selection header. The ordered variable-length re
 | 21 | 1 | `profile_reference_marker` | `u8` | little | spec | a marked reference to `N` |
 | 22 | 4 | `profile_record_index` | `u32` | little | spec | a marked reference to `N` |
 | 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
-| 32 | 4 | `format_version` | `u32` | little | spec | u32 `1` |
-| 36 | 4 | `region_count` | `u32` | little | spec | a nonzero u32 region count |
+| 32 | 4 | `group_count` | `u32` | little | spec | a nonzero u32 group count |
+| 36 | 4 | `ring_count` | `u32` | little | spec | a nonzero u32 ring count |
 
 ## `sketch_profile_region_member`
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-The member repeats within each selected region. Region and member counts and the later-region marker are outside this fixed member frame.
+The member repeats within each ring. Group, ring and member counts, the ring flag byte and the further-region count are outside this fixed member frame.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

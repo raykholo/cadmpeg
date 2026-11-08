@@ -2331,7 +2331,7 @@ pub(crate) mod legacy_pipe_operation_prefix {
 /// Spec §3.1. Record length 40 B.
 ///
 /// ```text
-/// Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40.
+/// Offsets are relative to the N+3 selection header. The first group starts at offset 36 with the ring count of its first region; its first ring starts at offset 40.
 /// ```
 pub(crate) mod sketch_profile_region_selection_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -2342,10 +2342,10 @@ pub(crate) mod sketch_profile_region_selection_prefix {
     pub(crate) const PROFILE_REFERENCE_MARKER: usize = 21;
     /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
     pub(crate) const ZERO_RUN_6: usize = 26;
-    /// Offset of `format_version` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FORMAT_VERSION: usize = 32;
-    /// Offset of `region_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REGION_COUNT: usize = 36;
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 32;
+    /// Offset of `ring_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RING_COUNT: usize = 36;
 }
 
 /// Byte offsets for the `sketch_profile_region_member` record.
@@ -2353,7 +2353,7 @@ pub(crate) mod sketch_profile_region_selection_prefix {
 /// Spec §3.1. Record length 40 B.
 ///
 /// ```text
-/// The member repeats within each selected region. Region and member counts and the later-region marker are outside this fixed member frame.
+/// The member repeats within each ring. Group, ring and member counts, the ring flag byte and the further-region count are outside this fixed member frame.
 /// ```
 pub(crate) mod sketch_profile_region_member {
     /// Record length in bytes. Spec §3.1.

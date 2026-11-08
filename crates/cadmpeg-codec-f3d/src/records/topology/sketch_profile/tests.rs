@@ -22,6 +22,7 @@ fn sketch_profile_operand_borrowed_wire_matches_owned_wire_bytes() {
             record_index: 8,
             byte_offset: 90,
             class_tag: "302".to_owned().try_into().unwrap(),
+            group_count: 1,
             region_count_offset: 100,
             regions: Vec::new(),
             companion_class_tag: "303".to_owned().try_into().unwrap(),

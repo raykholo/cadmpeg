@@ -5516,10 +5516,6 @@ fn parse_sketch_profile_region_selection(
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<DesignSketchProfileRegionSelection> {
-    const REGION_MARKER_LEN: usize = 1;
-    const REGION_COUNT_LEN: usize = 4;
-    const TERMINATOR_LEN: usize = 5;
-
     let next_header = |position, expected| {
         let at = next_indexed_record_offset(bytes, position)?;
         (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
@@ -5550,75 +5546,86 @@ fn parse_sketch_profile_region_selection(
         ) != Some(profile_record_index)
         || bytes.get(
             selection_at + region_selection::ZERO_RUN_6
-                ..selection_at + region_selection::FORMAT_VERSION,
+                ..selection_at + region_selection::GROUP_COUNT,
         )? != [0; 6]
-        || View::u32_le_at(bytes, selection_at + region_selection::FORMAT_VERSION)? != 1
     {
         return None;
     }
-    let region_count = usize::try_from(View::u32_le_at(
-        bytes,
-        selection_at + region_selection::REGION_COUNT,
-    )?)
-    .ok()?;
-    if region_count == 0 {
+    let group_count = View::u32_le_at(bytes, selection_at + region_selection::GROUP_COUNT)?;
+    if group_count == 0 {
         return None;
     }
-    let minimum_regions_len = region_count
-        .checked_mul(REGION_COUNT_LEN.checked_add(region_member::LEN)?)?
-        .checked_add(
-            region_count
-                .checked_sub(1)?
-                .checked_mul(REGION_MARKER_LEN)?,
-        )?
-        .checked_add(TERMINATOR_LEN)?
-        .checked_add(indexed_header::LEN)?;
-    let mut cursor = selection_at.checked_add(region_selection::LEN)?;
-    if cursor.checked_add(minimum_regions_len)? > bytes.len() {
-        return None;
-    }
-
+    let mut cursor = selection_at
+        .checked_add(region_selection::GROUP_COUNT)?
+        .checked_add(4)?;
     let mut regions = Vec::new();
-    for region_ordinal in 0..region_count {
-        if region_ordinal != 0 {
-            if bytes.get(cursor) != Some(&1) {
-                return None;
-            }
-            cursor = cursor.checked_add(1)?;
+    for _ in 0..group_count {
+        let further = read_profile_region(bytes, &mut cursor, &mut regions, true)?;
+        for _ in 0..further {
+            read_profile_region(bytes, &mut cursor, &mut regions, false)?;
         }
-        let member_count_offset = cursor;
-        let member_count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
-        cursor = cursor.checked_add(REGION_COUNT_LEN)?;
-        if member_count == 0 {
-            return None;
-        }
-        let remaining_regions = region_count.checked_sub(region_ordinal.checked_add(1)?)?;
-        let trailing_minimum_len = remaining_regions
-            .checked_mul(
-                REGION_MARKER_LEN
-                    .checked_add(REGION_COUNT_LEN)?
-                    .checked_add(region_member::LEN)?,
-            )?
-            .checked_add(TERMINATOR_LEN)?
-            .checked_add(indexed_header::LEN)?;
-        let member_run_len = member_count.checked_mul(region_member::LEN)?;
-        if cursor
-            .checked_add(member_run_len)?
-            .checked_add(trailing_minimum_len)?
-            > bytes.len()
+    }
+    let companion_at = cursor;
+    if next_header(companion_at, selection_record_index)? != companion_at {
+        return None;
+    }
+    let (companion_class_tag, after_companion_class_tag) =
+        lp_ascii_filtered_view(bytes, companion_at, 0..=2000, u8::is_ascii_graphic)?;
+    if View::u32_le_at(bytes, after_companion_class_tag)? != selection_record_index {
+        return None;
+    }
+    Some(DesignSketchProfileRegionSelection {
+        record_index: selection_record_index,
+        byte_offset: u64::try_from(selection_at).ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+        group_count,
+        region_count_offset: u64::try_from(selection_at.checked_add(region_selection::RING_COUNT)?)
+            .ok()?,
+        regions,
+        companion_class_tag: crate::design::decode::text::class_tag_from_view(companion_class_tag)
+            .ok()?,
+        companion_byte_offset: u64::try_from(companion_at).ok()?,
+    })
+}
+
+/// Reads one region of a nested profile-region selection at `cursor`: a
+/// nonzero u32 ring count, then per ring a nonzero u32 member count, that many
+/// members and a flag byte `0` or `1`. Each ring becomes one member list. The
+/// first region of a group is followed by its u32 further-region count, which
+/// is returned; other regions return zero.
+fn read_profile_region(
+    bytes: &[u8],
+    cursor: &mut usize,
+    lists: &mut Vec<DesignSketchProfileRegion>,
+    first_of_group: bool,
+) -> Option<u32> {
+    let ring_count_offset = *cursor;
+    let ring_count = View::u32_le_at(bytes, *cursor)?;
+    if ring_count == 0 {
+        return None;
+    }
+    *cursor = cursor.checked_add(4)?;
+    for ring in 0..ring_count {
+        let member_count_offset = *cursor;
+        let member_count = usize::try_from(View::u32_le_at(bytes, *cursor)?).ok()?;
+        *cursor = cursor.checked_add(4)?;
+        if member_count == 0
+            || cursor
+                .checked_add(member_count.checked_mul(region_member::LEN)?)?
+                .checked_add(1)?
+                > bytes.len()
         {
             return None;
         }
-
         let mut members = Vec::new();
         for _ in 0..member_count {
-            let kind_offset = cursor;
-            let kind = View::u32_le_at(bytes, cursor)?;
+            let kind_offset = *cursor;
+            let kind = View::u32_le_at(bytes, kind_offset)?;
             let curve_primary_id = std::num::NonZeroU32::new(View::u32_le_at(
                 bytes,
-                cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
+                kind_offset.checked_add(region_member::CURVE_PRIMARY_ID)?,
             )?)?;
-            let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
+            let incidence_words_offset = kind_offset.checked_add(region_member::ZERO_WORDS_3)?;
             let mut incidence_words = [0; 8];
             for (ordinal, word) in incidence_words.iter_mut().enumerate() {
                 *word = View::u32_le_at(
@@ -5637,7 +5644,7 @@ fn parse_sketch_profile_region_selection(
                 kind_offset: u64::try_from(kind_offset).ok()?,
                 curve_primary_id,
                 curve_primary_id_offset: u64::try_from(
-                    cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
+                    kind_offset.checked_add(region_member::CURVE_PRIMARY_ID)?,
                 )
                 .ok()?,
                 incidence_flag: incidence_words[3] == 1,
@@ -5653,37 +5660,32 @@ fn parse_sketch_profile_region_selection(
                 ],
                 incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
             });
-            cursor = cursor.checked_add(region_member::LEN)?;
+            *cursor = cursor.checked_add(region_member::LEN)?;
         }
-        regions.push(DesignSketchProfileRegion {
+        let flag = match bytes.get(*cursor)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        *cursor = cursor.checked_add(1)?;
+        lists.push(DesignSketchProfileRegion {
+            ring_count_offset: (ring == 0)
+                .then(|| u64::try_from(ring_count_offset).ok())
+                .flatten(),
             member_count_offset: u64::try_from(member_count_offset).ok()?,
             members,
+            flag,
+            further_region_count_offset: None,
         });
     }
-    let companion_at = cursor.checked_add(TERMINATOR_LEN)?;
-    if !matches!(bytes.get(cursor..companion_at)?, [0 | 1, 0, 0, 0, 0])
-        || next_header(companion_at, selection_record_index)? != companion_at
-    {
-        return None;
+    if !first_of_group {
+        return Some(0);
     }
-    let (companion_class_tag, after_companion_class_tag) =
-        lp_ascii_filtered_view(bytes, companion_at, 0..=2000, u8::is_ascii_graphic)?;
-    if View::u32_le_at(bytes, after_companion_class_tag)? != selection_record_index {
-        return None;
-    }
-    Some(DesignSketchProfileRegionSelection {
-        record_index: selection_record_index,
-        byte_offset: u64::try_from(selection_at).ok()?,
-        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
-        region_count_offset: u64::try_from(
-            selection_at.checked_add(region_selection::REGION_COUNT)?,
-        )
-        .ok()?,
-        regions,
-        companion_class_tag: crate::design::decode::text::class_tag_from_view(companion_class_tag)
-            .ok()?,
-        companion_byte_offset: u64::try_from(companion_at).ok()?,
-    })
+    let further_offset = *cursor;
+    let further = View::u32_le_at(bytes, further_offset)?;
+    *cursor = cursor.checked_add(4)?;
+    lists.last_mut()?.further_region_count_offset = Some(u64::try_from(further_offset).ok()?);
+    Some(further)
 }
 
 struct ParsedRecipeOperand {

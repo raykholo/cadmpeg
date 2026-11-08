@@ -438,38 +438,54 @@ fn valid_sketch_profile_region_selection(
 ) -> bool {
     let Some(expected_region_count_offset) = selection
         .byte_offset
-        .checked_add(u64_from_index(region_selection::REGION_COUNT))
+        .checked_add(u64_from_index(region_selection::RING_COUNT))
     else {
         return false;
     };
     if profile.record_index.checked_add(3) != Some(selection.record_index)
         || selection.byte_offset <= profile.paired_byte_offset()
         || selection.region_count_offset != expected_region_count_offset
-        || selection.regions.is_empty()
+        || selection.group_count == 0
+        || selection
+            .regions
+            .first()
+            .and_then(|ring| ring.ring_count_offset)
+            != Some(expected_region_count_offset)
+        || selection
+            .regions
+            .first()
+            .map(|ring| ring.member_count_offset)
+            != selection
+                .byte_offset
+                .checked_add(u64_from_index(region_selection::LEN))
+        || selection
+            .regions
+            .iter()
+            .filter(|ring| ring.further_region_count_offset.is_some())
+            .count()
+            != usize::try_from(selection.group_count).unwrap_or(usize::MAX)
     {
         return false;
     }
-    let Some(mut cursor) = selection
-        .byte_offset
-        .checked_add(u64_from_index(region_selection::LEN))
-    else {
-        return false;
-    };
-    for (region_ordinal, region) in selection.regions.iter().enumerate() {
-        if region_ordinal != 0 {
-            let Some(next) = cursor.checked_add(1) else {
+    let mut cursor = expected_region_count_offset;
+    for ring in &selection.regions {
+        if let Some(ring_count_offset) = ring.ring_count_offset {
+            let Some(next) = cursor.checked_add(4) else {
                 return false;
             };
+            if ring_count_offset != cursor {
+                return false;
+            }
             cursor = next;
         }
-        if region.member_count_offset != cursor || region.members.is_empty() {
+        if ring.member_count_offset != cursor || ring.members.is_empty() {
             return false;
         }
         let Some(next) = cursor.checked_add(4) else {
             return false;
         };
         cursor = next;
-        for member in &region.members {
+        for member in &ring.members {
             let (Some(curve_primary_id_offset), Some(incidence_words_offset), Some(next)) = (
                 cursor.checked_add(4),
                 cursor.checked_add(8),
@@ -485,8 +501,21 @@ fn valid_sketch_profile_region_selection(
             }
             cursor = next;
         }
+        let Some(next) = cursor.checked_add(1) else {
+            return false;
+        };
+        cursor = next;
+        if let Some(further_offset) = ring.further_region_count_offset {
+            let Some(next) = cursor.checked_add(4) else {
+                return false;
+            };
+            if further_offset != cursor {
+                return false;
+            }
+            cursor = next;
+        }
     }
-    cursor.checked_add(5) == Some(selection.companion_byte_offset)
+    cursor == selection.companion_byte_offset
 }
 
 fn design_header_matches(

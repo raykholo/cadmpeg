@@ -289,7 +289,9 @@ pub(crate) struct DesignSketchProfileRegionSelection {
     pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII region-selection class tag.
     pub(crate) class_tag: DesignClassTag,
-    /// Byte offset of the member-list count.
+    /// Number of region groups.
+    pub(crate) group_count: u32,
+    /// Byte offset of the first region's ring count.
     pub(crate) region_count_offset: u64,
     /// Member lists in source order.
     pub(crate) regions: Vec<DesignSketchProfileRegion>,
@@ -302,10 +304,20 @@ pub(crate) struct DesignSketchProfileRegionSelection {
 /// One member list of a nested sketch-profile selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSketchProfileRegion {
+    /// Byte offset of the ring count of the region this list starts, when it
+    /// is the first ring of a region.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) ring_count_offset: Option<u64>,
     /// Byte offset of this list's member count.
     pub(crate) member_count_offset: u64,
     /// Persistent curve members in source order.
     pub(crate) members: Vec<DesignSketchProfileRegionMember>,
+    /// The flag byte after the members.
+    pub(crate) flag: bool,
+    /// Byte offset of the further-region count after this list, when it is
+    /// the last ring of a group's first region.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) further_region_count_offset: Option<u64>,
 }
 
 impl DesignSketchProfileRegionSelection {

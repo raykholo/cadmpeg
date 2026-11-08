@@ -7488,9 +7488,9 @@ anchor = "two opaque bytes at offsets 30 and 31"
 name = "sketch_profile_region_selection_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "The `N+3` selection starts with its eleven-byte indexed header, ten zero bytes, a marked reference to `N`, six zero bytes, u32 `1`, and a nonzero u32 region count."
+anchor = "The `N+3` selection starts with its eleven-byte indexed header, ten zero bytes, a marked reference to `N`, six zero bytes, and a nonzero u32 group count."
 size = 40
-note = "Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40."
+note = "Offsets are relative to the N+3 selection header. The first group starts at offset 36 with the ring count of its first region; its first ring starts at offset 40."
 
 [[record.field]]
 name = "indexed_header"
@@ -7528,18 +7528,18 @@ source = "spec"
 anchor = "six zero bytes"
 
 [[record.field]]
-name = "format_version"
+name = "group_count"
 offset = 32
 type = "u32"
 source = "spec"
-anchor = "u32 `1`"
+anchor = "a nonzero u32 group count"
 
 [[record.field]]
-name = "region_count"
+name = "ring_count"
 offset = 36
 type = "u32"
 source = "spec"
-anchor = "a nonzero u32 region count"
+anchor = "a nonzero u32 ring count"
 
 [[record]]
 name = "sketch_profile_region_member"
@@ -7547,7 +7547,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Each member is 40 bytes: u32 kind `3`, one nonzero u32 primary persistent Sketch-curve identity, three zero u32 values, three incidence values, and two zero u32 values."
 size = 40
-note = "The member repeats within each selected region. Region and member counts and the later-region marker are outside this fixed member frame."
+note = "The member repeats within each ring. Group, ring and member counts, the ring flag byte and the further-region count are outside this fixed member frame."
 
 [[record.field]]
 name = "kind"

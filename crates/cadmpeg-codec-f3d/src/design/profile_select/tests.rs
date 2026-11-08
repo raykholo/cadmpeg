@@ -494,14 +494,21 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("303".to_owned())
                     .unwrap(),
+                group_count: 1,
                 region_count_offset: 0,
                 regions: vec![
                     DesignSketchProfileRegion {
+                        ring_count_offset: None,
                         member_count_offset: 0,
+                        flag: true,
+                        further_region_count_offset: None,
                         members: vec![profile_region_member(100)],
                     },
                     DesignSketchProfileRegion {
+                        ring_count_offset: None,
                         member_count_offset: 0,
+                        flag: true,
+                        further_region_count_offset: None,
                         members: vec![
                             profile_region_member(200),
                             profile_region_member(201),
@@ -1001,14 +1008,21 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                     .unwrap(),
+                group_count: 1,
                 region_count_offset: 0,
                 regions: vec![
                     DesignSketchProfileRegion {
+                        ring_count_offset: None,
                         member_count_offset: 0,
+                        flag: true,
+                        further_region_count_offset: None,
                         members: vec![profile_region_member(200)],
                     },
                     DesignSketchProfileRegion {
+                        ring_count_offset: None,
                         member_count_offset: 0,
+                        flag: true,
+                        further_region_count_offset: None,
                         members: vec![profile_region_member(100)],
                     },
                 ],
