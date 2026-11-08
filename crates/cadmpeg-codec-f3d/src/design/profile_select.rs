@@ -748,22 +748,19 @@ pub(crate) fn bind_extrude_profile_selections(
                                     .is_some_and(|selection| !selection.has_further_regions())
                             })
                         {
-                            let selected = region_members::resolve(
+                            // An unresolved member-list reading leaves the
+                            // selection to the group path below.
+                            if let Some(selected) = region_members::resolve(
                                 stream,
                                 operand,
                                 sketch,
                                 curve_resolution.curve_identities,
                                 curve_resolution.sketch_entities,
                                 scoped_resolution,
-                            )?;
-                            *profile = ProfileRef::Planar(selected.unwrap_or_else(|| {
-                                PlanarProfileRef::sketch_selection(
-                                    sketch_id.clone(),
-                                    vec![scope.id.clone()],
-                                )
-                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
-                            }));
-                            break 'feature_edit;
+                            )? {
+                                *profile = ProfileRef::Planar(selected);
+                                break 'feature_edit;
+                            }
                         }
                     }
                     if !matching_groups.is_empty() {

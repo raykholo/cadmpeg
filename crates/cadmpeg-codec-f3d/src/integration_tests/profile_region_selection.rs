@@ -139,8 +139,12 @@ fn fixture_with_flags(
         "asset_id_offset": 20, "entity_id": "0_42", "entity_suffix": 42,
         "entity_reference_offset": 100, "paired_class_tag": "259", "paired_byte_offset": 200,
         "region_selection": {
-            "record_index": 103, "byte_offset": 300, "class_tag": "302", "region_count_offset": 336,
-            "regions": [{"member_count_offset": 340, "members": members}],
+            "record_index": 103, "byte_offset": 300, "class_tag": "302", "group_count": 1,
+            "region_count_offset": 336,
+            "regions": [{
+                "ring_count_offset": 336, "member_count_offset": 340, "members": members,
+                "flag": true, "further_region_count_offset": 341 + 40 * members.len(),
+            }],
             "companion_class_tag": "260", "companion_byte_offset": 700,
         }
     }))
