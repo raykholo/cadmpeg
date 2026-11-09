@@ -2,10 +2,9 @@
 //! Join of `PmDc` features to the `delta_state` history of the active kernel
 //! carrier ([spec §13.10](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/inventor.md#1310-feature-history-states)).
 //!
-//! The reader materializes no state. It walks the entity-version maps of the
-//! chain, newest state first, and keeps for each state only the body keys of
-//! its body records and, for each feature source index, the oldest state whose
-//! live naming attributes list it.
+//! The index walks entity-version maps newest first. It keeps live body keys
+//! and the oldest state whose naming attributes list each feature source. The
+//! internal Tagging check materializes the adjacent states of joined features.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -596,6 +595,13 @@ pub(crate) fn project(
             ctx.charge_entities(
                 cadmpeg_core::decode::u64_from_index(records.len()),
                 "join Inventor features to history states",
+            )?;
+            let _identity = super::tagging::identity::probe(
+                ctx,
+                carrier.bytes.window(),
+                header.width,
+                &index,
+                &records,
             )?;
             let schema_assumed = schema_assumed(&records, &index);
             Ok(Projection {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Tagging selection diagnostics.
 
+pub(crate) mod identity;
+
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::unique_index;

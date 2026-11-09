@@ -179,6 +179,18 @@ heuristic fallbacks:
 See [Inventor open items][open-items] for the exact boundary and required
 evidence for each branch.
 
+The internal Tagging identity check uses the feature history-state join. It
+materializes adjacent states with stable entity-slot references. It compares
+body counts, face counts per body, and decoded analytic surface classes and
+parameters. The absolute parameter tolerance is `1e-10` in stored carrier
+units. Directions are normalized. Stored surface charts use the same
+tolerance. The remaining geometry records, including trims and body placement,
+must compare equal. The check skips attribute-chain heads and attribute
+records. Missing state pairs, incomplete tables, unresolved ownership,
+unpaired slots, and unsupported surface carriers give an undecided result. The
+check charges the decode budget. Tagging retains its native feature
+representation.
+
 ## Documentation
 
 - [API documentation][docs]
