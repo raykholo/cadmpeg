@@ -1176,7 +1176,8 @@ pub(crate) fn bind_feature_outputs(
     losses.append(&mut inferred_histories);
     let output_chains = features
         .iter()
-        .map(|feature| {
+        .enumerate()
+        .map(|(index, feature)| {
             let (current, previous) = feature_history_states(feature, scopes, histories)?;
             output_chain::OutputChain::resolve(
                 histories,
@@ -1186,7 +1187,8 @@ pub(crate) fn bind_feature_outputs(
                     .native_ref
                     .as_deref()
                     .and_then(|id| scope_histories.get(id))
-                    .map(String::as_str),
+                    .map(String::as_str)
+                    .or_else(|| feature_sources[index].map(|source| histories[source].id.as_str())),
             )
         })
         .collect::<Vec<_>>();
