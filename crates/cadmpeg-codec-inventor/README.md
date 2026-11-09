@@ -186,10 +186,11 @@ parameters. The absolute parameter tolerance is `1e-10` in stored carrier
 units. Directions are normalized. Stored surface charts use the same
 tolerance. The remaining geometry records, including trims and body placement,
 must compare equal. The check skips attribute-chain heads and attribute
-records. Missing state pairs, incomplete tables, unresolved ownership,
-unpaired slots, and unsupported surface carriers give an undecided result. The
-check charges the decode budget. Tagging retains its native feature
-representation.
+records. A `state_after` ordinal shared with another feature gives an
+undecided result. Missing state pairs, incomplete tables, unresolved ownership,
+unpaired slots, and unsupported surface carriers also give an undecided
+result. The check charges the decode budget. Tagging retains its native
+feature representation.
 
 ## Documentation
 

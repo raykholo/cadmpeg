@@ -376,3 +376,66 @@ fn tagging_identity_charges_string_copies_to_decode_budget() {
     )
     .is_err());
 }
+
+#[test]
+fn tagging_identity_requires_an_isolated_state_pair() {
+    use crate::feature::history_states::{Binding, StateRef};
+
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::for_loaded_input(&arena, &DecodePolicy::default(), 0)
+        .expect("synthetic fixture budget");
+    let joins = [
+        ("derived", "native:DerivedPart", 1, 0),
+        ("shared-tag", "native:Tagging", 1, 0),
+        ("isolated-tag", "native:Tagging", 2, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(
+        |(source_index, (name, kind, after, before))| FeatureHistoryState {
+            id: format!("join-{name}"),
+            feature: name.into(),
+            source_index: u32::try_from(source_index).expect("synthetic source index"),
+            kind: kind.into(),
+            state_after: Some(StateRef {
+                ordinal: after,
+                state_id: i64::from(after),
+            }),
+            state_before: Some(before),
+            body_key: None,
+            binding: Binding::Bound,
+        },
+    )
+    .collect::<Vec<_>>();
+    let mut created = fixture();
+    created.push(record(6, "body", vec![Token::Ref(-1)]));
+    let states = BTreeMap::from([(0, fixture()), (1, created.clone()), (2, created)]);
+    let shared = shared_states(&joins);
+    assert_eq!(
+        compare_tag(&ctx, &joins[1], &shared, &states, true).expect("synthetic fixture budget"),
+        Outcome::Undecided(Refusal::SharedState)
+    );
+    assert_eq!(
+        compare_tag(&ctx, &joins[2], &shared, &states, true).expect("synthetic fixture budget"),
+        Outcome::Same
+    );
+    let changed = BTreeMap::from([(1, fixture()), (2, states[&2].clone())]);
+    assert_eq!(
+        compare_tag(&ctx, &joins[2], &shared, &changed, true).expect("synthetic fixture budget"),
+        Outcome::Changed
+    );
+    assert_eq!(
+        probe(
+            &ctx,
+            &[],
+            RefWidth::Four,
+            &StateIndex::default(),
+            &joins[..2]
+        )
+        .expect("synthetic fixture budget"),
+        vec![Outcome::Undecided(Refusal::SharedState)]
+    );
+    let mut same_after = joins;
+    same_after[0].state_before = None;
+    assert_eq!(shared_states(&same_after), shared);
+}

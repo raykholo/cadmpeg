@@ -29,6 +29,7 @@ pub(crate) enum Outcome {
 pub(crate) enum Refusal {
     NoStateJoin,
     NoPredecessor,
+    SharedState,
     StateNotMaterialized,
     IncompleteOwnership,
     UnpairedEntities,
@@ -328,8 +329,15 @@ pub(crate) fn probe(
     if tags.is_empty() {
         return Ok(Vec::new());
     }
+    let shared = shared_states(joins);
+    let compare = |states: &BTreeMap<u32, Vec<Record>>, complete| {
+        tags.iter()
+            .map(|tag| compare_tag(ctx, tag, &shared, states, complete))
+            .collect()
+    };
     let wanted = tags
         .iter()
+        .filter(|r| r.state_after.is_none_or(|s| !shared.contains(&s.ordinal)))
         .filter_map(|r| {
             r.state_before
                 .zip(r.state_after)
@@ -338,37 +346,17 @@ pub(crate) fn probe(
         .flatten()
         .collect::<BTreeSet<_>>();
     if wanted.is_empty() {
-        return tags
-            .iter()
-            .map(|tag| {
-                compare_pair(
-                    ctx,
-                    tag.state_before,
-                    tag.state_after.map(|s| s.ordinal),
-                    &BTreeMap::new(),
-                    true,
-                )
-            })
-            .collect();
+        return compare(&BTreeMap::new(), true);
     }
     let ChainFraming::Framed(chain) = frame_history_chain(ctx, bytes, width)? else {
-        return Ok(tags
-            .iter()
-            .map(|_| Outcome::Undecided(Refusal::StateNotMaterialized))
-            .collect());
+        return compare(&BTreeMap::new(), false);
     };
     let views = chain.views(bytes);
     let Some(frames) = decode_record_archive(ctx, &views, bytes, width)? else {
-        return Ok(tags
-            .iter()
-            .map(|_| Outcome::Undecided(Refusal::StateNotMaterialized))
-            .collect());
+        return compare(&BTreeMap::new(), false);
     };
     let Ok(active_count) = i64::try_from(frames.active.len()) else {
-        return Ok(tags
-            .iter()
-            .map(|_| Outcome::Undecided(Refusal::StateNotMaterialized))
-            .collect());
+        return compare(&BTreeMap::new(), false);
     };
     charge(ctx, frames.active.len())?;
     let mut slots = (0..active_count).map(|n| (n, n)).collect::<HashMap<_, _>>();
@@ -429,19 +417,35 @@ pub(crate) fn probe(
     if let Some(error) = failure {
         return Err(error);
     }
-    let mut outcomes = Vec::new();
-    for tag in tags {
-        let result = compare_pair(
-            ctx,
-            tag.state_before,
-            tag.state_after.map(|s| s.ordinal),
-            &states,
-            closed && consistent && visit == 0,
-        )?;
+    compare(&states, closed && consistent && visit == 0)
+}
 
-        outcomes.push(result);
+fn shared_states(joins: &[FeatureHistoryState]) -> BTreeSet<u32> {
+    let mut seen = BTreeSet::new();
+    joins
+        .iter()
+        .filter_map(|join| join.state_after.map(|s| s.ordinal))
+        .filter(|ordinal| !seen.insert(*ordinal))
+        .collect()
+}
+
+fn compare_tag(
+    ctx: &DecodeContext<'_>,
+    tag: &FeatureHistoryState,
+    shared: &BTreeSet<u32>,
+    states: &BTreeMap<u32, Vec<Record>>,
+    complete: bool,
+) -> Result<Outcome, CodecError> {
+    if tag.state_after.is_some_and(|s| shared.contains(&s.ordinal)) {
+        return Ok(Outcome::Undecided(Refusal::SharedState));
     }
-    Ok(outcomes)
+    compare_pair(
+        ctx,
+        tag.state_before,
+        tag.state_after.map(|s| s.ordinal),
+        states,
+        complete,
+    )
 }
 
 fn compare_pair(
