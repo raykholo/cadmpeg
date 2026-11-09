@@ -316,6 +316,73 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
 }
 
 #[test]
+fn a_scope_binds_only_to_a_history_of_its_own_occurrence() {
+    let state = |history: &str, state_id: i64, previous_state_id: Option<i64>| {
+        (
+            AsmDeltaState {
+                id: format!("{history}:asm-delta-state#{state_id}"),
+                parent: history.into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: previous_state_id,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
+    };
+    let history = |occurrence: &str| {
+        let id = format!(
+            "f3d:{occurrence}FusionAssetName[Active]/Breps.BlobParts/BREP.blob.smbh:asm-history#1"
+        );
+        crate::test_support::history::history(
+            id.clone(),
+            0,
+            None,
+            false,
+            vec![state(&id, 9, Some(2)), state(&id, 2, None)],
+        )
+    };
+    let first = "xref/role-a/reference-0/occurrence-0/";
+    let second = "xref/role-b/reference-1/occurrence-0/";
+    let histories = [history(first), history(second)];
+    let scope = |occurrence: &str| {
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            &format!(
+                "f3d:{occurrence}FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#100"
+            ),
+            crate::records::feature::scope::DesignFeatureKind::Chamfer,
+            100,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(9);
+                draft.previous_history_state_id = Some(2);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    };
+    // Both histories hold the pair; each scope takes the one of its own
+    // occurrence.
+    let scopes = vec![scope(first), scope(second)];
+    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
+    assert_eq!(bindings[&scopes[0].id], histories[0].id);
+    assert_eq!(bindings[&scopes[1].id], histories[1].id);
+    // A scope of the top-level design takes neither.
+    let top = vec![scope("")];
+    assert!(bind_scope_histories(&top, &[], &[], &histories).is_empty());
+}
+
+#[test]
 fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
     let state = |state_id, node_index, previous_ref, next_ref| {
         (

@@ -5178,16 +5178,24 @@ pub(crate) fn bind_scope_histories(
         let Some(state_id) = scope.history_state_id() else {
             continue;
         };
+        // State identities are local to the histories of one Design occurrence;
+        // a scope binds only to a history of its own occurrence.
+        let own_histories = histories
+            .iter()
+            .filter(|history| crate::ids::same_native_occurrence(&history.id, &scope.id))
+            .collect::<Vec<_>>();
         let scope_candidates = if let Some(previous_state_id) = scope.previous_history_state_id() {
-            let direct = histories
+            let direct = own_histories
                 .iter()
+                .copied()
                 .filter(|history| {
                     history_state_pair(history, state_id, previous_state_id, true).is_some()
                 })
                 .collect::<Vec<_>>();
             if direct.is_empty() {
-                histories
+                own_histories
                     .iter()
+                    .copied()
                     .filter(|history| {
                         history_state_pair(history, state_id, previous_state_id, false).is_some()
                     })
@@ -5196,8 +5204,9 @@ pub(crate) fn bind_scope_histories(
                 direct
             }
         } else {
-            histories
+            own_histories
                 .iter()
+                .copied()
                 .filter(|history| unique_history_state_in(history, state_id))
                 .collect::<Vec<_>>()
         };
