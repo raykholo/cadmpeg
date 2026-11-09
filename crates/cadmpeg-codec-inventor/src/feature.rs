@@ -2439,6 +2439,28 @@ pub(crate) fn project(
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
         let revolve_loss_count = revolve_losses.len();
+        if let Some(label) = label.filter(|label| {
+            loft_sweep::slots::Family::from_class_id(label.class_id())
+                == Some(loft_sweep::slots::Family::SurfaceLoft)
+        }) {
+            let sections =
+                loft_sweep::face_loop::sections(feature, label, &index, &inventory.edge_inputs);
+            ctx.charge_entities(
+                cadmpeg_core::decode::u64_from_index(
+                    sections
+                        .iter()
+                        .map(|section| {
+                            section
+                                .as_ref()
+                                .ok()
+                                .filter(|joined| joined.closed())
+                                .map_or(0, |joined| joined.edges.len())
+                        })
+                        .sum::<usize>(),
+                ),
+                "join Inventor surface-loft face loops",
+            )?;
+        }
         let value = match label.and_then(|label| {
             FeatureFamily::from_class_id(label.class_id()).map(|family| (label, family))
         }) {

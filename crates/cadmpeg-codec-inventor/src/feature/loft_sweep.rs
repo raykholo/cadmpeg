@@ -13,6 +13,7 @@ use crate::pmdc::{
 };
 
 pub(crate) mod controls;
+pub(super) mod face_loop;
 pub(super) mod projection;
 pub(crate) mod slots;
 pub(crate) mod sweep;

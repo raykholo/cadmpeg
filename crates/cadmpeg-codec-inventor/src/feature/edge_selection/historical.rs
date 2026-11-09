@@ -29,7 +29,7 @@ pub(super) struct StoredSelector {
     pub(super) key: u32,
     body: PmDcReference,
     body_source: u32,
-    item: PmDcReference,
+    pub(super) item: PmDcReference,
     context: PmDcReference,
 }
 

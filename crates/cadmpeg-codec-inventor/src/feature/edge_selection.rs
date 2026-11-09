@@ -20,6 +20,7 @@ mod adjacency;
 mod archive;
 pub(in crate::feature) mod geometry;
 pub(crate) mod historical;
+pub(in crate::feature) mod loops;
 
 #[derive(Debug, Default)]
 pub(super) struct EdgeInventory {
@@ -29,6 +30,15 @@ pub(super) struct EdgeInventory {
     pub(super) generated_sources_complete: bool,
     pub(super) historical: HashMap<(String, u32), historical::SelectedEdge>,
     pub(super) faces: HashMap<(String, u32), super::face_selection::SelectedFace>,
+    /// Face-loop participant records of surface lofts, by segment and ordinal.
+    pub(super) loops: HashMap<(String, u32), super::loft_sweep::face_loop::StoredLoop>,
+    /// Vertices of the input edge that each edge selector selects.
+    pub(super) loop_edges: HashMap<(String, u32), loops::EdgeVertices>,
+    /// Edge revisions in the loops of each face that a face-loop
+    /// participant lists, by face selector.
+    pub(super) loop_faces: HashMap<(String, u32), Vec<loops::Revision>>,
+    /// Peer records of the face-loop participants.
+    pub(super) peers: HashMap<(String, u32), super::loft_sweep::face_loop::StoredPeer>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -314,7 +324,7 @@ pub(super) fn matched_qualified(record: &Record, schema: u32) -> Option<(u32, u3
     ))
 }
 
-fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
+pub(super) fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
     let (source, key, owner, qualifier) = matched_qualified(record, schema)?;
     (qualifier == 0).then_some((source, key, owner))
 }
@@ -394,7 +404,7 @@ fn legacy_generated(record: &Record, schema: u32) -> Option<(i64, EdgeName)> {
     ))
 }
 
-fn is_edge(record: &Record) -> bool {
+pub(super) fn is_edge(record: &Record) -> bool {
     matches!(record.head(), "edge" | "tedge")
         || (record.name == "End-of-ASM-History-Section"
             && matches!(record.tokens.first(), Some(Token::Ident(name)) if name == "edge"))
@@ -465,6 +475,8 @@ pub(super) fn inventory(
     let mut sample_geometry = false;
     let mut has_flange = false;
     let mut tokens = HashSet::new();
+    let mut loops = HashMap::new();
+    let mut peers = HashMap::new();
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
             continue;
@@ -546,6 +558,32 @@ pub(super) fn inventory(
                 }
                 continue;
             }
+            if record.type_id == super::loft_sweep::face_loop::LOOP_TYPE {
+                match super::loft_sweep::face_loop::parse_loop(ctx, record.payload, version) {
+                    Ok(stored) => {
+                        loops.insert(
+                            (segment.pair.token.key().as_str().to_owned(), record.ordinal),
+                            stored,
+                        );
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => {}
+                }
+                continue;
+            }
+            if record.type_id == super::loft_sweep::face_loop::PEER_TYPE {
+                match super::loft_sweep::face_loop::parse_peer(ctx, record.payload, version) {
+                    Ok(stored) => {
+                        peers.insert(
+                            (segment.pair.token.key().as_str().to_owned(), record.ordinal),
+                            stored,
+                        );
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => {}
+                }
+                continue;
+            }
             if record.type_id != SELECTOR_TYPE {
                 continue;
             }
@@ -624,6 +662,40 @@ pub(super) fn inventory(
     } else {
         HashMap::new()
     };
+    let (loop_edges, loop_faces) = if archive_complete && !loops.is_empty() {
+        let face_items = loops
+            .values()
+            .filter_map(|stored| stored.face_item().record_ordinal())
+            .collect::<HashSet<_>>();
+        (
+            loops::edges(
+                &records,
+                &stored_selectors
+                    .iter()
+                    .filter_map(|selector| {
+                        Some(loops::Selector {
+                            source: selector.source,
+                            key: selector.key,
+                            item: selector.item.record_ordinal()?,
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+                carrier.schema,
+            )
+            .into_iter()
+            .map(|(source, edge)| ((token.clone(), source), edge))
+            .collect(),
+            faces
+                .iter()
+                .filter(|(_, face)| face_items.contains(&face.item))
+                .filter_map(|(key, face)| {
+                    Some((key.clone(), loops::boundary(&records, &face.owners)?))
+                })
+                .collect(),
+        )
+    } else {
+        (HashMap::new(), HashMap::new())
+    };
     let (generated_sources, generated_sources_complete) = if name_corners {
         let (sources, complete) = generated_sources(&records, carrier.schema);
         (Some(sources), archive_complete && complete)
@@ -636,6 +708,10 @@ pub(super) fn inventory(
             generated_sources_complete,
             historical,
             faces,
+            loops,
+            loop_edges,
+            loop_faces,
+            peers,
             ..EdgeInventory::default()
         });
     }
@@ -651,6 +727,10 @@ pub(super) fn inventory(
     Ok(EdgeInventory {
         historical,
         faces,
+        loops,
+        loop_edges,
+        loop_faces,
+        peers,
         generated_sources,
         generated_sources_complete,
         names: names

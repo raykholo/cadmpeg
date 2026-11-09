@@ -131,6 +131,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
                 ("fixture".to_owned(), 61),
                 sample.clone(),
             )]),
+            ..Default::default()
         },
         ..Default::default()
     };

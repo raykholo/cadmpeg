@@ -73,7 +73,7 @@ fn position(record: &Record) -> Option<FinitePoint3> {
     FinitePoint3::new(Point3::new(x * CM_TO_MM, y * CM_TO_MM, z * CM_TO_MM))
 }
 
-fn endpoints(
+pub(super) fn endpoints(
     edge: &Record,
     records: &HashMap<i64, &Record>,
 ) -> Option<(FinitePoint3, FinitePoint3)> {
