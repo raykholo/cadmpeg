@@ -2016,3 +2016,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The Mini AfterSherpa V6 Zodiac BMO part stores a one-sided Cut scope with a selected-face start, one start face group, a `Side1Offset` owner, no termination group, and no shape-target group.
 
 **Note.** None.
+
+### DR-335. Extrude bounded-face programs across boundary changes
+
+**Question.** Which stored relations bind an `Extrude` start or termination recipe when its node run covers an earlier boundary, a node has one endpoint clause, or a prefix operand has an empty face lane in the preceding topology?
+
+**Known.** A two-sided termination stores two bounded-face recipes with Design reference `302`. One program has five nodes, of which four have a parsed two-clause structure. The other has four parsed two-clause nodes; its first prefix operand names face slot `50`, whose preceding loop has eight edges. Its aggregate candidate lane contains four side faces. A further termination program has eight parsed nodes and two empty prefix-face lanes. Two further programs have five nodes each and retain one unparsed node each. Their remaining candidates include several preceding faces.
+
+**Need.** The mapping of a saved boundary edge to a chain of preceding edges, the single-clause grammar and closed-edge binding of DR-170, and the binding of empty prefix-face lanes. Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
+
+**Conflict.** None.
+
+**Note.** These start and termination groups retain their native identities when the candidate, support, complete-loop, and plane proofs remain unresolved.
