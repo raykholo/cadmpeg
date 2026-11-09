@@ -161,15 +161,26 @@ pub(crate) fn select_active_carrier<'a>(
             "part document has {brep_count} PmBRep segments; expected one"
         ));
     };
+    match select_segment_carrier(segment) {
+        Ok(carrier) => ActiveCarrierState::Selected(carrier),
+        Err(detail) => ActiveCarrierState::Unavailable(detail),
+    }
+}
+
+pub(crate) fn select_segment_carrier<'a>(
+    segment: &SegmentDescriptor<'a>,
+) -> Result<ActiveCarrier<'a>, String> {
+    let label = match segment.kind {
+        SegmentKind::MbBRep => "MbBRep",
+        _ => "PmBRep",
+    };
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-        return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".to_owned());
+        return Err(format!("{label} bulk stream is unavailable"));
     };
     let table = match &bulk.records {
         RecordFrameState::Framed(table) => table,
         RecordFrameState::Unavailable(_) => {
-            return ActiveCarrierState::Unavailable(
-                "PmBRep record table is unavailable".to_owned(),
-            );
+            return Err(format!("{label} record table is unavailable"));
         }
     };
     let is_carrier = |record: &&RseRecordFrame<'a>| record.type_id == KERNEL_RECORD_TYPE_ID;
@@ -180,25 +191,23 @@ pub(crate) fn select_active_carrier<'a>(
         .rfind(is_carrier)
         .filter(|_| carrier_count == 1)
     else {
-        return ActiveCarrierState::Unavailable(format!(
-            "PmBRep contains {carrier_count} typed kernel-carrier records; expected one"
+        return Err(format!(
+            "{label} contains {carrier_count} typed kernel-carrier records; expected one"
         ));
     };
     let Some(version) = segment.registry.map(|join| join.version_major) else {
-        return ActiveCarrierState::Unavailable(
-            "PmBRep segment version is unavailable from the registry".to_owned(),
-        );
+        return Err(format!(
+            "{label} segment version is unavailable from the registry"
+        ));
     };
-    match parse_carrier(
+    parse_carrier(
         record.payload,
         segment.pair.token.key(),
         record.ordinal,
         record.payload_offset,
         version,
-    ) {
-        Ok(carrier) => ActiveCarrierState::Selected(carrier),
-        Err(error) => ActiveCarrierState::Unavailable(error.to_string()),
-    }
+    )
+    .map_err(|error| error.to_string())
 }
 
 pub(crate) fn parse_carrier<'a>(

@@ -617,6 +617,7 @@ fn decode_container<'a>(
         },
         _ => None,
     };
+    let _flat_pattern_bodies = crate::flat_pattern::read(ctx, &container.rse, &design_inventory)?;
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
     let body_keys = if delivered == DecodeDepth::Full {
         kernel_brep.body_native_keys.clone()

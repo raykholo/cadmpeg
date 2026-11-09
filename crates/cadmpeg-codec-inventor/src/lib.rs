@@ -20,6 +20,7 @@ mod dialect;
 mod drawing;
 mod external_reference;
 mod feature;
+mod flat_pattern;
 #[doc(hidden)]
 pub mod fuzz;
 mod kernel;
