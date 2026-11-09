@@ -90,6 +90,8 @@ fn line(topology: &mut AsmHistoricalTopology, edge: i64, direction: Vector3) {
         direction,
     });
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        carrier: None,
+        parameter_range: None,
         edge,
         interior: Point3::new(0.0, 0.0, 0.0),
         tangent: Some(direction),
@@ -228,6 +230,8 @@ fn rib_fillet() -> AsmHistoricalTopology {
     });
     for (edge, position) in [(30, 1.0), (31, 1.5)] {
         topology.edge_samples.push(AsmHistoricalEdgeSample {
+            carrier: None,
+            parameter_range: None,
             edge,
             interior: Point3::new(position, centre.y, 0.0),
             tangent: Some(x()),
@@ -1094,6 +1098,8 @@ fn a_blend_with_two_deleted_edges_along_its_spine_states_nothing() {
     two.edge_samples.retain(|sample| sample.edge != 18);
     two.curve_axes.retain(|axis| axis.curve != 118);
     two.edge_samples.push(AsmHistoricalEdgeSample {
+        carrier: None,
+        parameter_range: None,
         edge: 18,
         interior: Point3::new(0.0, 0.0, 0.0),
         tangent: Some(z()),

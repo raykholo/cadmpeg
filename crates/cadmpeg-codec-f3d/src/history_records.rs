@@ -385,6 +385,18 @@ pub(crate) struct AsmHistoricalPoint {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEdgeSample {
     pub(crate) edge: i64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_sample_carrier"
+    )]
+    pub(crate) carrier: Option<cadmpeg_ir::features::HistoricalEdgeCarrier>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_sample_parameter_range"
+    )]
+    pub(crate) parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
     pub(crate) interior: Point3,
     #[serde(
         default,
@@ -1289,3 +1301,14 @@ pub(crate) enum AsmTransitionError {
 
 pub(crate) use chain::{AsmStateSnapshot, MaterializedTopologies};
 mod chain;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_sample_carrier,
+    cadmpeg_ir::features::HistoricalEdgeCarrier,
+    "carrier"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_sample_parameter_range,
+    cadmpeg_ir::units::FiniteVector<2>,
+    "parameter_range"
+);

@@ -4532,6 +4532,8 @@ fn project_input_edge_geometry(
             let mut faces = edge_faces.get(slot).cloned().unwrap_or_default();
             faces.sort_unstable();
             Some(cadmpeg_ir::features::HistoricalEdgeGeometry {
+                carrier: sample.carrier,
+                parameter_range: sample.parameter_range,
                 edge: crate::ids::history_input_edge_id(prefix, *slot),
                 interior: cadmpeg_ir::features::FinitePoint3::new(sample.interior)?,
                 tangent: sample.tangent.and_then(cadmpeg_ir::units::UnitVector3::new),
@@ -9732,7 +9734,8 @@ fn historical_edge_samples(
 {
     use cadmpeg_ir::eval::admission::EvaluationAdmission;
     use cadmpeg_ir::eval::finite_or_refusal;
-    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::features::HistoricalEdgeCarrier;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     let curves = brep
         .curves
@@ -9769,7 +9772,15 @@ fn historical_edge_samples(
         ))?
         .and_then(|tangent| cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(tangent.get()))
         .map(|tangent| *tangent.as_raw());
+        let carrier = match geometry {
+            SolvedCurveGeometry::Line(line) => Some(HistoricalEdgeCarrier::Line(*line)),
+            SolvedCurveGeometry::Circle(circle) => Some(HistoricalEdgeCarrier::Circle(*circle)),
+            SolvedCurveGeometry::Ellipse(ellipse) => Some(HistoricalEdgeCarrier::Ellipse(*ellipse)),
+            _ => None,
+        };
         samples.push(crate::history_records::AsmHistoricalEdgeSample {
+            carrier,
+            parameter_range: edge.param_range(),
             edge: edge_ref,
             interior: interior.get(),
             tangent,

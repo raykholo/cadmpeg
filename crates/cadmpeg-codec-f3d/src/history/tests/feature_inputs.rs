@@ -239,6 +239,8 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
             },
         ],
         edge_samples: vec![AsmHistoricalEdgeSample {
+            carrier: None,
+            parameter_range: None,
             edge: 40,
             interior: Point3::new(0.0, 0.0, 5.0),
             tangent: Some(Vector3::new(0.0, 0.0, 1.0)),
@@ -304,6 +306,8 @@ fn input_edge_geometry_keeps_only_selected_edges() {
         }),
     );
     let geometry = |edge: &cadmpeg_ir::ids::HistoricalEdgeId| HistoricalEdgeGeometry {
+        carrier: None,
+        parameter_range: None,
         edge: edge.clone(),
         interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
         tangent: None,
@@ -364,6 +368,8 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
         }),
     );
     let geometry = |edge: i64, faces: [i64; 2]| HistoricalEdgeGeometry {
+        carrier: None,
+        parameter_range: None,
         edge: crate::ids::history_input_edge_id(&prefix, edge),
         interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
         tangent: None,

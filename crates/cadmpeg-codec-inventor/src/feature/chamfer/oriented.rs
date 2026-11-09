@@ -172,6 +172,8 @@ pub(crate) fn project<'a>(
                 .map_err(CodecError::malformed)?,
             vertices: DistinctMembers::default(),
             edge_geometry: vec![HistoricalEdgeGeometry {
+                carrier: None,
+                parameter_range: None,
                 edge: joined.edge,
                 start: Some(joined.geometry.start),
                 end: Some(joined.geometry.end),

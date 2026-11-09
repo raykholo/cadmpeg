@@ -1845,10 +1845,26 @@ pub struct FeatureInputTopology {
     pub native_ref: Option<String>,
 }
 
+/// Analytic carrier of an edge in a feature's input state.
+///
+/// Positions and radii are in millimetres in the evaluated body's frame.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum HistoricalEdgeCarrier {
+    /// Infinite line: `origin + t * direction`, with `t` in millimetres.
+    Line(crate::geometry::analytic::LineCurve),
+    /// Full circle: angle in radians from `ref_direction` about `axis`.
+    Circle(crate::geometry::analytic::CircleCurve),
+    /// Ellipse: angle in radians from `major_direction` about `axis`.
+    Ellipse(crate::geometry::analytic::EllipseCurve),
+}
+
 /// Geometry of one historical edge in a feature's input state.
 ///
-/// Positions and directions are in millimetres in the frame of the body that
-/// the feature evaluates, before the feature applies.
+/// Positions are in millimetres in the frame of the body that the feature
+/// evaluates, before the feature applies. Directions are unit vectors.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1879,6 +1895,21 @@ pub struct HistoricalEdgeGeometry {
         deserialize_with = "deserialize_edge_geometry_end"
     )]
     pub end: Option<FinitePoint3>,
+    /// Analytic carrier in the historical body frame, with lengths in millimetres.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_carrier"
+    )]
+    pub carrier: Option<HistoricalEdgeCarrier>,
+    /// Finite carrier parameter interval. Line parameters are millimetres;
+    /// circle and ellipse parameters are radians in the carrier frame.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_parameter_range"
+    )]
+    pub parameter_range: Option<FiniteVector<2>>,
     /// Faces of the owning input state that use the edge.
     #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
     pub faces: DistinctMembers<HistoricalFaceId>,
@@ -9609,3 +9640,14 @@ cadmpeg_core::named_optional_field!(
 );
 
 cadmpeg_core::named_optional_field!(deserialize_plane_target_source, PlaneTargetSource, "source");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_geometry_carrier,
+    HistoricalEdgeCarrier,
+    "carrier"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_geometry_parameter_range,
+    FiniteVector<2>,
+    "parameter_range"
+);

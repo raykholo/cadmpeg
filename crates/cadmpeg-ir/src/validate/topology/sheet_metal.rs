@@ -204,6 +204,8 @@ mod tests {
         ];
         ir.model.features[1].dependencies.insert(plate_id.clone());
         let geometry = HistoricalEdgeGeometry {
+            carrier: None,
+            parameter_range: None,
             edge: edge.clone(),
             start: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)),
             end: FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)),

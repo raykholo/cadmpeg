@@ -238,6 +238,8 @@ An extrusion starts on its profile plane, on a plane at a signed offset from the
 }
 ```
 
+`HistoricalEdgeGeometry` stores an input-state edge's midpoint sample, unit tangent, endpoints, and incident faces. Its optional `carrier` stores a `line`, `circle`, or `ellipse` with lengths in millimetres in the evaluated body's frame. A line uses `origin + t * direction`, with `t` in millimetres. A circle uses an angle in radians from `ref_direction` about `axis`. An ellipse uses an angle in radians from `major_direction` about `axis`, with cosine on the major semiaxis and sine on the minor semiaxis. The optional `parameter_range` stores the edge's two finite carrier parameters in source order. The interval bounds the edge on its carrier and identifies a full turn on a closed circular edge. Each absent optional field is omitted.
+
 Ordered resolved and historical body sets store nonempty member rows. Each row pairs one body identity with one nonblank native member string. Body identities and native member strings are unique within the set. Historical unordered sets retain separate body and native-member collections with equal nonzero counts and unique members; no positional correspondence is implied.
 
 A configuration feature evaluation is `suppressed` or `active`. A suppressed evaluation has no outputs. An active evaluation owns its output list, which may be empty. Dependencies and the feature definition remain present independently of the evaluation state.
@@ -396,7 +398,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "10"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "11"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -410,7 +412,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "10",
+  "ir_version": "11",
   "decode_depth": "full",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },

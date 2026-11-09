@@ -84,6 +84,8 @@ pub(in crate::feature) fn project(
             let edge = HistoricalEdgeId::mint(format!("inventor:input-edge#{token}-{source}"))
                 .map_err(CodecError::malformed)?;
             geometry.push(HistoricalEdgeGeometry {
+                carrier: None,
+                parameter_range: None,
                 edge: edge.clone(),
                 start: Some(sample.start),
                 end: Some(sample.end),

@@ -416,6 +416,8 @@ pub(crate) fn project(
                 let id = edge_id(token, selected_source)?;
                 if owners.insert(id.clone()) {
                     geometry.push(HistoricalEdgeGeometry {
+                        carrier: None,
+                        parameter_range: None,
                         edge: id.clone(),
                         start: Some(edge.geometry.start),
                         end: Some(edge.geometry.end),

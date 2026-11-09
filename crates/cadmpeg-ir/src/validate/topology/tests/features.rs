@@ -1266,6 +1266,8 @@ fn input_edge_geometry_names_its_own_state_members_once() {
     let edge = HistoricalEdgeId::mint("test:model:historical-edge#1").expect("valid identity");
     let face = HistoricalFaceId::mint("test:model:historical-face#1").expect("valid identity");
     let geometry = |edge: &str, face: &str| HistoricalEdgeGeometry {
+        carrier: None,
+        parameter_range: None,
         edge: HistoricalEdgeId::mint(edge).unwrap(),
         interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
         tangent: Some(crate::units::UnitVector3::Z_AXIS),
