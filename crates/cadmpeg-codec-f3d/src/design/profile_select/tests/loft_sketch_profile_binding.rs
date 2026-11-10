@@ -324,6 +324,8 @@ fn a_role_0x5_loft_section_of_planar_sketch_curves_binds_as_sketch_entities() {
         crate::test_support::multiple_profiles::fixture_with_flags(1, None);
     let losses = crate::test_support::zip_test::with_scan(&archive, |scan| {
         bind_loft_and_revolve_sketch_selections(
+            &cadmpeg_test_support::service_decode_context(),
+            &super::super::ProfileGeometryWork::new(),
             scan,
             std::slice::from_mut(&mut section_group),
             &headers,
