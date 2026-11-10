@@ -1990,3 +1990,5 @@ fn a_fillet_binds_from_the_transition_of_its_scope() {
     assert_eq!(slots(&bind_feature(Some(SCOPE_ID))), ["17"]);
     assert_eq!(bind_feature(None), native());
 }
+
+mod fragment_precedence;
