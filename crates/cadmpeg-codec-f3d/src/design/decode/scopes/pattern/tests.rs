@@ -1720,6 +1720,51 @@ fn rectangular_pattern_spacing_direction_validates_shifted_fields() {
     }
 }
 
+#[test]
+fn rectangular_pattern_compact_spacing_direction_validates_links_and_sense() {
+    let mut bytes = rectangular_pattern_direction_frame(8, [0.0, 0.0, 4.0]);
+    bytes[89..93].copy_from_slice(&7u32.to_le_bytes());
+    bytes.remove(194);
+    bytes.drain(93..117);
+    let parse =
+        |bytes: &[u8]| super::exact_rectangular_pattern_direction(bytes, 0, 195, 20, 23, 10);
+    let direction = parse(&bytes).expect("compact spacing direction");
+    assert_eq!(direction.distance_type, 7);
+    assert_eq!(
+        direction.origin,
+        crate::test_support::reals([-2.0, 1.0, 0.5])
+    );
+    assert_eq!(
+        direction.displacement,
+        crate::test_support::reals([0.0, 0.0, 4.0])
+    );
+    assert_eq!(
+        direction.direction().unwrap().as_raw(),
+        &cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    );
+    assert_eq!(direction.origin_offset, 25);
+    assert_eq!(direction.displacement_offset, 49);
+    assert_eq!(direction.selection_record_index, 23);
+    for offset in [
+        11, 73, 89, 93, 97, 98, 108, 110, 114, 125, 133, 143, 155, 159, 160, 170, 171, 172, 173,
+        183, 184, 185, 196, 202,
+    ] {
+        let mut corrupt = bytes.clone();
+        corrupt[offset] ^= 1;
+        assert!(parse(&corrupt).is_none(), "offset {offset}");
+    }
+    for end in 0..bytes.len() {
+        assert!(parse(&bytes[..end]).is_none());
+    }
+    assert!(super::exact_rectangular_pattern_direction(&bytes, 0, 195, 20, 24, 10).is_none());
+    assert!(super::exact_rectangular_pattern_direction(&bytes, 0, 195, 20, 23, 11).is_none());
+    bytes[65..73].copy_from_slice(&(-4.0f64).to_le_bytes());
+    assert_eq!(
+        parse(&bytes).unwrap().direction().unwrap().as_raw(),
+        &cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+    );
+}
+
 fn spacing_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"373", 77);
@@ -1784,40 +1829,45 @@ fn rectangular_pattern_payload_binds_secondary_vector_to_owners_and_seed() {
             secondary_direction: None,
         })
         .unwrap();
-    let direction =
-        super::exact_rectangular_pattern_direction(&spacing_direction_frame(), 0, 221, 20, 23, 10)
-            .unwrap();
-    let parse = |bytes: &[u8]| {
-        super::exact_rectangular_pattern_secondary_direction(
-            bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
-            &scope,
-            &construction,
-            &[direction],
-        )
-    };
-    let bytes = spacing_payload();
-    let secondary = parse(&bytes).expect("linked secondary direction");
-    assert_eq!(secondary.offset, 63);
-    assert_eq!(
-        secondary.value,
-        crate::test_support::reals([0.0, 0.0, -3.0])
-    );
-    for offset in [
-        11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 109, 110, 111, 112, 122, 123, 140,
-        141, 151, 152, 162, 163, 173,
+    for frame in [
+        spacing_direction_frame(),
+        rectangular_pattern_direction_frame(16, [0.0, 1.0, 0.0]),
     ] {
-        let mut corrupt = bytes.clone();
-        corrupt[offset] ^= 1;
-        assert!(parse(&corrupt).is_none(), "offset {offset}");
+        let direction =
+            super::exact_rectangular_pattern_direction(&frame, 0, frame.len() - 11, 20, 23, 10)
+                .unwrap();
+        let parse = |bytes: &[u8]| {
+            super::exact_rectangular_pattern_secondary_direction(
+                bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+                &scope,
+                &construction,
+                &[direction],
+            )
+        };
+        let bytes = spacing_payload();
+        let secondary = parse(&bytes).expect("linked secondary direction");
+        assert_eq!(secondary.offset, 63);
+        assert_eq!(
+            secondary.value,
+            crate::test_support::reals([0.0, 0.0, -3.0])
+        );
+        for offset in [
+            11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 109, 110, 111, 112, 122, 123,
+            140, 141, 151, 152, 162, 163, 173,
+        ] {
+            let mut corrupt = bytes.clone();
+            corrupt[offset] ^= 1;
+            assert!(parse(&corrupt).is_none(), "offset {offset}");
+        }
+        let mut zero = bytes.clone();
+        zero[63..87].fill(0);
+        assert!(parse(&zero).is_none());
+        let mut infinite = bytes.clone();
+        infinite[63..71].copy_from_slice(&f64::INFINITY.to_le_bytes());
+        assert!(parse(&infinite).is_none());
+        let mut ambiguous = bytes.clone();
+        ambiguous.extend_from_slice(&bytes);
+        assert!(parse(&ambiguous).is_none());
     }
-    let mut zero = bytes.clone();
-    zero[63..87].fill(0);
-    assert!(parse(&zero).is_none());
-    let mut infinite = bytes.clone();
-    infinite[63..71].copy_from_slice(&f64::INFINITY.to_le_bytes());
-    assert!(parse(&infinite).is_none());
-    let mut ambiguous = bytes.clone();
-    ambiguous.extend_from_slice(&bytes);
-    assert!(parse(&ambiguous).is_none());
 }
