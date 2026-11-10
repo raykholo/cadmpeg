@@ -9197,3 +9197,29 @@ pub(crate) mod surface_trim_cell_entry {
     /// Offset of `value` (`u64`, little-endian). Spec §3.1.
     pub(crate) const VALUE: usize = 11;
 }
+
+/// Byte offsets for the `thread_compact_owned_scope_prefix` record.
+///
+/// Spec §3.1. Record length 46 B.
+pub(crate) mod thread_compact_owned_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 46;
+    /// Offset of `prefix_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_WORD: usize = 33;
+    /// Offset of `form_marker` (`bytes[5]`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 37;
+    /// Offset of `form_token` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FORM_TOKEN: usize = 42;
+}
+
+/// Byte offsets for the `thread_owner_extended_scope_prefix` record.
+///
+/// Spec §3.1. Record length 38 B.
+pub(crate) mod thread_owner_extended_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 38;
+    /// Offset of `external_flag` (`u8`). Spec §3.1.
+    pub(crate) const EXTERNAL_FLAG: usize = 33;
+    /// Offset of `entry_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ENTRY_COUNT: usize = 34;
+}
