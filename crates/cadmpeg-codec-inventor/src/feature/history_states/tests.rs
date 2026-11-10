@@ -853,3 +853,17 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     })
     .is_empty());
 }
+
+#[test]
+fn the_native_derived_kind_names_the_derived_label_class() {
+    assert_eq!(
+        NATIVE_DERIVED_KIND,
+        format!("native:InventorClass:{}", crate::feature::derived::CLASS_ID)
+    );
+    assert!(body_checked(NATIVE_DERIVED_KIND));
+    assert_eq!(
+        base_class(NATIVE_DERIVED_KIND),
+        crate::feature::derived::CLASS_ID
+    );
+    assert_eq!(base_class(NATIVE_BASE_KIND), crate::feature::BASE_CLASS_ID);
+}

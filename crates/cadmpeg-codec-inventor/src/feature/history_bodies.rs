@@ -27,7 +27,7 @@ use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
 
 use super::history_states::{
-    Binding, Chain, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
+    Binding, Chain, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, NATIVE_DERIVED_KIND, SPLIT_TAG,
 };
 use crate::kernel::ActiveCarrier;
 
@@ -129,7 +129,7 @@ fn wants(records: &[FeatureHistoryState], outcome: &mut Outcome) -> Vec<Want> {
     for (record, state) in records.iter().enumerate() {
         let role = match state.kind.as_str() {
             SPLIT_TAG => Role::Split,
-            BASE_TAG | NATIVE_BASE_KIND => Role::Base,
+            BASE_TAG | NATIVE_BASE_KIND | NATIVE_DERIVED_KIND => Role::Base,
             _ => continue,
         };
         let (Binding::Bound, Some(key), Some(after)) =

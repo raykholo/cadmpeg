@@ -37,6 +37,9 @@ pub(crate) const SPLIT_TAG: &str = "split_body";
 pub(crate) const BASE_TAG: &str = "base";
 /// Kind of a base feature whose result body does not join the current model.
 pub(crate) const NATIVE_BASE_KIND: &str = "native:Base";
+/// Kind of a native derived stored-body feature (section 13.4).
+pub(crate) const NATIVE_DERIVED_KIND: &str =
+    "native:InventorClass:eecb298e2c45650820104eb55d062c80";
 
 /// Schema-44 attribute families that carry source-name pairs.
 const SCHEMA_44_FAMILIES: [&str; 6] = [
@@ -431,7 +434,19 @@ pub(crate) struct Inputs<'a> {
 
 /// Whether features of `kind` need a body-key check to bind.
 fn body_checked(kind: &str) -> bool {
-    matches!(kind, SPLIT_TAG | BASE_TAG | NATIVE_BASE_KIND)
+    matches!(
+        kind,
+        SPLIT_TAG | BASE_TAG | NATIVE_BASE_KIND | NATIVE_DERIVED_KIND
+    )
+}
+
+/// Label class of the stored-body feature of `kind`.
+fn base_class(kind: &str) -> super::ClassId {
+    if kind == NATIVE_DERIVED_KIND {
+        super::derived::CLASS_ID
+    } else {
+        super::BASE_CLASS_ID
+    }
 }
 
 /// Kind of a neutral feature: its source tag, with the native family of a
@@ -501,9 +516,9 @@ pub(crate) fn join(index: &StateIndex, inputs: &Inputs<'_>) -> Vec<FeatureHistor
         let kind = kind_of(model);
         let (check, wrapper) = match kind.as_str() {
             SPLIT_TAG => (Check::Split, target_wrapper(model).map(str::to_owned)),
-            BASE_TAG | NATIVE_BASE_KIND => (
+            BASE_TAG | NATIVE_BASE_KIND | NATIVE_DERIVED_KIND => (
                 Check::Base,
-                super::base::wrappers(feature, super::BASE_CLASS_ID, |ordinal| {
+                super::base::wrappers(feature, base_class(&kind), |ordinal| {
                     properties
                         .get(&(feature.identity.segment_token.as_str(), ordinal))
                         .copied()
@@ -799,7 +814,9 @@ pub(crate) fn validate(
         if let Some(link) = &record.history_body {
             let expected = match record.kind.as_str() {
                 SPLIT_TAG => record.state_before,
-                BASE_TAG | NATIVE_BASE_KIND => record.state_after.map(|state| state.ordinal),
+                BASE_TAG | NATIVE_BASE_KIND | NATIVE_DERIVED_KIND => {
+                    record.state_after.map(|state| state.ordinal)
+                }
                 _ => None,
             };
             match nests.get(link.as_str()) {
