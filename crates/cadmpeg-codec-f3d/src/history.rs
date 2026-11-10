@@ -22,6 +22,7 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
 mod face_recipe;
 mod fallback_face;
