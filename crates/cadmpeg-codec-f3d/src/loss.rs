@@ -370,6 +370,8 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCoincidentDirectionAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
+    /// A stored Cut transition certifies regions with stale curve identities.
+    FeatureProfileRegionIdentitiesStale,
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.
     FeatureProfileIslandAbsenceAssumed,
@@ -815,6 +817,7 @@ impl F3dLossCode {
         Self::FeatureProfileCoincidentDirectionAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
+        Self::FeatureProfileRegionIdentitiesStale,
         Self::FeatureProfileIslandAbsenceAssumed,
         Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
@@ -1156,6 +1159,7 @@ impl F3dLossCode {
             Self::FeatureProfileCoincidentDirectionAssumed => {
                 "feature.profile-coincident-direction-assumed"
             }
+            Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
@@ -1518,6 +1522,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
+            | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -1789,6 +1794,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
+            | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -2140,6 +2146,7 @@ mod tests {
                 "feature.profile-coincident-direction-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
+                "feature.profile-region-identities-stale",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
