@@ -9365,3 +9365,51 @@ pub(crate) mod surface_trim_cell_entry {
     /// Offset of `value` (`u64`, little-endian). Spec §3.1.
     pub(crate) const VALUE: usize = 11;
 }
+
+/// Byte offsets for the `marked_reference_profile_selection_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the indexed record header.
+/// ```
+pub(crate) mod marked_reference_profile_selection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 36;
+    /// Offset of `identity_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const IDENTITY_REFERENCE: usize = 21;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 32;
+}
+
+/// Byte offsets for the `marked_reference_profile_chain_record` record.
+///
+/// Spec §3.1. Record length 42 B.
+///
+/// ```text
+/// Offsets are relative to the indexed record header.
+/// ```
+pub(crate) mod marked_reference_profile_chain_record {
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `chain_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CHAIN_MARKER: usize = 25;
+    /// Offset of `sketch_scope_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const SKETCH_SCOPE_REFERENCE: usize = 31;
+}
+
+/// Byte offsets for the `marked_reference_profile_identity_record` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the indexed record header.
+/// ```
+pub(crate) mod marked_reference_profile_identity_record {
+    /// Offset of `selection_reference` (`bytes[5]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 21;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 26;
+    /// Offset of `region_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REGION_GROUP_COUNT: usize = 32;
+}

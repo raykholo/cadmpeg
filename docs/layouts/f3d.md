@@ -9475,6 +9475,74 @@ Spec §3.1 · layout: byte offsets · size: 19 B
 | 0 | 11 | `record_reference` | `bytes[11]` | little | spec | a marked indexed-record reference at entry offset 0 |
 | 11 | 8 | `value` | `u64` | little | spec | a positive u64 entry value at entry offset 11 |
 
+## `marked_reference_profile_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the indexed record header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A marked-reference profile selection uses a five-byte marked reference |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A marked-reference profile selection uses a five-byte marked reference |
+| 21 | 5 | `identity_reference` | `bytes[5]` | little | spec | A marked-reference profile selection uses a five-byte marked reference |
+| 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | A marked-reference profile selection uses a five-byte marked reference |
+| 32 | 4 | `constant_one` | `u32` | little | spec | A marked-reference profile selection uses a five-byte marked reference |
+
+## `marked_reference_profile_chain_record`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the indexed record header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its chain record stores fourteen zero bytes |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | Its chain record stores fourteen zero bytes |
+| 25 | 6 | `chain_marker` | `bytes[6]` | little | spec | Its chain record stores fourteen zero bytes |
+| 31 | 5 | `sketch_scope_reference` | `bytes[5]` | little | spec | Its chain record stores fourteen zero bytes |
+| 36 | 6 | `zero_run_6` | `bytes[6]` | little | spec | Its chain record stores fourteen zero bytes |
+
+## `marked_reference_profile_identity_record`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the indexed record header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its identity record stores ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its identity record stores ten zero bytes |
+| 21 | 5 | `selection_reference` | `bytes[5]` | little | spec | Its identity record stores ten zero bytes |
+| 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | Its identity record stores ten zero bytes |
+| 32 | 4 | `region_group_count` | `u32` | little | spec | Its identity record stores ten zero bytes |
+
+## `marked_reference_profile_curve_entry`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+Offsets are relative to each counted curve entry.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `kind` | `u32` | little | spec | A marked-reference curve entry is |
+| 4 | 8 | `primary_id` | `u64` | little | spec | A marked-reference curve entry is |
+| 12 | 8 | `secondary_id` | `u64` | little | spec | A marked-reference curve entry is |
+| 20 | 12 | `operands` | `u32[3]` | little | spec | A marked-reference curve entry is |
+| 32 | 8 | `zero_run_8` | `bytes[8]` | little | spec | A marked-reference curve entry is |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

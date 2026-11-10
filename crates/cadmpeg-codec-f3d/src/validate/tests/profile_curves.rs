@@ -3,9 +3,11 @@
 #[test]
 fn typed_profile_validator_checks_region_offsets_and_exterior_cardinality() {
     use crate::records::topology::entity_selection::{
-        DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveSelection,
+        DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveReferenceForm,
+        DesignProfileCurveSelection,
     };
     let mut selection = DesignProfileCurveSelection {
+        reference_form: DesignProfileCurveReferenceForm::default(),
         id: "synthetic:selection".into(),
         scope_record_index: 1,
         group_record_index: 2,

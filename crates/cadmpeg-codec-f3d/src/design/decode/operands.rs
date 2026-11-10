@@ -41,6 +41,9 @@ use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier as legacy_loft;
 use crate::layout::legacy_loft_body_carrier_owner_tail as legacy_loft_tail;
 use crate::layout::legacy_loft_body_carrier_three_flag as legacy_loft_three;
+use crate::layout::marked_reference_profile_chain_record as marked_profile_chain;
+use crate::layout::marked_reference_profile_identity_record as marked_profile_identity;
+use crate::layout::marked_reference_profile_selection_prefix as marked_profile;
 use crate::layout::marked_sketch_curve_identity as marked_curve;
 use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
 use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
@@ -53,6 +56,7 @@ use crate::layout::typed_reference_profile_identity_record as typed_identity;
 use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
 use crate::layout::work_point_sketch_point_compact_identity as compact_identity;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
+use crate::records::topology::entity_selection::DesignProfileCurveReferenceForm;
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, SegmentType},
@@ -6930,12 +6934,13 @@ pub(crate) fn decode_profile_curve_selections(
             let Ok(start) = usize::try_from(header.byte_offset) else {
                 continue;
             };
-            // Only a typed selection prefix selects this form.
             if crate::bytes::typed_local_reference_target(
                 bytes,
                 start + typed_selection::IDENTITY_REFERENCE,
             )
             .is_none()
+                && marked_record_reference(bytes, start + marked_profile::IDENTITY_REFERENCE)
+                    .is_none()
             {
                 continue;
             }
@@ -6943,7 +6948,7 @@ pub(crate) fn decode_profile_curve_selections(
                 .entry(stream)
                 .or_insert_with(|| IndexedRecordOffsets::build(bytes));
             let Some(mut selection) =
-                parse_typed_profile_curve_selection(ctx, bytes, records, group, ordinal, header)?
+                parse_profile_curve_selection(ctx, bytes, records, group, ordinal, header)?
             else {
                 continue;
             };
@@ -6959,8 +6964,8 @@ pub(crate) fn decode_profile_curve_selections(
     Ok(out)
 }
 
-/// Parse one typed profile selection and its chain records.
-fn parse_typed_profile_curve_selection_prefix(
+/// Parse one profile selection and its chain records.
+fn parse_profile_curve_selection_prefix(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     group: &DesignConstructionOperandGroup,
@@ -6981,47 +6986,107 @@ fn parse_typed_profile_curve_selection_prefix(
     else {
         return None;
     };
-    // Selection prefix: ten zero bytes, a typed reference to the identity
-    // record, u32 1, the LP-UTF16 asset GUID, and the LP-UTF16 decimal
-    // owner text.
+    let form = if target(bytes, start + typed_selection::IDENTITY_REFERENCE) == Some(identity_index)
+    {
+        DesignProfileCurveReferenceForm::Typed
+    } else if marked_record_reference(bytes, start + marked_profile::IDENTITY_REFERENCE)
+        == Some(identity_index)
+    {
+        DesignProfileCurveReferenceForm::Marked
+    } else {
+        return None;
+    };
+    let (constant_one, prefix_len) = match form {
+        DesignProfileCurveReferenceForm::Typed => {
+            (typed_selection::CONSTANT_ONE, typed_selection::LEN)
+        }
+        DesignProfileCurveReferenceForm::Marked => {
+            (marked_profile::CONSTANT_ONE, marked_profile::LEN)
+        }
+    };
     if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
         != Some(&[0; 10][..])
-        || target(bytes, start + typed_selection::IDENTITY_REFERENCE) != Some(identity_index)
-        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
+        || View::u32_le_at(bytes, start + constant_one) != Some(1)
     {
         return None;
     }
-    let (_, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
+    let (_, after_asset) = lp_utf16_bounded(bytes, start + prefix_len, 36..=36)?;
     let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
     if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    // Chain record at index plus one names the owning Sketch scope.
     let &scope_at = records.offsets(scope_index).first()?;
-    if bytes.get(scope_at + typed_chain::ZERO_RUN_14..scope_at + typed_chain::CHAIN_MARKER)
-        != Some(&[0; 14][..])
-        || bytes.get(
-            scope_at + typed_chain::CHAIN_MARKER..scope_at + typed_chain::SKETCH_SCOPE_REFERENCE,
-        ) != Some(&TYPED_PROFILE_CHAIN_MARKER[..])
-    {
-        return None;
-    }
-    let sketch_scope_record_index = target(bytes, scope_at + typed_chain::SKETCH_SCOPE_REFERENCE)?;
-    // Identity record at index plus three: ten zero bytes, a typed reference
-    // to the selection record, then two counted loop lists.
+    let (sketch_scope_record_index, sketch_scope_offset) = match form {
+        DesignProfileCurveReferenceForm::Typed => {
+            if bytes.get(scope_at + typed_chain::ZERO_RUN_14..scope_at + typed_chain::CHAIN_MARKER)
+                != Some(&[0; 14][..])
+                || bytes.get(
+                    scope_at + typed_chain::CHAIN_MARKER
+                        ..scope_at + typed_chain::SKETCH_SCOPE_REFERENCE,
+                ) != Some(&TYPED_PROFILE_CHAIN_MARKER[..])
+            {
+                return None;
+            }
+            (
+                target(bytes, scope_at + typed_chain::SKETCH_SCOPE_REFERENCE)?,
+                scope_at + typed_chain::SKETCH_SCOPE_REFERENCE + 1,
+            )
+        }
+        DesignProfileCurveReferenceForm::Marked => {
+            if bytes.get(
+                scope_at + marked_profile_chain::ZERO_RUN_14
+                    ..scope_at + marked_profile_chain::CHAIN_MARKER,
+            ) != Some(&[0; 14][..])
+                || bytes.get(
+                    scope_at + marked_profile_chain::CHAIN_MARKER
+                        ..scope_at + marked_profile_chain::SKETCH_SCOPE_REFERENCE,
+                ) != Some(&TYPED_PROFILE_CHAIN_MARKER[..])
+            {
+                return None;
+            }
+            (
+                marked_record_reference(
+                    bytes,
+                    scope_at + marked_profile_chain::SKETCH_SCOPE_REFERENCE,
+                )?,
+                scope_at + marked_profile_chain::SKETCH_SCOPE_REFERENCE + 1,
+            )
+        }
+    };
     let &identity_at = records.offsets(identity_index).first()?;
     if bytes.get(
         identity_at + typed_identity::ZERO_RUN_10
             ..identity_at + typed_identity::SELECTION_REFERENCE,
     ) != Some(&[0; 10][..])
-        || target(bytes, identity_at + typed_identity::SELECTION_REFERENCE) != Some(record_index)
     {
+        return None;
+    }
+    let selection_reference = match form {
+        DesignProfileCurveReferenceForm::Typed => {
+            target(bytes, identity_at + typed_identity::SELECTION_REFERENCE)
+        }
+        DesignProfileCurveReferenceForm::Marked => {
+            if bytes.get(
+                identity_at + marked_profile_identity::ZERO_RUN_6
+                    ..identity_at + marked_profile_identity::REGION_GROUP_COUNT,
+            ) != Some(&[0; 6][..])
+            {
+                return None;
+            }
+            marked_record_reference(
+                bytes,
+                identity_at + marked_profile_identity::SELECTION_REFERENCE,
+            )
+        }
+    };
+    if selection_reference != Some(record_index) {
         return None;
     }
     let identity_end =
         next_indexed_record_offset(bytes, identity_at + typed_identity::ZERO_RUN_10)?;
     Some((
         DesignProfileCurveSelection {
+            reference_form: form,
             id: String::new(),
             scope_record_index: group.scope_record_index,
             group_record_index: group.record_index,
@@ -7031,9 +7096,7 @@ fn parse_typed_profile_curve_selection_prefix(
             owner_text_offset: cadmpeg_core::decode::u64_from_index(after_asset + 4),
             owner_text,
             sketch_scope_record_index,
-            sketch_scope_offset: cadmpeg_core::decode::u64_from_index(
-                scope_at + typed_chain::SKETCH_SCOPE_REFERENCE + 1,
-            ),
+            sketch_scope_offset: cadmpeg_core::decode::u64_from_index(sketch_scope_offset),
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
             groups: Vec::new(),
@@ -7042,7 +7105,7 @@ fn parse_typed_profile_curve_selection_prefix(
     ))
 }
 
-fn parse_typed_profile_curve_selection(
+fn parse_profile_curve_selection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -7054,14 +7117,19 @@ fn parse_typed_profile_curve_selection(
     CodecError,
 > {
     let Some((mut selection, end)) =
-        parse_typed_profile_curve_selection_prefix(bytes, records, group, ordinal, header)
+        parse_profile_curve_selection_prefix(bytes, records, group, ordinal, header)
     else {
         return Ok(None);
     };
     let start = usize::try_from(selection.identity_record_offset)
         .map_err(|_| CodecError::malformed("profile identity offset exceeds address space"))?;
-    let Some(groups) =
-        parse_profile_region_groups(ctx, bytes, start + typed_identity::REGION_GROUP_COUNT, end)?
+    let Some(groups) = parse_profile_region_groups(
+        ctx,
+        bytes,
+        start + selection.reference_form.region_group_count_offset(),
+        end,
+        selection.reference_form,
+    )?
     else {
         return Ok(None);
     };
@@ -7076,6 +7144,7 @@ const MIN_PROFILE_REGION_BYTES: usize = 49;
 fn parse_profile_region(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     view: &mut View<'_>,
+    form: DesignProfileCurveReferenceForm,
 ) -> Result<
     Option<Vec<crate::records::topology::entity_selection::DesignProfileCurveLoop>>,
     CodecError,
@@ -7113,7 +7182,11 @@ fn parse_profile_region(
             "F3D profile curve entries",
         )?;
         for entry in &mut loop_.entries {
-            if view.u32_le() != Some(2) {
+            let kind = match form {
+                DesignProfileCurveReferenceForm::Typed => 2,
+                DesignProfileCurveReferenceForm::Marked => 3,
+            };
+            if view.u32_le() != Some(kind) {
                 return Ok(None);
             }
             let primary_id_offset = cadmpeg_core::decode::u64_from_index(view.position());
@@ -7127,6 +7200,13 @@ fn parse_profile_region(
                     field!(view.u32_le()),
                 ],
             };
+            if form == DesignProfileCurveReferenceForm::Marked
+                && (entry.primary_id == 0
+                    || entry.entry_fields[0] > 1
+                    || entry.entry_fields[1..].contains(&0))
+            {
+                return Ok(None);
+            }
             if view.take(8) != Some(&[0; 8][..]) {
                 return Ok(None);
             }
@@ -7145,6 +7225,7 @@ fn parse_profile_region_groups(
     bytes: &[u8],
     start: usize,
     end: usize,
+    form: DesignProfileCurveReferenceForm,
 ) -> Result<
     Option<Vec<crate::records::topology::entity_selection::DesignProfileRegionGroup>>,
     CodecError,
@@ -7171,12 +7252,12 @@ fn parse_profile_region_groups(
         "F3D profile region groups",
     )?;
     for group in &mut groups {
-        group.region = field!(parse_profile_region(ctx, &mut view)?);
+        group.region = field!(parse_profile_region(ctx, &mut view, form)?);
         let count = field!(view.u32_le());
         let count = field!(view.counted(u64::from(count), MIN_PROFILE_REGION_BYTES)).get();
         group.further = ctx.alloc_filled(count, Vec::new(), "F3D profile regions")?;
         for region in &mut group.further {
-            *region = field!(parse_profile_region(ctx, &mut view)?);
+            *region = field!(parse_profile_region(ctx, &mut view, form)?);
         }
     }
     Ok((view.remaining() == 0).then_some(groups))

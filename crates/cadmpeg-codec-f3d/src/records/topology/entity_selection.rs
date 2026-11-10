@@ -1080,7 +1080,7 @@ mod tests;
 
 mod identity_rewrite;
 
-/// One curve entry of a typed-reference profile identity record.
+/// One curve entry of a profile identity record.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignProfileCurveEntry {
     /// Sketch-curve primary identity named by the entry.
@@ -1094,11 +1094,32 @@ pub(crate) struct DesignProfileCurveEntry {
     pub(crate) entry_fields: [u32; 3],
 }
 
-/// Profile selection whose identity record lists curve loops of one Sketch,
-/// written by the container generation whose references carry inline type
-/// GUIDs.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignProfileCurveReferenceForm {
+    #[default]
+    Typed,
+    Marked,
+}
+
+impl DesignProfileCurveReferenceForm {
+    pub(crate) fn region_group_count_offset(self) -> usize {
+        match self {
+            Self::Typed => {
+                crate::layout::typed_reference_profile_identity_record::REGION_GROUP_COUNT
+            }
+            Self::Marked => {
+                crate::layout::marked_reference_profile_identity_record::REGION_GROUP_COUNT
+            }
+        }
+    }
+}
+
+/// Profile selection whose identity record lists curve loops of one Sketch.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignProfileCurveSelection {
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) reference_form: DesignProfileCurveReferenceForm,
     /// Globally unique deterministic identifier for this native selection.
     pub(crate) id: String,
     /// Owning feature scope record.
@@ -1181,7 +1202,7 @@ impl DesignProfileCurveSelection {
         let mut cursor = self
             .identity_record_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(
-                crate::layout::typed_reference_profile_identity_record::REGION_GROUP_COUNT,
+                self.reference_form.region_group_count_offset(),
             ))?
             .checked_add(4)?;
         for group in &self.groups {

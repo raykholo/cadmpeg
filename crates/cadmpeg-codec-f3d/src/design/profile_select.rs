@@ -3872,6 +3872,8 @@ pub(in crate::design) fn selection_containing_points(
 /// Solved sketch records used to bind Loft and Revolve profile operands and
 /// Loft guide selections.
 pub(crate) struct SketchProfileResolution<'a> {
+    pub(crate) profile_curves:
+        &'a [crate::records::topology::entity_selection::DesignProfileCurveSelection],
     pub(crate) entities: &'a [DesignEntityHeader],
     pub(crate) entity_selection_operands: &'a [DesignEntitySelectionOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
@@ -3888,7 +3890,7 @@ impl<'a> SketchProfileResolution<'a> {
     fn path_resolution(&self) -> EntitySelectionPathResolution<'a> {
         EntitySelectionPathResolution {
             operands: self.entity_selection_operands,
-            profile_curves: &[],
+            profile_curves: self.profile_curves,
             placements: self.placements,
             curve_identities: self.curve_identities,
             sketches: self.sketches,
@@ -4872,6 +4874,8 @@ fn spatial_profile_containing_entity(
 }
 
 pub(crate) fn bind_loft_and_revolve_sketch_selections(
+    ctx: &DecodeContext<'_>,
+    profile_work: &ProfileGeometryWork,
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -4882,6 +4886,16 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         FeatureDefinition, FeatureOperation, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
     };
 
+    let scoped = ScopedExtrudeProfileResolution {
+        entities: resolution.sketch_entities,
+        spatial_entities: resolution.spatial_sketch_entities,
+        histories: &[],
+        linear_tolerance: resolution.linear_tolerance,
+        angular_tolerance: resolution.angular_tolerance,
+        profile_work,
+        ctx,
+    };
+    let mut losses = Vec::new();
     let mut bound_profiles = HashSet::new();
     let mut header_index = HashMap::new();
     for header in headers {
@@ -4890,12 +4904,33 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         };
         header_index.insert((stream, header.record_index), header);
     }
+    let mut requested_profiles = HashSet::new();
+    for feature in features.iter() {
+        match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
+                for section in sections {
+                    if let LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id))) =
+                        section
+                    {
+                        requested_profiles.insert(id.clone());
+                    }
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => {
+                if let Some(PlanarProfileRef::Native(id)) = construction.profile() {
+                    requested_profiles.insert(id.clone());
+                }
+            }
+            _ => {}
+        }
+    }
     let mut resolved_profiles = HashMap::new();
     for group in groups.iter().filter(|group| {
         matches!(
             group.role(),
             DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
         ) && group.members().len() == 1
+            && requested_profiles.contains(group.id.as_str())
     }) {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -4951,15 +4986,68 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 }
             }
         } else {
-            let sketch = crate::ids::neutral_sketch_id(placement);
-            if !resolution
+            let sketch_id = crate::ids::neutral_sketch_id(placement);
+            let Some(sketch) = resolution
                 .sketches
                 .iter()
-                .any(|candidate| candidate.id == sketch)
-            {
+                .find(|sketch| sketch.id == sketch_id)
+            else {
+                continue;
+            };
+            let native_region_loss = || {
+                crate::loss::F3dLossCode::FeatureProfileSelectionNative.note(format!(
+                    "Profile group {} retains its stored region selection as native identities.",
+                    group.id,
+                ))
+            };
+            let path_resolution = resolution.path_resolution();
+            if resolution.profile_curves.iter().any(|selection| {
+                native_stream(&selection.id) == Some(stream)
+                    && selection.scope_record_index == group.scope_record_index
+                    && selection.group_record_index == group.record_index
+                    && selection.group_member_ordinal == 0
+                    && selection.record_index == group.members()[0].value
+            }) {
+                let selected = match resolve_profile_curve_regions(group, &path_resolution) {
+                    Some(selected) => Some(selected),
+                    None => {
+                        resolve_profile_curve_arrangement_regions(group, &path_resolution, scoped)?
+                    }
+                };
+                if let Some(selected) = selected {
+                    resolved_profiles.insert(group.id.clone(), (selected, Some(profile)));
+                } else {
+                    losses.push(native_region_loss());
+                }
                 continue;
             }
-            ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
+            if profile.region_selection.is_some() {
+                let selected = if let Some(indices) = resolved_sketch_profile_regions(
+                    stream,
+                    &profile,
+                    sketch,
+                    resolution.curve_identities,
+                    resolution.sketch_entities,
+                ) {
+                    PlanarProfileRef::sketch_profiles(sketch_id, indices).ok()
+                } else {
+                    region_members::resolve(
+                        stream,
+                        &profile,
+                        sketch,
+                        resolution.curve_identities,
+                        resolution.sketch_entities,
+                        scoped,
+                    )?
+                };
+                let Some(selected) = selected else {
+                    losses.push(native_region_loss());
+                    continue;
+                };
+                ProfileRef::Planar(selected)
+            } else {
+                ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id))
+            }
         };
         if matches!(&resolved, ProfileRef::Planar(PlanarProfileRef::Native(_))) {
             continue;
@@ -5129,7 +5217,6 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         });
         edit_result?;
     }
-    let mut losses = Vec::new();
     for group in groups
         .iter_mut()
         .filter(|group| bound_profiles.contains(&group.id))

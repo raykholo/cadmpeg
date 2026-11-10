@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::records::topology::entity_selection::{
-    DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveSelection,
+    DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveReferenceForm,
+    DesignProfileCurveSelection,
 };
 
 fn selection(
@@ -13,6 +14,7 @@ fn selection(
 ) -> DesignProfileCurveSelection {
     let identity_record_offset = 500;
     let mut selection = DesignProfileCurveSelection {
+        reference_form: DesignProfileCurveReferenceForm::default(),
         id: format!("stream:profile-{record_index}"),
         scope_record_index: 7,
         group_record_index: 9,

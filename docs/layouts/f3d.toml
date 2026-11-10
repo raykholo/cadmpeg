@@ -32002,3 +32002,179 @@ offset = 11
 type = "u64"
 source = "spec"
 anchor = "a positive u64 entry value at entry offset 11"
+
+[[record]]
+name = "marked_reference_profile_selection_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A marked-reference profile selection uses a five-byte marked reference"
+size = 36
+note = "Offsets are relative to the indexed record header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A marked-reference profile selection uses a five-byte marked reference"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "A marked-reference profile selection uses a five-byte marked reference"
+
+[[record.field]]
+name = "identity_reference"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "A marked-reference profile selection uses a five-byte marked reference"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 26
+type = "bytes[6]"
+source = "spec"
+anchor = "A marked-reference profile selection uses a five-byte marked reference"
+
+[[record.field]]
+name = "constant_one"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "A marked-reference profile selection uses a five-byte marked reference"
+
+[[record]]
+name = "marked_reference_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Its chain record stores fourteen zero bytes"
+size = 42
+note = "Offsets are relative to the indexed record header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "Its chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "Its chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "sketch_scope_reference"
+offset = 31
+type = "bytes[5]"
+source = "spec"
+anchor = "Its chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 36
+type = "bytes[6]"
+source = "spec"
+anchor = "Its chain record stores fourteen zero bytes"
+
+[[record]]
+name = "marked_reference_profile_identity_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Its identity record stores ten zero bytes"
+size = 36
+note = "Offsets are relative to the indexed record header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its identity record stores ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its identity record stores ten zero bytes"
+
+[[record.field]]
+name = "selection_reference"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "Its identity record stores ten zero bytes"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 26
+type = "bytes[6]"
+source = "spec"
+anchor = "Its identity record stores ten zero bytes"
+
+[[record.field]]
+name = "region_group_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "Its identity record stores ten zero bytes"
+
+[[record]]
+name = "marked_reference_profile_curve_entry"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A marked-reference curve entry is"
+size = 40
+note = "Offsets are relative to each counted curve entry."
+
+[[record.field]]
+name = "kind"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A marked-reference curve entry is"
+
+[[record.field]]
+name = "primary_id"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "A marked-reference curve entry is"
+
+[[record.field]]
+name = "secondary_id"
+offset = 12
+type = "u64"
+source = "spec"
+anchor = "A marked-reference curve entry is"
+
+[[record.field]]
+name = "operands"
+offset = 20
+type = "u32[3]"
+source = "spec"
+anchor = "A marked-reference curve entry is"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 32
+type = "bytes[8]"
+source = "spec"
+anchor = "A marked-reference curve entry is"
