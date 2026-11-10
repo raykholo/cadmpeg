@@ -1862,3 +1862,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-344. Input state and placement of a Combine operand from another component
+
+**Question.** Which history state and occurrence placement supply a whole-body Combine operand whose browser node names a body in another BREP history?
+
+**Known.** An operand-list selection names a browser node, its Design body entity suffix, and its creating scope. The body map joins the suffix to a BREP. The creating scope can insert one body in that BREP history. The Combine input history can contain one target body while the tool creator belongs to another history. A Combine can also insert its result into an empty input history. Whole-body recipe clauses retain candidate faces in other BREP namespaces. The decoder binds operand-list selections through creator insertions in the Combine history.
+
+**Need.** A join from the selection's occurrence path and body node to the operand's source history state and its transform at the Combine input state. The selected input geometry must reproduce the stored result by Boolean operation, face count, and bounding box.
+
+**Conflict.** None.
+
+**Note.** DR-272 tracks the prologue reading when byte 20 is one.
