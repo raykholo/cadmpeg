@@ -191,6 +191,8 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesEmpty,
     /// A decoded body snapshot supplies no construction recipe.
     FeatureStoredBodiesRecipeAbsent,
+    FeatureHistoryBodyBounded,
+    FeatureHistoryBodyUndecoded,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
     /// A paste keeps its bodies; its source pairs or a source node do not resolve.
@@ -686,6 +688,8 @@ impl F3dLossCode {
         Self::ThreadLiveFaceUnproven,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
+        Self::FeatureHistoryBodyBounded,
+        Self::FeatureHistoryBodyUndecoded,
         Self::FeatureStoredBodiesUnbound,
         Self::FeaturePasteSourcesUnresolved,
         Self::FeatureTimelineOwnerCompeting,
@@ -975,6 +979,8 @@ impl F3dLossCode {
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
+            Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
+            Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
             Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
@@ -1324,6 +1330,8 @@ impl F3dLossCode {
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureStoredBodiesEmpty
             | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureHistoryBodyBounded
+            | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
@@ -1563,6 +1571,8 @@ impl F3dLossCode {
             | Self::ParameterOrderBudgetExceeded
             | Self::FeatureStoredBodiesEmpty
             | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureHistoryBodyBounded
+            | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
