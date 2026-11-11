@@ -2183,3 +2183,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** DR-358 covers compact selections whose curve identities all resolve.
+
+### DR-362. Non-outer loops in Loft section selections
+
+**Question.** What do the non-outer loops of a Loft section's stored region selection select?
+
+**Known.** The Micron EZ motor cover v3 design has Loft 7 in scope record 3516. Section group 3518 on Sketch @309 lists its six-curve outer loop and its nested ten-curve non-outer loop. Section group 3526 on Sketch @172 lists outer loop A and nested non-outer loop B. The stored body in state 277 has one lofted side face and two filled planar caps. Each cap has one loop. The lower cap follows the complete outer loop A of Sketch @172; the upper cap follows Sketch @309's six-curve outer loop.
+
+**Need.** A Loft whose stored body has a hole in a section cap, or a Loft whose stored section lists only an outer loop while that loop contains another loop of the same Sketch. Compare the stored selection flags with the cap topology.
+
+**Conflict.** The Extrude reading of the same record form uses the exterior flag to select the exterior loop and the other loops to select holes. That reading selects rings for both Loft 7 sections, while the stored caps have filled areas.
+
+**Note.** The Loft and Revolve binder retains selections with non-outer loops as native profiles and records `feature.profile-selection-native`.
