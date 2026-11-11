@@ -3,7 +3,8 @@
 use super::*;
 use crate::loss::F3dLossCode;
 use crate::records::topology::entity_selection::{
-    DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveSelection,
+    DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveReferenceForm,
+    DesignProfileCurveSelection,
 };
 
 /// Square 1 with both diagonals: primary ids 1..=4 are the sides and 5, 6 the
@@ -59,6 +60,7 @@ fn loop_selection(
     primaries: &[u64],
 ) -> DesignProfileCurveSelection {
     let mut selection = DesignProfileCurveSelection {
+        reference_form: DesignProfileCurveReferenceForm::default(),
         id: format!("stream:profile-{record_index}"),
         scope_record_index: 7,
         group_record_index: 9,
