@@ -49,6 +49,7 @@ pub(super) struct SweepCarrier {
     pub(super) offset: usize,
     /// Attribute of the profile curve carrier.
     pub(super) profile_attr: u32,
+    pub(super) positive_sense: bool,
     /// Construction-specific fields.
     pub(super) kind: SweepKind,
 }
@@ -70,6 +71,17 @@ pub(super) enum SweepKind {
         /// Profile parameters at the stored axis intersections.
         profile_bounds: [Option<f64>; 2],
     },
+}
+
+pub(super) fn native_profile_parameters(geometry: &CurveGeometry) -> bool {
+    matches!(
+        geometry,
+        CurveGeometry::Solved(
+            SolvedCurveGeometry::Nurbs(_)
+                | SolvedCurveGeometry::Circle(_)
+                | SolvedCurveGeometry::Ellipse(_)
+        )
+    )
 }
 
 fn triple(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
@@ -171,6 +183,7 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
         attr,
         offset: off,
         profile_attr,
+        positive_sense: false,
         kind,
     })
 }
@@ -209,7 +222,8 @@ pub(super) fn from_nodes_of<N: NodeFields>(
         .iter()
         .filter(|node| matches!(node.kind(), SWEPT_SURF | SPUN_SURF))
     {
-        let sensed = matches!(node.char("sense")?, b'+' | b'-');
+        let sense = node.char("sense")?;
+        let sensed = matches!(sense, b'+' | b'-');
         let (profile_attr, kind) = if node.kind() == SWEPT_SURF {
             let direction = node.vector("sweep")?;
             (
@@ -240,6 +254,7 @@ pub(super) fn from_nodes_of<N: NodeFields>(
             attr: node.index(),
             offset,
             profile_attr,
+            positive_sense: sense == b'+',
             kind,
         };
         out.insert(node.index(), carrier).is_none().then_some(())?;
