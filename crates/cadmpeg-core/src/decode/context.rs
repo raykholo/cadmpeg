@@ -71,11 +71,12 @@ impl<'a> DecodeContext<'a> {
         policy: &DecodePolicy,
         depth: DecodeDepth,
     ) -> Result<(Self, View<'a>), CodecError> {
-        if reader.seek(SeekFrom::End(0)).is_ok() {
+        let mut buffer = Vec::new();
+        if let Ok(length) = reader.seek(SeekFrom::End(0)) {
             reader.rewind().map_err(CodecError::Io)?;
+            super::input::reserve_input_hint(&mut buffer, length, policy.limits.max_input_bytes);
         }
         let ctx = Self::new(arena, policy, depth);
-        let mut buffer = Vec::new();
         ctx.complete_input(reader, &mut buffer)?;
         let bytes = arena.alloc(buffer.into_boxed_slice());
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))

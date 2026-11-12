@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded input acquisition under the caller's session budget.
 
+use std::collections::TryReserveError;
 use std::io::Read;
 
 use super::{u64_from_index, DecodeContext, ResourceDimension, ResourceFailure};
@@ -28,6 +29,20 @@ impl DecodeContext<'_> {
         bytes: &mut Vec<u8>,
         length: usize,
     ) -> Result<(), CodecError> {
+        self.extend_input_bounded(reader, bytes, length, Some(length))
+    }
+
+    fn extend_input_bounded(
+        &self,
+        reader: &mut dyn Read,
+        bytes: &mut Vec<u8>,
+        length: usize,
+        capacity_limit: Option<usize>,
+    ) -> Result<(), CodecError> {
+        let capacity_limit = match usize::try_from(self.policy().limits.max_input_bytes) {
+            Ok(max) => Some(capacity_limit.map_or(max, |limit| limit.min(max))),
+            Err(_) => capacity_limit,
+        };
         let mut chunk = [0_u8; INPUT_CHUNK];
         while bytes.len() < length {
             let count = (length - bytes.len()).min(chunk.len());
@@ -38,7 +53,7 @@ impl DecodeContext<'_> {
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
 
-            bytes.try_reserve_exact(read).map_err(|_| {
+            reserve_input(bytes, read, capacity_limit).map_err(|_| {
                 self.budget.refuse(
                     ResourceDimension::InputBytes,
                     ResourceFailure::AllocationFailed,
@@ -74,7 +89,7 @@ impl DecodeContext<'_> {
                 .len()
                 .checked_add(count)
                 .ok_or_else(|| self.refuse_input_limit(max, "address complete input"))?;
-            self.extend_input_prefix(reader, bytes, length)?;
+            self.extend_input_bounded(reader, bytes, length, usize::try_from(max).ok())?;
             if count == 0 || bytes.len() < length {
                 break;
             }
@@ -99,8 +114,39 @@ impl DecodeContext<'_> {
     }
 }
 
+fn reserve_input(
+    bytes: &mut Vec<u8>,
+    read: usize,
+    capacity_limit: Option<usize>,
+) -> Result<(), TryReserveError> {
+    let Some(required) = bytes.len().checked_add(read) else {
+        return bytes.try_reserve_exact(read);
+    };
+    if required > bytes.capacity() {
+        let doubled = bytes.capacity().checked_mul(2).or(capacity_limit);
+        let target = doubled.unwrap_or(required).max(required);
+        let target = capacity_limit.map_or(target, |limit| target.min(limit));
+        bytes.try_reserve_exact(target - bytes.len())?;
+    }
+    Ok(())
+}
+
+/// Reserves a seekable input's length up front so reading it copies once. An input over
+/// `max` is refused after reading anyway, so no room is reserved for it; a failed
+/// reservation leaves the bounded growth in [`reserve_input`] to handle the read.
+pub(super) fn reserve_input_hint(bytes: &mut Vec<u8>, hint: u64, max: u64) {
+    if hint > max {
+        return;
+    }
+    if let Ok(target) = usize::try_from(hint) {
+        let _ = bytes.try_reserve_exact(target);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    mod growth;
+
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
     use std::io::Cursor;
