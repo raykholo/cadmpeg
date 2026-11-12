@@ -139,7 +139,7 @@ pub(super) fn reserve_input_hint(bytes: &mut Vec<u8>, hint: u64, max: u64) {
         return;
     }
     if let Ok(target) = usize::try_from(hint) {
-        let _ = bytes.try_reserve_exact(target);
+        bytes.try_reserve_exact(target).unwrap_or_default();
     }
 }
 
