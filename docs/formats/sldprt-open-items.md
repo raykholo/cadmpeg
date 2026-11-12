@@ -815,6 +815,18 @@ resolve a seed feature?
 
 **Note.** The decoder discards that display and reports `pmi.swift-presentation-unframed`.
 
+### DI-65. Indexed-circle array and plane ownership
+
+**Question.** Which native ownership fields associate equal-endpoint arc arrays with their point arrays and model-space sketch frames?
+
+**Known.** The counted sketch arrays preserve point slots and contour ordinals. The current-prefix equal-endpoint arc form has native value zero, centre slot zero, sweep selector one, and four signed reference sentinels. The indexed-curve grammar in §2 supplies these fields. The marker classifier labels this form as a point; projection lacks its coordinate pair.
+
+**Need.** Explicit array, profile, and plane ownership must select the point block and model-space frame, with carrier and applicable start-cap agreement.
+
+**Conflict.** The first-point centre and indexed radial-witness reading has contrary carrier cases under the decoded sketch placements. The compact extended-prefix and legacy equal-endpoint readings also have contrary carrier cases.
+
+**Note.** Retain these records under their current projection until the mapping resolves.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
