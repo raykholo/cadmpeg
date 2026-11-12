@@ -21,6 +21,32 @@ use crate::history::literals::{
     strip_diameter_modifier, valid_direction,
 };
 
+pub(crate) fn native_extrude_travel_is_retained(
+    lanes: &[crate::records::FeatureInputLane],
+) -> bool {
+    lanes.iter().any(|lane| !lane.native_payload.is_empty())
+}
+
+pub(crate) fn retain_native_extrude_directions(
+    features: &mut [cadmpeg_ir::features::Feature],
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    if !native_extrude_travel_is_retained(lanes) {
+        return;
+    }
+    for feature in features {
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                direction: direction @ cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                ..
+            }) = definition
+            {
+                *direction = cadmpeg_ir::features::ExtrudeDirection::Unresolved {};
+            }
+        });
+    }
+}
+
 pub(super) fn project_extrude(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,

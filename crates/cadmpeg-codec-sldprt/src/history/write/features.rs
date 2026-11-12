@@ -196,6 +196,9 @@ pub(in crate::history) fn sync_neutral_features(
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
     });
+    let retains_native_travel = crate::history::project::solid::native_extrude_travel_is_retained(
+        &native.feature_input_lanes,
+    );
     let original_parameters = native
         .feature_histories
         .iter()
@@ -384,6 +387,7 @@ pub(in crate::history) fn sync_neutral_features(
             mut parameters,
             mut properties,
         } = NeutralFeatureEncoder {
+            retains_native_travel,
             feature,
             existing: existing.as_deref(),
             principal_planes_by_record: &principal_planes_by_record,

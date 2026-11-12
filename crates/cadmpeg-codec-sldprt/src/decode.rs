@@ -1263,6 +1263,32 @@ fn append_design_losses(
                     incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
                 })
         };
+    let unresolved_extrude_directions = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.definition())
+        .chain(ir.model.configurations.iter().flat_map(|configuration| {
+            configuration
+                .feature_states
+                .values()
+                .map(|state| &state.definition)
+        }))
+        .filter(|definition| {
+            matches!(
+                definition.operation(),
+                FeatureOperation::Extrude {
+                    direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
+                    ..
+                }
+            )
+        })
+        .count();
+    if unresolved_extrude_directions > 0 {
+        report.losses.push(SldprtLossCode::FeatureExtrudeDirectionUnresolved.note(format!(
+            "{unresolved_extrude_directions} extrusion definition(s) retain native travel sense because the direction relative to the profile frame is unresolved."
+        )));
+    }
     let incomplete_typed_features = evaluated_feature_states
         .iter()
         .filter(|state| {

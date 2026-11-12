@@ -127,6 +127,8 @@ pub(crate) enum SldprtLossCode {
     FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Extrusion travel sense remains in its native feature-input lane.
+    FeatureExtrudeDirectionUnresolved,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -354,6 +356,7 @@ impl SldprtLossCode {
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -475,6 +478,7 @@ impl SldprtLossCode {
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -633,6 +637,7 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -829,6 +834,7 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1048,6 +1054,7 @@ mod tests {
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
+                "feature.extrude-direction-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",
