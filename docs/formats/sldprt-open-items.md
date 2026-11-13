@@ -839,6 +839,25 @@ resolve a seed feature?
 
 **Note.** Retain these records under their current projection until the mapping resolves.
 
+### DI-66. Selected native profile curve bindings
+
+**Question.** Which native point-array, curve-array, and frame bindings resolve the retained profile markers?
+
+**Known.** The tested endpoint readings use both index bases in coordinate-bearing, point-only, complete-marker, counted sketch, and physical point-record rosters. Direct object and local identifiers use the stored value or its successor. Circle readings use the first, preceding, or indexed coordinate as centre and the indexed or following coordinate as radial witness. Solver readings select adjacent point pairs by object or local identifier. The compact and wide endpoint cells are evaluated separately. The following counts cover 91 retained profile markers in eight design groups. Each count is a curve-reading pair; variants can evaluate the same marker.
+
+| Reading family | Variants | Agree | Contrary | Unavailable |
+|---|---|---|---|---|
+| compact endpoint pairs | 16 | 0 | 0 | 1456 |
+| wide endpoint pairs | 16 | 0 | 23 | 1433 |
+| equal-index circles | 36 | 0 | 27 | 3249 |
+| solver point pairs | 4 | 0 | 22 | 342 |
+
+**Need.** Establish the point-slot and curve-record ownership and the stored frame relation that place a bounded profile curve on its extrusion's side faces and start cap. Admission requires agreement in at least two independent design groups and zero contrary cases.
+
+**Conflict.** A contrary result has a matching start-cap plane and a typed side-carrier mismatch.
+
+**Note.** Every reading has zero agreeing design groups under the bounded final-face witness. Absent start caps, unsupported final carriers, incomplete byte or frame bindings, and unproved shared cap/side boundaries remain unavailable.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
