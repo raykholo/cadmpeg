@@ -839,6 +839,16 @@ resolve a seed feature?
 
 **Note.** Retain these records under their current projection until the mapping resolves.
 
+### DI-67. Relation-table operand array ownership
+
+**Question.** Which archive class binding, array extent, and sketch-owner join resolve the retained relation-table operands?
+
+**Known.** The operand-ownership census contains 1,493 rows in 152 features and 59 parts. Unresolved classes account for 1,099 rows in 77 features and 18 parts across 7 design groups. Missing slot markers account for 184 rows in 68 features and 39 parts across 9 groups. Absent decoded geometry accounts for 197 rows in 69 features and 42 parts across 11 groups. Incompatible decoded geometry accounts for 13 rows in 11 features and 8 parts across 4 groups. Each row has one cause; features and parts can occur in several causes. The decoder retains these rows with `sketch.native-constraint` loss.
+
+**Need.** Establish each handle's array class, complete slot extent, owning sketch, and decoded entity or locus. Verify each admitted form against solved sketch geometry across two independent design groups.
+
+**Note.** The partition by class word, slot, array role, and relation code has 1,165 forms. Three forms span two design groups and contain 15 rows.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content

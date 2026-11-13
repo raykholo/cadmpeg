@@ -584,6 +584,34 @@ mod projection {
     }
 
     #[test]
+    fn a_slot_in_another_array_keeps_the_row_native() {
+        let mut fixture = fixture();
+        let mut bytes = Lane {
+            payload: fixture.lane.native_payload.into_inner(),
+        };
+        let missing_line = bytes.row(4, 0, &[(LINE_TAG, 3)]);
+        fixture.lane.native_payload = bytes.payload.into();
+        let mut constraints = Vec::new();
+        project(&fixture, &mut constraints);
+        assert!(matches!(
+            by_row(&constraints, fixture.rows[0]).definition.kind(),
+            SketchConstraintDefinitionInput::Horizontal { .. }
+        ));
+        let SketchConstraintDefinitionInput::Native { operands, .. } =
+            by_row(&constraints, missing_line).definition.kind()
+        else {
+            panic!("an absent line slot must remain native");
+        };
+        assert_eq!(operands.len(), 1);
+        assert_eq!(operands[0].object_index, Some(3));
+        assert_eq!(
+            operands[0].native_kind.as_str(),
+            "sldprt:relation-operand:line:unresolved"
+        );
+        assert!(operands[0].native_ref.is_none());
+    }
+
+    #[test]
     fn an_entity_of_another_sketch_leaves_the_row_native() {
         let mut fixture = fixture();
         let other = SketchId::mint("sldprt:model:sketch#test:2").expect("sketch id");
