@@ -692,7 +692,11 @@ pub(crate) fn type_display_relation_parameters(
         ) && parameter.native_ref.is_none()
             && matches!(parameter.value, Some(ParameterValue::Real(_)))
             && parameter.dependencies.is_empty()
-            && parameter.expression.trim().parse::<f64>().is_ok_and(f64::is_finite)
+            && parameter
+                .expression
+                .trim()
+                .parse::<f64>()
+                .is_ok_and(f64::is_finite)
         {
             if let Some(driver) = drivers
                 .get(&parameter.id)

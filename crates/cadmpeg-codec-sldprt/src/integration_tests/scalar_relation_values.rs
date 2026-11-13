@@ -3,14 +3,15 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{
-    DesignParameter, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, ParameterId, ParameterValue, SketchFeatureBinding,
+    DesignParameter, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
+    FeatureEvaluation, FeatureId, FeatureOperation, ParameterId, ParameterValue,
+    SketchFeatureBinding,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition, SketchId, SketchPlacement,
+    SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
 };
 
 use crate::records::operand_tag::NativeOperandTag;
@@ -40,7 +41,7 @@ impl Fixture {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -61,7 +62,7 @@ impl Fixture {
             expression: "3.0".into(),
             display: None,
             value: Some(ParameterValue::Real(FiniteReal::new(3.0).unwrap())),
-            dependencies: Default::default(),
+            dependencies: DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -147,7 +148,7 @@ impl Fixture {
             configuration: None,
             visible: None,
             placement: SketchPlacement::Unresolved {},
-            profiles: Default::default(),
+            profiles: SketchProfiles::default(),
             native_ref: Some("lane".into()),
         };
         let entities = [0.0, 20.0]
@@ -158,7 +159,7 @@ impl Fixture {
                     SketchEntityId::mint(format!("synthetic:test:id#point-{i}")).unwrap(),
                     sketch_id.clone(),
                     SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                        position: Point2::new(x, 0.0).try_into().unwrap(),
+                        position: Point2::new(x, 0.0),
                     })
                     .unwrap(),
                 )
@@ -293,9 +294,16 @@ fn owned_point_line_driver_uses_the_solved_line_distance() {
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(-10.0, 20.0),
             end: Point2::new(10.0, 20.0),
-        }).unwrap(),
+        })
+        .unwrap(),
     );
     fixture.type_parameter();
-    assert_eq!(fixture.parameter.value, Some(ParameterValue::Length(Length::new(20.0).unwrap())));
-    assert!(matches!(fixture.constraint_kind(), SketchConstraintDefinitionInput::DistanceLoci { .. }));
+    assert_eq!(
+        fixture.parameter.value,
+        Some(ParameterValue::Length(Length::new(20.0).unwrap()))
+    );
+    assert!(matches!(
+        fixture.constraint_kind(),
+        SketchConstraintDefinitionInput::DistanceLoci { .. }
+    ));
 }
