@@ -2325,6 +2325,8 @@ mod tests {
                 "feature.thread-live-face-unproven",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
+                "feature.history-body-bounded",
+                "feature.history-body-undecoded",
                 "feature.stored-bodies-unbound",
                 "feature.paste-sources-unresolved",
                 "feature.occurrence-transfer-source-unresolved",
