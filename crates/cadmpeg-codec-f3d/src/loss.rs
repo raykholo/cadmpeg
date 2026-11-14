@@ -541,6 +541,9 @@ pub(crate) enum F3dLossCode {
     UnstitchPrologueControlsAssumed,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
+    /// A tool of an operand-list Combine names a body that another component
+    /// builds, and the generating feature is not proven.
+    FeatureCombineToolBodyUnbound,
     /// A Combine frame that matches the fixed fields of the operand-list
     /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
@@ -1142,6 +1145,7 @@ impl F3dLossCode {
         Self::UnstitchGroupSelectionAssumed,
         Self::UnstitchPrologueControlsAssumed,
         Self::FeatureCombineSelectionNative,
+        Self::FeatureCombineToolBodyUnbound,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineNewComponentNative,
@@ -1723,6 +1727,7 @@ impl F3dLossCode {
             Self::UnstitchGroupSelectionAssumed => "feature.unstitch-group-selection-assumed",
             Self::UnstitchPrologueControlsAssumed => "feature.unstitch-prologue-controls-assumed",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureCombineToolBodyUnbound => "feature.combine-tool-body-unbound",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
@@ -2257,6 +2262,7 @@ impl F3dLossCode {
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineNewComponentNative
@@ -2679,6 +2685,7 @@ impl F3dLossCode {
             | Self::UnstitchGroupSelectionAssumed
             | Self::UnstitchPrologueControlsAssumed
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineNewComponentNative

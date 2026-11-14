@@ -2774,3 +2774,27 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The unresolved members retain their native identities and report `history.edge-midpoints-unresolved`. DR-164 tracks selectors over populated lanes; DR-224 tracks incomplete transition proofs.
+
+### DR-560. Occurrence of a cross-component Combine tool body
+
+**Question.** Which occurrence of its component supplies the body that a cross-component `Combine` tool names?
+
+**Known.** The browser node of a tool names the body entity suffix and the creating scope. The history-only body-map pair of that suffix names the BREP blob and body selector. A tool whose creating scope is a `Derived Base Feature` scope names a body in a derived component; that component stores one `DerivedInstance` scope with a placement matrix.
+
+**Need.** A record that joins a tool body-map pair to an occurrence path, in a design that places one component more than once and combines the body of one placement.
+
+**Conflict.** None.
+
+**Note.** The tool selection identifies the generating feature and its product definition. It carries no occurrence. `feature.combine-tool-body-unbound` names each `Combine` whose tools stay native.
+
+### DR-561. Feature that regenerates a derived-component Combine tool
+
+**Question.** Does the `DerivedInstance` scope of a derived component always regenerate the body that the `Derived Base Feature` scope of that component creates?
+
+**Known.** The `Derived Base Feature` scope that a tool names and one `DerivedInstance` scope lie in the same component naming space. The join of the two scopes is the component naming space.
+
+**Need.** A stored reference from the `DerivedInstance` scope to the `Derived Base Feature` scope or to its body entity, or a design whose component naming space holds more than one `DerivedInstance` scope.
+
+**Conflict.** None.
+
+**Note.** A naming space with several `DerivedInstance` scopes leaves the tools native.
