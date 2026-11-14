@@ -8456,6 +8456,21 @@ Parsed by:
 | 24 | 1 | `distance_type` | `u8` | little | spec | The next byte is the distance type |
 | 25 | 4 | `entry_count` | `u32` | little | spec | A u32 entry count, that many sixteen-byte entries |
 
+## `rectangular_pattern_payload_counted_head`
+
+Spec §Assembly operands · layout: byte offsets · size: 19 B
+
+Offsets are relative to the byte after the leading zero byte of the distribution block.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. · value `1` |
+| 4 | 11 | `reference` | `bytes[11]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
+| 15 | 4 | `zero_run` | `bytes[4]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
+
 ## `rectangular_pattern_payload_suffix`
 
 Spec §Assembly operands · layout: byte offsets · size: 37 B

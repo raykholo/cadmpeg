@@ -385,6 +385,7 @@ fn exact_rectangular_pattern_distribution(
     construction: &DesignRectangularPatternConstruction,
     directions: &[patterns::DesignRectangularPatternDirection],
 ) -> Option<patterns::DesignRectangularPatternDistribution> {
+    use crate::layout::rectangular_pattern_payload_counted_head as counted_head;
     use crate::layout::rectangular_pattern_payload_distribution as block;
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
@@ -398,15 +399,31 @@ fn exact_rectangular_pattern_distribution(
         return None;
     };
     let after_prefix = start + prefix::LEN;
-    let at = match bytes.get(after_prefix)? {
-        0 => after_prefix + 1,
+    // `at` is the block offset that places `FIXED_TWO` on the u32 `2`.
+    let (at, zero_run) = match bytes.get(after_prefix)? {
+        0 => {
+            let head = after_prefix + 1;
+            if View::u32_le_at(bytes, head + counted_head::COUNT) == Some(counted_head::COUNT_VALUE)
+            {
+                // The counted form replaces the twelve zero bytes with the
+                // count, a marked record reference, and four zero bytes.
+                marked_record_reference(bytes, head + counted_head::REFERENCE)?;
+                (
+                    (head + counted_head::LEN).checked_sub(block::FIXED_TWO)?,
+                    head + counted_head::ZERO_RUN..head + counted_head::LEN,
+                )
+            } else {
+                (head, head + block::ZERO_RUN..head + block::FIXED_TWO)
+            }
+        }
         1 => {
             marked_record_reference(bytes, after_prefix)?;
-            after_prefix + MARKED_REFERENCE_LEN
+            let at = after_prefix + MARKED_REFERENCE_LEN;
+            (at, at + block::ZERO_RUN..at + block::FIXED_TWO)
         }
         _ => return None,
     };
-    if bytes.get(at + block::ZERO_RUN..at + block::FIXED_TWO) != Some(&[0; 12])
+    if bytes.get(zero_run.clone())? != &[0; 12][..zero_run.len()]
         || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
         || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
     {

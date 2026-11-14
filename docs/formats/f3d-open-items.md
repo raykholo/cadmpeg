@@ -543,6 +543,15 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** In `Parametric_extrusion_generator.f3d`, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
 
+
+### DR-641. Record named by the counted head of a rectangular-pattern distribution block
+
+**Question.** What record does the marked reference in the counted head of a rectangular-pattern distribution block name, and what selects the counted head over the twelve-zero-byte head?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the counted head layout. The distance type, entry count, entries, instance count, generated-instance references and suffix follow at the same relative offsets in both forms.
+
+**Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
+
 ### DR-97. Freedom entry second value `0`
 
 **Question.** What does a freedom entry state when its second f64 is `0` rather than π?
