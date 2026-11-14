@@ -276,6 +276,33 @@ fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
 }
 
 #[test]
+fn design_without_occurrences_groups_its_unbound_body_at_its_stored_frame() {
+    for owners in [&[][..], &[999][..]] {
+        let (bulk, meta) = crate::test_support::streams_test::flat_component_design(owners);
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                "BREP.module.smbh",
+                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        let model = &result.ir().model;
+        assert_eq!(model.bodies.len(), 1);
+        assert!(model.occurrences.is_empty());
+        assert_eq!(
+            model
+                .product_definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
     use crate::test_support::component_body_test::{
         history_only_design, HistoryOnlyContainer as Container,

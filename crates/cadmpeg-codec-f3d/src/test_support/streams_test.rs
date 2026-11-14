@@ -1875,6 +1875,16 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
 
 /// A repeated local module with two children and one existing body-map binding.
 pub(crate) fn nested_local_component_design(body_owners: &[u64]) -> (Vec<u8>, Vec<u8>) {
+    component_design(body_owners, true)
+}
+
+/// The nested local module design with its occurrence placement records
+/// removed: three component definitions, one body-map binding, no occurrence.
+pub(crate) fn flat_component_design(body_owners: &[u64]) -> (Vec<u8>, Vec<u8>) {
+    component_design(body_owners, false)
+}
+
+fn component_design(body_owners: &[u64], placements: bool) -> (Vec<u8>, Vec<u8>) {
     let mut bulk = Vec::new();
     let mut records = Vec::new();
     for (record, root, context) in [
@@ -1889,67 +1899,74 @@ pub(crate) fn nested_local_component_design(body_owners: &[u64]) -> (Vec<u8>, Ve
         bulk.extend_from_slice(&[0; 2]);
         lp_utf16(&mut bulk, context);
     }
-    records.push((400, u64_from_index(bulk.len())));
-    indexed_header(&mut bulk, *b"257", 400);
-    bulk.extend_from_slice(&0_u32.to_le_bytes());
-    lp_ascii(&mut bulk, "rootInstance");
-    bulk.push(1);
-    bulk.extend_from_slice(&1_u32.to_le_bytes());
-    bulk.push(1);
-    bulk.extend_from_slice(&100_u64.to_le_bytes());
-    bulk.extend_from_slice(&[0; 7]);
-    let parent = [
-        [0.0, -1.0, 0.0, 3.0],
-        [1.0, 0.0, 0.0, 4.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ];
-    let translated = [
-        [1.0, 0.0, 0.0, 1.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ];
-    for (record, definition, owner, ordinal, transform) in [
-        (401, 200_u64, 101_u64, 1_u32, Some(parent)),
-        (402, 300, 201, 1, None),
-        (403, 300, 201, 2, Some(translated)),
-        (404, 200, 101, 2, Some(parent)),
-    ] {
-        records.push((u64::from(record), u64_from_index(bulk.len())));
-        indexed_header(&mut bulk, *b"257", record);
-        bulk.extend_from_slice(&[0; 8]);
-        bulk.push(1);
-        bulk.extend_from_slice(&1_u32.to_le_bytes());
-        bulk.push(1);
-        bulk.extend_from_slice(&definition.to_le_bytes());
-        bulk.extend_from_slice(&[0; 2]);
+    let placement_records: Vec<u64> = if placements {
+        (400..=404).collect()
+    } else {
+        Vec::new()
+    };
+    if placements {
+        records.push((400, u64_from_index(bulk.len())));
+        indexed_header(&mut bulk, *b"257", 400);
         bulk.extend_from_slice(&0_u32.to_le_bytes());
+        lp_ascii(&mut bulk, "rootInstance");
         bulk.push(1);
         bulk.extend_from_slice(&1_u32.to_le_bytes());
-        lp_ascii(&mut bulk, "SelfGated");
-        lp_ascii(&mut bulk, "IntrinsicMetaTypebool");
-        bulk.push(0);
-        bulk.extend_from_slice(&[0; 2]);
-        bulk.extend_from_slice(&ordinal.to_le_bytes());
-        lp_utf16(&mut bulk, "00000000-0000-4000-8000-000000000999");
-        lp_utf16(&mut bulk, &format!("00000000-0000-4000-8001-{record:012}"));
         bulk.push(1);
-        bulk.extend_from_slice(&500_u64.to_le_bytes());
-        bulk.extend_from_slice(&[0, 1, 1, 0, 0, 0, 0]);
-        bulk.push(1);
-        bulk.extend_from_slice(&definition.to_le_bytes());
-        bulk.extend_from_slice(&[0; 2]);
-        bulk.push(u8::from(transform.is_none()));
-        if let Some(transform) = transform {
-            for value in transform.into_iter().flatten() {
-                bulk.extend_from_slice(&f64::to_le_bytes(value));
+        bulk.extend_from_slice(&100_u64.to_le_bytes());
+        bulk.extend_from_slice(&[0; 7]);
+        let parent = [
+            [0.0, -1.0, 0.0, 3.0],
+            [1.0, 0.0, 0.0, 4.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let translated = [
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        for (record, definition, owner, ordinal, transform) in [
+            (401, 200_u64, 101_u64, 1_u32, Some(parent)),
+            (402, 300, 201, 1, None),
+            (403, 300, 201, 2, Some(translated)),
+            (404, 200, 101, 2, Some(parent)),
+        ] {
+            records.push((u64::from(record), u64_from_index(bulk.len())));
+            indexed_header(&mut bulk, *b"257", record);
+            bulk.extend_from_slice(&[0; 8]);
+            bulk.push(1);
+            bulk.extend_from_slice(&1_u32.to_le_bytes());
+            bulk.push(1);
+            bulk.extend_from_slice(&definition.to_le_bytes());
+            bulk.extend_from_slice(&[0; 2]);
+            bulk.extend_from_slice(&0_u32.to_le_bytes());
+            bulk.push(1);
+            bulk.extend_from_slice(&1_u32.to_le_bytes());
+            lp_ascii(&mut bulk, "SelfGated");
+            lp_ascii(&mut bulk, "IntrinsicMetaTypebool");
+            bulk.push(0);
+            bulk.extend_from_slice(&[0; 2]);
+            bulk.extend_from_slice(&ordinal.to_le_bytes());
+            lp_utf16(&mut bulk, "00000000-0000-4000-8000-000000000999");
+            lp_utf16(&mut bulk, &format!("00000000-0000-4000-8001-{record:012}"));
+            bulk.push(1);
+            bulk.extend_from_slice(&500_u64.to_le_bytes());
+            bulk.extend_from_slice(&[0, 1, 1, 0, 0, 0, 0]);
+            bulk.push(1);
+            bulk.extend_from_slice(&definition.to_le_bytes());
+            bulk.extend_from_slice(&[0; 2]);
+            bulk.push(u8::from(transform.is_none()));
+            if let Some(transform) = transform {
+                for value in transform.into_iter().flatten() {
+                    bulk.extend_from_slice(&f64::to_le_bytes(value));
+                }
             }
+            bulk.extend_from_slice(&[0; 9]);
+            bulk.push(1);
+            bulk.extend_from_slice(&owner.to_le_bytes());
+            bulk.extend_from_slice(&[0; 2]);
         }
-        bulk.extend_from_slice(&[0; 9]);
-        bulk.push(1);
-        bulk.extend_from_slice(&owner.to_le_bytes());
-        bulk.extend_from_slice(&[0; 2]);
     }
     records.push((500, u64_from_index(bulk.len())));
     indexed_header(&mut bulk, *b"258", 500);
@@ -1975,7 +1992,7 @@ pub(crate) fn nested_local_component_design(body_owners: &[u64]) -> (Vec<u8>, Ve
                 "",
                 2,
                 "Component",
-                &[400, 401, 402, 403, 404],
+                &placement_records,
             ),
             (
                 crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
