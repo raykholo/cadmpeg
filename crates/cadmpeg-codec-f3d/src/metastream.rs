@@ -570,10 +570,7 @@ mod tests {
         parse(&bytes, "joined-asset").expect("joined asset identity");
 
         let mut bad = bytes.clone();
-        let at = bad
-            .windows(2)
-            .position(|w| w == b"_\0")
-            .expect("separator");
+        let at = bad.windows(2).position(|w| w == b"_\0").expect("separator");
         bad[at] = b'-';
         assert!(parse(&bad, "bad-joined-asset").is_err());
     }
