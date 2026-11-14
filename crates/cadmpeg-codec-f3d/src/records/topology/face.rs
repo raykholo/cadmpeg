@@ -852,14 +852,21 @@ impl DesignFaceRecipeNode {
 
 impl DesignFaceRecipeStructure {
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
+        self.sides.len() == 2 && self.has_valid_node_ordinals(references)
+    }
+
+    /// Whether the node's side-clause count matches its prelude count (one
+    /// clause for a closed edge, two otherwise) and every ordinal it names is
+    /// a prefix operand of `references`.
+    pub(crate) fn has_valid_node_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
         let Some(ordinals) = prefix_operand_ordinals(references) else {
             return false;
         };
         let operand_count = ordinals.iter().max().map_or(0, |ordinal| ordinal + 1);
         let in_range =
             |value: i32| usize::try_from(value).is_ok_and(|ordinal| ordinal < operand_count);
-        self.prelude[1] == 2
-            && self.sides.len() == 2
+        usize::try_from(self.prelude[1]).is_ok_and(|count| count == self.sides.len())
+            && matches!(self.sides.len(), 1 | 2)
             && in_range(self.root)
             && in_range(self.prelude[0])
             && self.sides.iter().all(|side| {

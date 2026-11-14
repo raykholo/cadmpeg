@@ -141,6 +141,27 @@ impl FaceRecipeIndex {
         }
     }
 
+    /// The fan of a closed edge: its single vertex touches only the one
+    /// corner of each of the edge's two faces, and each corner is formed by
+    /// the edge alone.
+    fn closed_edge_fan(&self, edge: i64, vertex: i64, first_face: i64) -> Option<Vec<i64>> {
+        let corners = self.corners.get(&vertex)?;
+        let [first, second] = corners.as_slice() else {
+            return None;
+        };
+        if first.edges != [edge, edge]
+            || second.edges != [edge, edge]
+            || first.face == second.face
+        {
+            return None;
+        }
+        match (first.face == first_face, second.face == first_face) {
+            (true, false) => Some(vec![first.face, second.face]),
+            (false, true) => Some(vec![second.face, first.face]),
+            _ => None,
+        }
+    }
+
     fn node_matches(
         &self,
         node: &DesignFaceRecipeStructure,
@@ -169,6 +190,18 @@ impl FaceRecipeIndex {
             || root.contains(right) && other.contains(left))
         {
             return false;
+        }
+        if let [only] = node.sides.as_slice() {
+            if vertices[0] != vertices[1] {
+                return false;
+            }
+            let Some(fan) = self.closed_edge_fan(edge, vertices[0], *left) else {
+                return false;
+            };
+            let side = std::iter::once(only.header_value)
+                .chain(only.scalars.iter().copied())
+                .collect::<Vec<_>>();
+            return fan_matches(&side, &fan, lanes);
         }
         let (Some(first), Some(second)) = (
             self.fan(edge, vertices[0], *left),
@@ -232,7 +265,7 @@ impl FaceRecipeIndex {
             .collect::<Option<Vec<_>>>()?;
         if nodes
             .iter()
-            .any(|node| !node.has_valid_operand_ordinals(&operand.recipe_references))
+            .any(|node| !node.has_valid_node_ordinals(&operand.recipe_references))
         {
             return None;
         }

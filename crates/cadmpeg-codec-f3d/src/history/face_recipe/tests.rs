@@ -451,3 +451,123 @@ fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
     structure.sides.truncate(1);
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
 }
+
+/// A face with one single-edge loop whose closed edge also bounds a second
+/// face with one single-edge loop.
+fn closed_edge_topology() -> AsmHistoricalTopology {
+    let mut topology = AsmHistoricalTopology {
+        faces: vec![200, 201],
+        edges: vec![20],
+        vertices: vec![5],
+        edge_vertices: vec![AsmHistoricalEdge {
+            edge: 20,
+            start_vertex: 5,
+            end_vertex: 5,
+        }],
+        ..Default::default()
+    };
+    for (face, loop_, coedge, radial_next) in [(200, 300, 2000, 2001), (201, 301, 2001, 2000)] {
+        topology.face_loops.push(AsmHistoricalRelation {
+            owner_ref: face,
+            member_refs: vec![loop_],
+        });
+        topology.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: loop_,
+            member_refs: vec![coedge],
+        });
+        topology.coedge_topology.push(AsmHistoricalCoedge {
+            coedge,
+            owner_loop: loop_,
+            edge: 20,
+            next: coedge,
+            previous: coedge,
+            radial_next,
+        });
+    }
+    topology
+}
+
+/// A one-node bounded-face recipe over the closed edge: operand zero names
+/// the target face, operand one the face across the edge, and the node's
+/// single endpoint clause is the fan `[1, fan_tail]`.
+fn closed_edge_operand(fan_tail: i32) -> DesignFaceOperand {
+    let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+        "id": "f3d:test:face-operand#21", "scope_record_index": 10, "scope_reference_ordinal": 1,
+        "group_record_index": 20, "group_member_ordinal": 0, "record_index": 21, "byte_offset": 0,
+        "class_tag": "282", "paired_byte_offset": 12, "paired_class_tag": "259",
+        "recipe_record_index": 24, "recipe_record_byte_offset": 24, "recipe_id": "f3d:test:recipe#22",
+        "recipe_prefix_offset": 35, "recipe_prefix_bytes": "", "recipe_references": [],
+        "recipe_kind": "bounded_face", "recipe_program_offset": 0, "recipe_program": [0, -1, 1],
+        "recipe_node_offsets": [], "recipe_nodes": [], "next_record_index": 23, "next_byte_offset": 36
+    }))
+    .unwrap();
+    for (ordinal, face) in [200, 201].into_iter().enumerate() {
+        operand
+            .recipe_references
+            .push(crate::records::dimensions::DesignRecipeReference {
+                selector: 1,
+                selector_offset: u64::try_from(ordinal).unwrap(),
+                token: format!("face{ordinal}"),
+                token_integer: 0,
+                token_offset: u64::try_from(ordinal).unwrap(),
+                design_reference: i64::try_from(ordinal).unwrap(),
+                design_reference_offset: u64::try_from(ordinal).unwrap(),
+                candidate_faces: vec![crate::ids::brep_face_id(face)],
+                alternate_selector_faces: Vec::new(),
+                candidate_edges: Vec::new(),
+                alternate_selector_edges: Vec::new(),
+                operand_offset: None,
+            });
+    }
+    let fields = vec![1, -1, 0, -1, 1, -1, 2, 1, -1, fan_tail, -1, 0, 0, -1];
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+            .unwrap()
+            .unwrap()
+    });
+    let mut program = vec![-1, -1, 2];
+    program.extend(fields);
+    operand.recipe_program.extend(&program);
+    operand.recipe_nodes.push(DesignFaceRecipeNode {
+        byte_offset: 0,
+        end_byte_offset: 12,
+        program,
+        recipe_structure: Some(structure),
+    });
+    operand
+}
+
+#[test]
+fn a_one_clause_node_binds_a_closed_edge_through_its_two_face_fan() {
+    let index = FaceRecipeIndex::new(&closed_edge_topology());
+    assert_eq!(index.resolve(&closed_edge_operand(0)), Some(200));
+    assert_eq!(index.resolve_loop(&closed_edge_operand(0)), Some(200));
+    assert_eq!(index.resolve(&closed_edge_operand(1)), None);
+}
+
+#[test]
+fn a_one_clause_node_refuses_an_open_edge_and_a_crowded_vertex() {
+    let mut open = closed_edge_topology();
+    open.edge_vertices[0].end_vertex = 6;
+    open.vertices.push(6);
+    assert_eq!(FaceRecipeIndex::new(&open).resolve(&closed_edge_operand(0)), None);
+    let mut crowded = closed_edge_topology();
+    crowded.faces.push(202);
+    crowded.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 202,
+        member_refs: vec![302],
+    });
+    crowded.loop_coedges.push(AsmHistoricalRelation {
+        owner_ref: 302,
+        member_refs: vec![2002],
+    });
+    crowded.coedge_topology.push(AsmHistoricalCoedge {
+        coedge: 2002,
+        owner_loop: 302,
+        edge: 20,
+        next: 2002,
+        previous: 2002,
+        radial_next: 2000,
+    });
+    assert_eq!(FaceRecipeIndex::new(&crowded).resolve(&closed_edge_operand(0)), None);
+}
