@@ -178,6 +178,7 @@ fn exact_rectangular_pattern_direction(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignRectangularPatternDirection> {
+    use crate::layout::rectangular_pattern_compact_extent_direction_record as compact_extent;
     use crate::layout::rectangular_pattern_compact_spacing_direction_record as compact;
     use crate::layout::rectangular_pattern_direction_record as frame;
     use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
@@ -187,13 +188,16 @@ fn exact_rectangular_pattern_direction(
     let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
         (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
-        (compact::LEN, 7) => 0,
+        (compact::LEN, 7) | (compact_extent::LEN, 8) => 0,
         _ => return None,
     };
     let compact_spacing = length == compact::LEN;
+    let extent_form = length == compact_extent::LEN;
     let at = |offset| {
         start
-            + if compact_spacing && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
+            + if extent_form && offset >= frame::SELECTION_COUNT {
+                offset - (frame::SELECTION_COUNT - compact_extent::SELECTION_COUNT)
+            } else if compact_spacing && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
                 offset - (frame::INDEX_PLUS_ONE_REFERENCE - compact::INDEX_PLUS_ONE_REFERENCE)
             } else if compact_spacing && offset >= frame::SELECTION_COUNT {
                 offset - (frame::SELECTION_COUNT - compact::SELECTION_COUNT)
@@ -213,6 +217,7 @@ fn exact_rectangular_pattern_direction(
         || !matches!(selection_kind, 8 | 16)
         || bytes.get(start + frame::ZERO_RUN_16..start + frame::FIXED_EIGHT) != Some(&[0; 16])
         || (!compact_spacing
+            && !extent_form
             && (0..3).any(|lane| {
                 View::f64_le_at(bytes, at(frame::NEGATIVE_ONES) + lane * 8) != Some(-1.0)
             }))

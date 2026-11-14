@@ -9544,6 +9544,20 @@ pub(crate) mod rectangular_pattern_compact_spacing_direction_record {
     pub(crate) const INDEX_PLUS_ONE_REFERENCE: usize = 172;
 }
 
+/// Byte offsets for the `rectangular_pattern_compact_extent_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 196 B.
+///
+/// ```text
+/// Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 196.
+/// ```
+pub(crate) mod rectangular_pattern_compact_extent_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 196;
+    /// Offset of `selection_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SELECTION_COUNT: usize = 93;
+}
+
 /// Byte offsets for the `thread_compact_owned_scope_prefix` record.
 ///
 /// Spec §3.1. Record length 46 B.
