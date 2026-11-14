@@ -841,6 +841,18 @@ resolve a seed feature?
 
 **Note.** Retain these records under their current projection until the mapping resolves.
 
+### DI-70. Extrusion profile ownership and curve roster
+
+**Question.** Which feature-input reference or contained child selects the complete extrusion profile when the history record has an unresolved profile reference?
+
+**Known.** The unresolved set contains 30 features in 18 parts across 10 independent design groups. Class `moExtruRefSurface_c` accounts for 24 features in 13 parts across six groups. Class `moExtrusion_c` accounts for two features in two parts across two groups. Classless objects account for three features in two parts across two groups. Class `moICE_c` accounts for one feature in one part and one group.
+
+**Need.** Establish the profile owner, selected curve roster, and sketch frame from bytes. Each selected curve swept along the extrusion direction must lie on a surviving side face produced by that feature. The roster must account for every surviving produced side face. Later consumption of all produced faces leaves that witness unavailable.
+
+**Conflict.** Adjacent sketches include point-only rosters, native curves, and sketches owned by another extrusion. Consecutive extrusion objects and repeated names within one feature-input lane also occur.
+
+**Note.** Retain the unresolved references and their operand losses until ownership and the complete curve roster agree with the produced-face witness.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
