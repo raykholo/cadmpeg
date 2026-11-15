@@ -17,6 +17,10 @@ use crate::feature::{
 use crate::pmdc::PmDcReference;
 
 const EPS_PLATE_DIRECTION: f64 = 1.0e-10;
+/// Bend-relief form enumeration `(501, 0)`: round relief.
+const RELIEF_ROUND: (i16, u16) = (501, 0);
+/// Bend-relief form enumeration `(501, 1)`: rectangular relief.
+const RELIEF_RECTANGULAR: (i16, u16) = (501, 1);
 const EPS_ATTACHMENT_DIRECTION: f64 = 1.0e-10;
 /// Smallest V component of an oblique second attachment direction; a smaller
 /// component leaves the plate plane parallel to the attached face.
@@ -303,16 +307,28 @@ pub(crate) fn plate<'a>(
         return Err(PlateRefusal::Relief);
     };
     let style_relief = property(style.bend_relief_form).and_then(enumeration);
+    let relief_control = property(*control).and_then(boolean);
     require(
-        property(*control).and_then(boolean).is_some()
+        relief_control.is_some()
             && same(*width, *relief_width)
-            && same(*relief_remnant, *minimum_remnant)
-            && property(*form).and_then(enumeration).is_some()
-            && property(*form).and_then(enumeration) == style_relief,
+            && same(*relief_remnant, *minimum_remnant),
         PlateRefusal::Relief,
     )?;
+    let stored_relief = property(*form)
+        .and_then(enumeration)
+        .refuse(PlateRefusal::Relief)?;
+    let relief_form = if Some(stored_relief) == style_relief {
+        SheetMetalReliefForm::StyleDefault
+    } else {
+        // A false relief Boolean selects the plate's own relief form.
+        match (relief_control, stored_relief) {
+            (Some(false), RELIEF_ROUND) => SheetMetalReliefForm::Round,
+            (Some(false), RELIEF_RECTANGULAR) => SheetMetalReliefForm::Rectangular,
+            _ => return Err(PlateRefusal::Relief),
+        }
+    };
     let relief = SheetMetalRelief {
-        form: SheetMetalReliefForm::StyleDefault,
+        form: relief_form,
         width: length(*width)
             .and_then(|v| PositiveLength::try_from(v).ok())
             .refuse(PlateRefusal::Length)?,

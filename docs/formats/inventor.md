@@ -1083,7 +1083,7 @@ One flange control form has the following values and reference relations. Direct
 | Attachment thickness | Same reference as plate slot 3 |
 | Attachment extension | Absent, or state 10 with repeated thickness, radius, attachment, relief width, minimum remnant, and option references |
 | Relief control | Boolean |
-| Relief form | Same enumeration type and value as the document-style bend-relief form |
+| Relief form | Same enumeration type and value as the document-style bend-relief form; with a false relief Boolean, also enumeration `(501, 0)`, a round relief, or `(501, 1)`, a rectangular relief |
 | Relief width, minimum remnant | Same references as the attachment operands |
 | Relief width, depth | Positive lengths |
 | Relief minimum remnant, seam gap | Nonnegative lengths |

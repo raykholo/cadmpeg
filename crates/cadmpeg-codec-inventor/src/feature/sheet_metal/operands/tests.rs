@@ -136,6 +136,54 @@ fn a_false_boolean_does_not_admit_a_form_other_than_the_style_form() {
     }
 }
 
+fn relief_with(control: bool, stored: u16, style: u16) -> Result<PlateOperands, PlateRefusal> {
+    let mut fixture = Fixture::new();
+    fixture.edit(29, |kind| {
+        if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
+            *value = control;
+        }
+    });
+    for (index, wanted) in [(31, stored), (40, style)] {
+        fixture.edit(index, |kind| {
+            if let PmDcFeaturePropertyKind::SheetMetal {
+                definition: SheetMetalProperty::Enumeration { value, .. },
+            } = kind
+            {
+                *value = wanted;
+            }
+        });
+    }
+    projected(&fixture)
+}
+
+#[test]
+fn a_false_relief_boolean_selects_the_plates_own_round_or_rectangular_form() {
+    assert_eq!(
+        relief_with(false, 0, 1).expect("round").relief.form,
+        SheetMetalReliefForm::Round
+    );
+    assert_eq!(
+        relief_with(false, 1, 0).expect("rectangular").relief.form,
+        SheetMetalReliefForm::Rectangular
+    );
+    assert_eq!(
+        relief_with(false, 0, 0).expect("style").relief.form,
+        SheetMetalReliefForm::StyleDefault
+    );
+}
+
+#[test]
+fn an_own_relief_form_needs_a_false_boolean_and_a_known_value() {
+    assert_eq!(
+        relief_with(true, 0, 1).expect_err("true Boolean"),
+        PlateRefusal::Relief
+    );
+    assert_eq!(
+        relief_with(false, 2, 1).expect_err("unknown form"),
+        PlateRefusal::Relief
+    );
+}
+
 #[test]
 fn bend_requires_the_shared_plate_operands_and_its_pinned_controls() {
     let fixture = Fixture::new();
