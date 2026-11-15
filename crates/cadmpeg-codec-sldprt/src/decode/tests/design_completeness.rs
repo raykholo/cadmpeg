@@ -322,6 +322,7 @@ fn design_completeness_audits_typed_construction_families() {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
+            rule: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: None,

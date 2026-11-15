@@ -3051,11 +3051,25 @@ fn check_feature_references(
             FeatureDefinition::PostProcess { operation, .. }
             | FeatureDefinition::Operation(operation) => operation,
         };
+        if let Some(rule) = definition.sheet_metal_rule() {
+            sheet_metal::check_rule_reference(feature, rule, &feature_records, findings);
+        }
         match definition {
             FeatureOperation::Unresolved { .. }
             | FeatureOperation::Primitive { .. }
             | FeatureOperation::SheetMetalBaseFlange { .. }
             | FeatureOperation::PlanarPatch { .. } => {}
+            FeatureOperation::SheetMetalRule { .. } => {
+                if !feature.evaluation.outputs().is_empty()
+                    || result_topologies_by_feature.contains(feature.id.as_str())
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "sheet-metal rule has outputs or result topology",
+                    );
+                }
+            }
             FeatureOperation::ReferenceImage { asset, .. } => {
                 if !asset_ids.contains(asset.as_str()) {
                     ref_error(
@@ -4653,6 +4667,9 @@ fn regeneration_references(
             }
         }
         _ => {}
+    }
+    if let Some(rule) = definition.sheet_metal_rule() {
+        references.insert_unique(rule.as_str(), rule);
     }
     for termination in definition_terminations(definition) {
         if let Some(crate::features::VertexSelection::Generated { vertex, .. }) =

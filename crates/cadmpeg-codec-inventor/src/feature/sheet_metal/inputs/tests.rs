@@ -91,6 +91,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
             thickness: values.thickness,
             side: values.side,
             attachment: selection.clone(),
+            rule: None,
         },
     );
     let bend = make_feature(
@@ -103,6 +104,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
             inside_radius: values.inside_radius,
             relief: values.relief,
             transition: values.transition,
+            rule: None,
         },
     );
     let sample = crate::feature::edge_selection::geometry::EdgeGeometry {

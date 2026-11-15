@@ -78,6 +78,39 @@ pub(super) fn check_pair(
     }
 }
 
+/// A named rule is a preceding `SheetMetalRule` in the dependencies of its user.
+pub(super) fn check_rule_reference(
+    feature: &crate::features::Feature,
+    rule: &FeatureId,
+    features: &crate::index::identities::BorrowedIdentities<'_, &crate::features::Feature>,
+    findings: &mut Vec<Finding>,
+) {
+    use crate::features::FeatureOperation;
+    let candidate = features.get(rule.as_str());
+    if !candidate.is_some_and(|candidate| {
+        matches!(
+            candidate.evaluation.definition().operation(),
+            FeatureOperation::SheetMetalRule { .. }
+        )
+    }) {
+        super::ref_error(
+            findings,
+            feature.id.as_str(),
+            "sheet-metal rule",
+            rule.as_str(),
+        );
+    }
+    if candidate.is_some_and(|candidate| candidate.ordinal >= feature.ordinal)
+        || !feature.dependencies.contains(rule)
+    {
+        super::geometry_error(
+            findings,
+            feature.id.as_str(),
+            "sheet-metal rule must precede its user and occur in its dependencies",
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +221,7 @@ mod tests {
                     thickness: PositiveLength::new(1.0).expect("thickness"),
                     side: SheetMetalThicknessSide::Forward,
                     attachment: selection.clone(),
+                    rule: None,
                 },
             ),
             feature(
@@ -199,6 +233,7 @@ mod tests {
                     inside_radius: PositiveLength::new(1.0).expect("radius"),
                     relief,
                     transition,
+                    rule: None,
                 },
             ),
         ];
@@ -309,6 +344,73 @@ mod tests {
             *definition = FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold {
                 construction: SheetMetalRefoldConstruction::default(),
             });
+        });
+        assert!(!check(&ir).is_empty());
+    }
+
+    #[test]
+    fn rule_reference_requires_rule_kind_earlier_ordinal_and_dependency() {
+        use crate::features::{
+            sheet_metal::SheetMetalRuleConstruction, DistinctMembers, Feature, FeatureContent,
+            FeatureDefinition, FeatureEvaluation, FeatureOperation, SheetMetalThicknessSide,
+        };
+        use crate::scalar::PositiveLength;
+        let mut ir = crate::examples::unit_cube().unwrap();
+        let rule = FeatureId::mint("test:model:feature#rule").unwrap();
+        let face = FeatureId::mint("test:model:feature#face").unwrap();
+        let feature = |id, ordinal, operation| Feature {
+            product_definition: None,
+            id,
+            ordinal,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
+            native_ref: None,
+        };
+        let base = |rule: Option<FeatureId>| FeatureOperation::SheetMetalBaseFlange {
+            profile: PlanarProfileRef::Native("test:profile".into()),
+            thickness: PositiveLength::new(1.0).unwrap(),
+            side: SheetMetalThicknessSide::Forward,
+            rule,
+        };
+        let rule_operation = FeatureOperation::SheetMetalRule {
+            construction: SheetMetalRuleConstruction {
+                thickness: Some(PositiveLength::new(1.0).unwrap()),
+                ..SheetMetalRuleConstruction::default()
+            },
+        };
+        let check = |ir: &crate::CadIr| {
+            crate::validate::validate_neutral(ir, Vec::new())
+                .unwrap()
+                .findings
+                .into_iter()
+                .filter(|finding| finding.message.contains("sheet-metal rule"))
+                .collect::<Vec<_>>()
+        };
+        ir.model.features = vec![
+            feature(rule.clone(), 0, rule_operation.clone()),
+            feature(face.clone(), 1, base(None)),
+        ];
+        assert!(check(&ir).is_empty());
+        ir.model.features[1] = feature(face.clone(), 1, base(Some(rule.clone())));
+        ir.model.features[1].dependencies.insert(rule.clone());
+        assert!(check(&ir).is_empty());
+        ir.model.features[1].dependencies = DistinctMembers::default();
+        assert!(!check(&ir).is_empty());
+        ir.model.features[1].dependencies.insert(rule.clone());
+        ir.model.features[0].ordinal = 2;
+        assert!(!check(&ir).is_empty());
+        ir.model.features[0].ordinal = 0;
+        ir.model.features[0] = feature(rule.clone(), 0, base(None));
+        assert!(!check(&ir).is_empty());
+        ir.model.features[0] = feature(rule.clone(), 0, rule_operation);
+        ir.model.features[0].evaluation.edit(|_, outputs| {
+            outputs.insert(crate::ids::BodyId::mint("test:model:body#extra").unwrap());
         });
         assert!(!check(&ir).is_empty());
     }

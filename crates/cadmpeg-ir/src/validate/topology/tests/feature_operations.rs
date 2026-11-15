@@ -413,6 +413,7 @@ fn attached_plate_and_bend_validate_profiles_edges_and_history() {
         attachment: EdgeSelection::Edges(vec![
             crate::ids::EdgeId::mint("test:model:edge#missing").unwrap()
         ]),
+        rule: None,
     };
     let bend = FeatureOperation::SheetMetalBend {
         plate: plate_id.clone(),
@@ -420,6 +421,7 @@ fn attached_plate_and_bend_validate_profiles_edges_and_history() {
         inside_radius: PositiveLength::new(1.0).unwrap(),
         relief,
         transition,
+        rule: None,
     };
     let mut ir = crate::CadIr::empty();
     ir.model.features.push(feature(
@@ -472,6 +474,7 @@ fn an_attached_plate_requires_one_bend() {
         thickness: PositiveLength::new(1.0).unwrap(),
         side: SheetMetalThicknessSide::Forward,
         attachment: EdgeSelection::All,
+        rule: None,
     };
     ir.model
         .features
@@ -497,6 +500,7 @@ fn an_attached_plate_requires_one_bend() {
             form: SheetMetalTransitionForm::StyleDefault,
             radius: NonNegativeLength::new(0.0).unwrap(),
         },
+        rule: None,
     };
     let mut bend = feature(
         "test:model:feature#bend",

@@ -262,16 +262,17 @@ rewrite_enum!(FeatureOperation, []; {
     HelicalSweep { construction, op },
     Binder { sources, construction },
     Rib { construction, op },
-    SheetMetalBaseFlange { profile, thickness, side },
-    SheetMetalAttachedPlate { profile, thickness, side, attachment },
-    SheetMetalBend { plate, attachment, inside_radius, relief, transition },
+    SheetMetalRule { construction },
+    SheetMetalBaseFlange { profile, thickness, side, rule },
+    SheetMetalAttachedPlate { profile, thickness, side, attachment, rule },
+    SheetMetalBend { plate, attachment, inside_radius, relief, transition, rule },
     SheetMetalCorner { bend, effect },
     SheetMetalBendLines { construction },
     SheetMetalContourFlange { construction },
     SheetMetalUnfold { construction },
     SheetMetalRefold { construction },
     SheetMetalEdgeFlange(field0),
-    SheetMetalHem { edges, bend_position, form, direction, bend_radius },
+    SheetMetalHem { edges, bend_position, form, direction, bend_radius, rule },
     Fillet { groups },
     FullRoundFillet { groups },
     FaceBlend { operands, radius },
@@ -627,8 +628,9 @@ rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });
 rewrite_record!(super::sheet_metal::SheetMetalUnfoldConstruction, []; {stationary, bends, all_bends, neutral_factor});
 rewrite_record!(super::sheet_metal::SheetMetalRefoldConstruction, []; {unfold});
 
-rewrite_record!(super::sheet_metal::SheetMetalEdgeFlangeConstruction, []; {edges, height, angle, height_datum, bend_position, width, bend_radius});
+rewrite_record!(super::sheet_metal::SheetMetalEdgeFlangeConstruction, []; {edges, height, angle, height_datum, bend_position, width, bend_radius, rule});
 rewrite_record!(super::sheet_metal::SheetMetalFlangeOffset, []; {first, second, first_reference, second_reference});
 rewrite_record!(super::sheet_metal::SheetMetalFlangeTargetConstruction, []; {target, offset});
 rewrite_record!(super::sheet_metal::SheetMetalFlangeSymmetricWidth, []; {width});
-rewrite_record!(super::sheet_metal::SheetMetalContourFlangeConstruction, []; {profile, direction, extent, thickness, inside_radius, side, neutral_factor});
+rewrite_record!(super::sheet_metal::SheetMetalContourFlangeConstruction, []; {profile, direction, extent, thickness, inside_radius, side, neutral_factor, rule});
+rewrite_record!(super::sheet_metal::SheetMetalRuleConstruction, []; {thickness, inside_radius, neutral_factor});

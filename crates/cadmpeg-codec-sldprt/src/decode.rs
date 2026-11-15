@@ -1667,6 +1667,11 @@ pub(crate) fn append_design_losses(
                         || construction.inside_radius.is_none()
                 }
                 FeatureOperation::SheetMetalCorner { .. } => false,
+                FeatureOperation::SheetMetalRule { construction } => {
+                    construction.thickness.is_none()
+                        || construction.inside_radius.is_none()
+                        || construction.neutral_factor.is_none()
+                }
                 FeatureOperation::SheetMetalEdgeFlange(construction) => {
                     !construction.has_all_inputs()
                         || construction.edges.as_ref().is_none_or(incomplete_edge_selection)

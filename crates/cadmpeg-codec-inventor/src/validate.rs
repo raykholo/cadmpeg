@@ -1933,6 +1933,15 @@ fn validate_features(
         .map(|entity| (entity.id().as_str(), entity))
         .collect::<HashMap<_, _>>();
     for feature in &ir.model.features {
+        // Sheet-metal rules resolve to style records; `sheet_metal::definitions` checks them.
+        if matches!(
+            feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::SheetMetalRule { .. }
+            )
+        ) {
+            continue;
+        }
         if crate::feature::pattern::is_linear_pattern(feature) {
             if feature
                 .native_ref

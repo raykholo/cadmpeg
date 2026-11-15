@@ -4960,6 +4960,7 @@ fn project_base_flange(
             profile: PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(placement)),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(thickness.get() * 10.0)?,
             side: SheetMetalThicknessSide::Forward,
+            rule: None,
         }),
         rule_thickness.is_some(),
     ))
@@ -5501,6 +5502,7 @@ fn project_hem(
             bend_radius: or_none!(cadmpeg_ir::scalar::PositiveLength::new(
                 operation.bend_radius.get() * 10.0,
             )),
+            rule: None,
         },
     )))
 }

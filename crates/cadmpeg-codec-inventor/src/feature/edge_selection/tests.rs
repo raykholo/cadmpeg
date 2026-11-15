@@ -335,6 +335,7 @@ fn base_flange_result_carries_the_selected_generated_edge() {
             ),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("thickness"),
             side: SheetMetalThicknessSide::Forward,
+            rule: None,
         },
     ));
     let mut results = vec![FeatureResultTopology::new(

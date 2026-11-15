@@ -420,3 +420,68 @@ fn contour_identity_rewrite_traverses_its_profile_reference() {
     );
     map.finish().unwrap();
 }
+
+#[test]
+fn rule_construction_round_trips_and_rejects_named_nulls() {
+    use super::SheetMetalRuleConstruction;
+    let empty: SheetMetalRuleConstruction = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(empty, SheetMetalRuleConstruction::default());
+    assert_eq!(serde_json::to_value(empty).unwrap(), json!({}));
+    let value = json!({"thickness": 2.0, "inside_radius": 0.0, "neutral_factor": 0.44});
+    let construction: SheetMetalRuleConstruction = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(construction).unwrap(), value);
+    for key in ["thickness", "inside_radius", "neutral_factor"] {
+        let mut invalid = value.clone();
+        invalid[key] = serde_json::Value::Null;
+        let error = serde_json::from_value::<SheetMetalRuleConstruction>(invalid)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(key), "{error}");
+    }
+    assert!(
+        serde_json::from_value::<SheetMetalRuleConstruction>(json!({"thickness": 0.0})).is_err()
+    );
+    assert!(serde_json::from_value::<SheetMetalRuleConstruction>(json!({"relief": 1.0})).is_err());
+}
+
+#[test]
+fn rule_operation_and_rule_references_round_trip_and_stay_absent_when_unset() {
+    use crate::features::FeatureOperation;
+    let rule = json!({"definition": "sheet_metal_rule", "construction": {"thickness": 1.5}});
+    let operation: FeatureOperation = serde_json::from_value(rule.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&operation).unwrap(), rule);
+    assert_eq!(operation.sheet_metal_rule(), None);
+    let base = json!({
+        "definition": "sheet_metal_base_flange",
+        "profile": {"kind": "native", "value": "test:profile"},
+        "thickness": 1.5,
+        "side": "forward"
+    });
+    let unset: FeatureOperation = serde_json::from_value(base.clone()).unwrap();
+    assert_eq!(unset.sheet_metal_rule(), None);
+    assert_eq!(serde_json::to_value(&unset).unwrap(), base);
+    let mut named = base.clone();
+    named["rule"] = json!("test:model:feature#rule");
+    let operation: FeatureOperation = serde_json::from_value(named.clone()).unwrap();
+    assert_eq!(
+        operation
+            .sheet_metal_rule()
+            .map(crate::features::FeatureId::as_str),
+        Some("test:model:feature#rule")
+    );
+    assert_eq!(serde_json::to_value(&operation).unwrap(), named);
+    named["rule"] = serde_json::Value::Null;
+    let error = serde_json::from_value::<FeatureOperation>(named)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("rule"), "{error}");
+    let contour: super::SheetMetalContourFlangeConstruction =
+        serde_json::from_value(json!({"rule": "test:model:feature#rule"})).unwrap();
+    assert_eq!(
+        contour
+            .rule
+            .as_ref()
+            .map(crate::features::FeatureId::as_str),
+        Some("test:model:feature#rule")
+    );
+}

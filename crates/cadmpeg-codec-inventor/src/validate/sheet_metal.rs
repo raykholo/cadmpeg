@@ -124,6 +124,7 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
                     edges,
                     native,
                 },
+            ..
         }) = feature.evaluation.definition()
         else {
             return None;
@@ -223,6 +224,26 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
     };
     for feature in &ir.model.features {
         let valid = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalRule { construction }) => {
+                (|| {
+                    let style = data
+                        .pm_dc_sheet_metal_styles
+                        .iter()
+                        .find(|style| Some(style.id().as_str()) == feature.native_ref.as_deref())?;
+                    let token = style.identity.segment_token.as_str();
+                    let unique = projection::style(&data.pm_dc_sheet_metal_styles, token)?;
+                    let expected = crate::feature::sheet_metal::rule::construction(unique, |r| {
+                        length(token, r)
+                    })?;
+                    let id = crate::feature::history_feature_id(&unique.identity).ok()?;
+                    (std::ptr::eq(style, unique)
+                        && feature.id == id
+                        && expected == *construction
+                        && feature.evaluation.outputs().is_empty())
+                    .then_some(())
+                })()
+                .is_some()
+            }
             FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. }) => {
                 source_of(feature)
                     .and_then(|source| attached(feature, source))
