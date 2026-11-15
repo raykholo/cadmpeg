@@ -304,6 +304,8 @@ impl<'a> BlendRows<'a> {
     }
 }
 
+thread_local! { static DBG_STEP: std::cell::Cell<u32> = const { std::cell::Cell::new(0) }; }
+fn dbg_step(n: u32) { DBG_STEP.with(|c| c.set(n)); }
 /// The blend faces that a transition inserts on new carriers, each with the
 /// one deleted edge that it replaces, or `None` when a face of either state
 /// has no rebuilt boundary or no single carrier, a result face on a new
@@ -323,6 +325,18 @@ fn transition_blends(
     input: &AsmHistoricalTopology,
     output: &AsmHistoricalTopology,
 ) -> Option<Vec<Blend>> {
+    dbg_step(0);
+    let r = transition_blends_inner(transition, input, output);
+    if std::env::var_os("F3D_DBG_BLEND").is_some() {
+        eprintln!("DBGBLEND inserted={} outfaces={} infaces={} result={} step={}", transition.topology.faces.inserted.len(), output.faces.len(), input.faces.len(), r.as_ref().map_or(-1, |b| b.len() as i64), DBG_STEP.with(|c| c.get()));
+    }
+    r
+}
+fn transition_blends_inner(
+    transition: &AsmHistoricalTransition,
+    input: &AsmHistoricalTopology,
+    output: &AsmHistoricalTopology,
+) -> Option<Vec<Blend>> {
     let inserted = &transition.topology.faces.inserted;
     let carriers = super::unique_face_carriers(output);
     let input_surfaces = input.surfaces.iter().copied().collect::<HashSet<_>>();
@@ -332,13 +346,18 @@ fn transition_blends(
     let input_faces = input.faces.iter().copied().collect::<HashSet<_>>();
     let listed = inserted.iter().copied().collect::<HashSet<_>>();
     for face in &output.faces {
-        let carrier = carriers.get(face).copied().flatten()?;
+        let Some(carrier) = carriers.get(face).copied().flatten() else {
+            if std::env::var_os("F3D_DBG_BLEND").is_some() { eprintln!("DBGBLEND no unique carrier for output face {face}"); }
+            return None;
+        };
         if !input_surfaces.contains(&carrier)
             && (input_faces.contains(face) || !listed.contains(face))
         {
+            if std::env::var_os("F3D_DBG_BLEND").is_some() { eprintln!("DBGBLEND new-carrier face {face} persists={} listed={}", input_faces.contains(face), listed.contains(face)); }
             return None;
         }
     }
+    dbg_step(1);
     let mut blend_faces = Vec::new();
     for face in inserted {
         let carrier = carriers.get(face).copied().flatten()?;
@@ -346,9 +365,11 @@ fn transition_blends(
             blend_faces.push(*face);
         }
     }
+    dbg_step(2);
     if blend_faces.is_empty() {
         return None;
     }
+    dbg_step(3);
     let output_boundaries = super::face_boundary_edge_index(output);
     let input_boundaries = super::face_boundary_edge_index(input);
     // A face whose boundary does not rebuild, or that has no single carrier,
@@ -366,10 +387,12 @@ fn transition_blends(
     {
         return None;
     }
+    dbg_step(4);
     let supports = super::treatment_face_supports(&blend_faces, output, input, &output_boundaries);
     if supports.len() != blend_faces.len() {
         return None;
     }
+    dbg_step(5);
     let spines = blend_spines(output);
     let mut radii = HashMap::<i64, Option<f64>>::new();
     for row in &output.surface_radii {
@@ -384,19 +407,23 @@ fn transition_blends(
         (&input_boundaries, &output_boundaries),
         &input_carriers,
     );
+    dbg_step(6);
     let axes = cylinder_axes(output);
     let mut blends = Vec::new();
     let mut replaced = HashSet::new();
     for (blend, carrier, supports, complete) in supports {
         if !complete {
+            dbg_step(60);
             return None;
         }
+        dbg_step(7);
         let spine = spines.get(&carrier)?;
         let radius = radii
             .get(&carrier)
             .copied()
             .flatten()
             .filter(|radius| radius.is_finite() && *radius > 0.0)?;
+        dbg_step(8);
         let mut candidates = BTreeSet::new();
         for (ordinal, left) in supports.iter().enumerate() {
             let left_edges = input_boundaries.get(left)?;
@@ -414,6 +441,7 @@ fn transition_blends(
                 }
             }
         }
+        dbg_step(9);
         let axis = || {
             axes.get(&carrier)
                 .copied()
@@ -570,6 +598,7 @@ pub(super) fn bind_fillet_groups(
         return GroupBinding::Unbound;
     };
     let (transition, input, output) = states;
+    if std::env::var_os("F3D_DBG_BLEND").is_some() { eprintln!("DBGBLEND bind_fillet_groups {}", feature_id.as_str()); }
     let Some(blends) = transition_blends(transition, input, output) else {
         return GroupBinding::Unbound;
     };
@@ -584,7 +613,12 @@ pub(super) fn bind_fillet_groups(
             _ => None,
         })
         .collect::<Vec<_>>();
+    let dbg = std::env::var_os("F3D_DBG_BLEND").is_some();
+    if dbg {
+        eprintln!("DBGBLEND feature {} radii={radii:?} blends={:?}", feature_id.as_str(), blends.iter().map(|b| (b.radius, b.edge)).collect::<Vec<_>>());
+    }
     let Some(edges) = group_edges(&radii, &blends) else {
+        if dbg { eprintln!("DBGBLEND group_edges none"); }
         return GroupBinding::Unbound;
     };
     if !fillet_groups
@@ -592,6 +626,7 @@ pub(super) fn bind_fillet_groups(
         .zip(&edges)
         .all(|(group, slots)| agrees(&group.edges, feature_id, previous_state_id, slots))
     {
+        if dbg { eprintln!("DBGBLEND disagrees edges={edges:?}"); }
         return GroupBinding::Unbound;
     }
     let found = blends
