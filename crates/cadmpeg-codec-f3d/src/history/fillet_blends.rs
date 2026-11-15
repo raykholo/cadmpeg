@@ -406,6 +406,8 @@ pub(super) fn treatment_faces(
     })
 }
 
+thread_local! { static DBG_STEP: std::cell::Cell<u32> = const { std::cell::Cell::new(0) }; }
+fn dbg_step(n: u32) { DBG_STEP.with(|c| c.set(n)); }
 /// The blend faces that a transition inserts on new carriers, each with the
 /// one deleted edge that it replaces, or `None` when a face of either state
 /// has no rebuilt boundary or no single carrier, a result face on a new
@@ -420,8 +422,6 @@ pub(super) fn treatment_faces(
 /// two blends replace one edge, or a deleted edge that the covering reading
 /// of a blend assumes the blend consumes is replaced by a blend or consumed
 /// by another blend.
-thread_local! { static DBG_STEP: std::cell::Cell<u32> = const { std::cell::Cell::new(0) }; }
-fn dbg_step(n: u32) { DBG_STEP.with(|c| c.set(n)); }
 fn transition_blends(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
