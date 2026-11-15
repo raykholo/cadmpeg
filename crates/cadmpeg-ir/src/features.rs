@@ -3433,6 +3433,11 @@ pub enum FeatureOperation {
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
+    #[doc = "Sheet-metal defaults for the later features that name this rule. It makes no geometry."]
+    SheetMetalRule {
+        #[doc = "Independently decoded thickness, bend radius and neutral factor."]
+        construction: sheet_metal::SheetMetalRuleConstruction,
+    },
     /// Planar sheet-metal body created from a closed profile.
     SheetMetalBaseFlange {
         /// Closed profile defining the planar sheet boundary.
@@ -3441,6 +3446,13 @@ pub enum FeatureOperation {
         thickness: PositiveLength,
         /// Distribution of thickness relative to the profile plane.
         side: SheetMetalThicknessSide,
+        /// Preceding sheet-metal rule that supplies defaults, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sheet_metal_rule"
+        )]
+        rule: Option<FeatureId>,
     },
     /// Flat plate attached to an existing sheet edge.
     /// Replay the plate before its paired `SheetMetalBend`. The bend builds the joining region.
@@ -3453,6 +3465,13 @@ pub enum FeatureOperation {
         side: SheetMetalThicknessSide,
         /// Selected edges of the existing sheet.
         attachment: EdgeSelection,
+        /// Preceding sheet-metal rule that supplies defaults, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sheet_metal_rule"
+        )]
+        rule: Option<FeatureId>,
     },
     /// Bend region joining a separate flat plate to the selected sheet edge.
     /// Replay after the paired `SheetMetalAttachedPlate`. Bend dimensions belong to this operation.
@@ -3467,6 +3486,13 @@ pub enum FeatureOperation {
         relief: SheetMetalRelief,
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
+        /// Preceding sheet-metal rule that supplies defaults, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sheet_metal_rule"
+        )]
+        rule: Option<FeatureId>,
     },
     #[doc = "Creates a sheet by extruding open profiles with rounded bends."]
     SheetMetalContourFlange {
@@ -3511,6 +3537,13 @@ pub enum FeatureOperation {
         width: SheetMetalFlangeWidth,
         /// Inside radius of the bend joining the flange to its source face.
         bend_radius: PositiveLength,
+        /// Preceding sheet-metal rule that supplies defaults, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sheet_metal_rule"
+        )]
+        rule: Option<FeatureId>,
     },
     /// Sheet-metal hem grown from one or more selected edges.
     SheetMetalHem {
@@ -3524,6 +3557,13 @@ pub enum FeatureOperation {
         direction: SheetMetalHemDirection,
         /// Inside radius of the bend joining the hem to its source face.
         bend_radius: PositiveLength,
+        /// Preceding sheet-metal rule that supplies defaults, when decoded.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sheet_metal_rule"
+        )]
+        rule: Option<FeatureId>,
     },
     /// Edge fillet.
     Fillet {
@@ -9710,6 +9750,7 @@ cadmpeg_core::named_optional_field!(deserialize_material, String, "material");
 cadmpeg_core::named_optional_field!(deserialize_bodies, DistinctMembers<BodyId>, "bodies");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_owner, FeatureId, "owner");
+cadmpeg_core::named_optional_field!(deserialize_sheet_metal_rule, FeatureId, "rule");
 cadmpeg_core::named_optional_field!(deserialize_display, DimensionDisplay, "display");
 cadmpeg_core::named_optional_field!(deserialize_value, ParameterValue, "value");
 cadmpeg_core::named_optional_field!(deserialize_pmi, ParameterPmi, "pmi");

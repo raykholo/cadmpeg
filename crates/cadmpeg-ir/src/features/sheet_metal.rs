@@ -176,6 +176,14 @@ pub struct SheetMetalContourFlangeConstruction {
     )]
     #[cfg_attr(feature = "schema", schemars(with = "crate::scalar::FiniteReal"))]
     pub neutral_factor: Option<crate::scalar::FiniteReal>,
+    #[doc = "Preceding sheet-metal rule that supplies defaults."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_contour_rule"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "super::FeatureId"))]
+    pub rule: Option<super::FeatureId>,
 }
 
 cadmpeg_core::named_optional_field!(
@@ -202,6 +210,53 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(
     deserialize_contour_neutral_factor,
+    crate::scalar::FiniteReal,
+    "neutral_factor"
+);
+cadmpeg_core::named_optional_field!(deserialize_contour_rule, super::FeatureId, "rule");
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "Sheet-metal defaults that later sheet-metal features name through their rule."]
+pub struct SheetMetalRuleConstruction {
+    #[doc = "Sheet thickness in millimetres."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rule_thickness"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
+    pub thickness: Option<PositiveLength>,
+    #[doc = "Inside bend radius in millimetres."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rule_inside_radius"
+    )]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "crate::scalar::NonNegativeLength")
+    )]
+    pub inside_radius: Option<crate::scalar::NonNegativeLength>,
+    #[doc = "Neutral-axis offset divided by sheet thickness."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rule_neutral_factor"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::scalar::FiniteReal"))]
+    pub neutral_factor: Option<crate::scalar::FiniteReal>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_rule_thickness, PositiveLength, "thickness");
+cadmpeg_core::named_optional_field!(
+    deserialize_rule_inside_radius,
+    crate::scalar::NonNegativeLength,
+    "inside_radius"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_rule_neutral_factor,
     crate::scalar::FiniteReal,
     "neutral_factor"
 );

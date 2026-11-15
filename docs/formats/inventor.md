@@ -1256,6 +1256,8 @@ For PmDc segment major versions 20 and 23, the same operand sequence has `prefix
 
 The length operands reference the parameters `Thickness`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `SeamGap`, `MinimumRemnant`, and `TransitionRadius`. The relief-form references select type `720c3e2bd311976060007aa99dccefb0`. The transition-form reference selects type `07a66130d4118895600053aa9dccefb0`. The option references a Boolean. Enumeration identity includes both `type_value` and `value`; equal values in distinct types do not identify equal forms. A length formula that consists of a parameter-reference expression to the style operand uses that style parameter. A literal expression is an explicit length operand, including when its evaluated value equals the style parameter.
 
+A segment with exactly one sheet-metal style record has one neutral `SheetMetalRule`. The rule `thickness` is the `thickness` length and the rule `inside_radius` is the `bend_radius` length. The rule identity is the feature identity of the style record, and its native reference is the style record. Its ordinal is the largest free feature ordinal below the first sheet-metal operation. Each sheet-metal operation of the segment names the rule and has it in its dependencies. If one of the two lengths does not resolve, the segment has no rule and its operations name none.
+
 The plate scalar control contains `value:u32` after its versioned content header and stamps. The base bend scalar control contains `value:u32` after that header and stamps. The extended bend scalar control contains `value:u32` and `state:u8`. Each record ends after its last stated field.
 
 ### 13.6 Rectangular patterns

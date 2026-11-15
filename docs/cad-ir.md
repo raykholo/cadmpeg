@@ -256,6 +256,8 @@ A sheet-metal base flange places its thickness along the profile plane's positiv
 
 A `sheet_metal_corner` operation names one preceding `sheet_metal_bend` feature through `bend`. The bend occurs in the corner's dependencies. Its explicit `effect: "unchanged"` states that the corner preserves the input body geometry and topology. It creates no faces, edges, or vertices. Source controls and dimensions remain in source properties and native records when they have no neutral construction meaning. An unchanged corner requires no generated result topology.
 
+A `sheet_metal_rule` operation holds sheet-metal defaults: `thickness`, `inside_radius`, and `neutral_factor`, the neutral-axis offset divided by the thickness. Each value can remain absent independently. The rule creates no geometry, has no outputs, and has no result topology. `sheet_metal_base_flange`, `sheet_metal_attached_plate`, `sheet_metal_bend`, `sheet_metal_edge_flange`, `sheet_metal_hem`, and the contour-flange construction can name a rule through `rule`. A named rule is a preceding `sheet_metal_rule` feature in the dependencies of the feature that names it. Values stored on the feature itself apply to that feature.
+
 Loft guidance is a guide-path list or one centerline path. An empty guide-path list means unguided. Guide paths and a centerline cannot coexist.
 
 A sketch native operand has a nonempty native kind and an optional field. A present field has a nonempty name and an optional role. A role exists only within its field.

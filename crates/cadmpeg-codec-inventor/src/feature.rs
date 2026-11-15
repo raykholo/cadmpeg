@@ -2787,6 +2787,13 @@ pub(crate) fn project(
             );
         }
     }
+    sheet_metal::rule::project(
+        ctx,
+        &mut features,
+        token
+            .and_then(|token| sheet_metal::projection::style(&inventory.sheet_metal_styles, token)),
+        |reference| length_reference(token?, reference.index(), &index),
+    )?;
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {
@@ -3645,6 +3652,7 @@ fn project_plate(
                 profile,
                 thickness,
                 side,
+                rule: None,
             }),
         ),
         native_ref: Some(source.id()),

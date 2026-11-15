@@ -1,4 +1,4 @@
-use super::{ComponentTransferMode, FeatureOperation, UnresolvedFamily};
+use super::{ComponentTransferMode, FeatureId, FeatureOperation, UnresolvedFamily};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 
@@ -21,6 +21,19 @@ impl FeatureOperation {
             target_owner,
             source_transform,
             target_transform,
+        }
+    }
+
+    /// Sheet-metal rule that this operation names, when it names one.
+    pub fn sheet_metal_rule(&self) -> Option<&FeatureId> {
+        match self {
+            Self::SheetMetalBaseFlange { rule, .. }
+            | Self::SheetMetalAttachedPlate { rule, .. }
+            | Self::SheetMetalBend { rule, .. }
+            | Self::SheetMetalEdgeFlange { rule, .. }
+            | Self::SheetMetalHem { rule, .. } => rule.as_ref(),
+            Self::SheetMetalContourFlange { construction } => construction.rule.as_ref(),
+            _ => None,
         }
     }
 

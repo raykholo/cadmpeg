@@ -235,6 +235,7 @@ pub(in crate::feature) fn project_plate(
                     thickness: values.thickness,
                     side: values.side,
                     attachment,
+                    rule: None,
                 },
             )),
             native_ref: Some(source.id()),
@@ -316,6 +317,7 @@ pub(crate) fn bend_definition<'a>(
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
         attachment:
             attachment @ (EdgeSelection::Generated { .. } | EdgeSelection::Historical { .. }),
+        rule,
         ..
     }) = plate.evaluation.definition()
     else {
@@ -327,6 +329,7 @@ pub(crate) fn bend_definition<'a>(
         inside_radius: values.inside_radius,
         relief: values.relief.clone(),
         transition: values.transition.clone(),
+        rule: rule.clone(),
     })
 }
 

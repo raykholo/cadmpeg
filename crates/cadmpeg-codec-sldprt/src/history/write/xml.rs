@@ -55,7 +55,8 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
             | FeatureOperation::SheetMetalBaseFlange { .. }
             | FeatureOperation::SheetMetalAttachedPlate { .. }
             | FeatureOperation::SheetMetalBend { .. }
-            | FeatureOperation::SheetMetalCorner { .. },
+            | FeatureOperation::SheetMetalCorner { .. }
+            | FeatureOperation::SheetMetalRule { .. },
         ) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::DerivedGeometry { .. }) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::ImportedGeometry { .. }) => "Feature",

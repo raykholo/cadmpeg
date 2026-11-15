@@ -51,6 +51,7 @@ fn attached(fixture: &Fixture) -> Feature {
                 thickness: values.thickness,
                 side: values.side,
                 attachment,
+                rule: None,
             },
         )),
     }
@@ -74,11 +75,13 @@ fn bend_owns_the_dimensions_and_names_the_separate_flat_plate() {
         inside_radius,
         relief,
         transition,
+        rule,
     } = operation
     else {
         panic!("bend");
     };
     assert_eq!(target, plate.id);
+    assert_eq!(rule, None);
     assert_eq!(inside_radius.get(), 11.0);
     assert_eq!(relief.width.get(), 13.0);
     assert_eq!(transition.radius.get(), 23.0);

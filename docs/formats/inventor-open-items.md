@@ -318,6 +318,16 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag.
 
+### DE-17. Sheet-metal style neutral factor
+
+**Question.** Which field of the sheet-metal style record, or which record it references, stores the neutral factor of the sheet-metal rule?
+
+**Known.** Section 13.5 maps the style `thickness` and `bend_radius` lengths to the neutral `SheetMetalRule`. The PmDc parameter table of the style segment can contain no parameter named `KFactor`. A separate segment holds a named unfold-rule record with a K-factor expression whose display text is a unitless (`ul`) value. The reference from the sheet-metal style to that record is not decoded. The neutral rule then has no `neutral_factor`.
+
+**Need.** A rule without a neutral factor does not define the flat length of a bend.
+
+**Conflict.** DE-08 lists `KFactor` among the parameters that the style supplies.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

@@ -487,6 +487,12 @@ fn scale_feature_operation(
             scale_optional_positive_length(&mut construction.inside_radius, scale)?;
         }
         FeatureOperation::SheetMetalCorner { .. } => {}
+        FeatureOperation::SheetMetalRule { construction } => {
+            scale_optional_positive_length(&mut construction.thickness, scale)?;
+            if let Some(radius) = &mut construction.inside_radius {
+                scale_nonnegative_length(radius, scale)?;
+            }
+        }
         FeatureOperation::SheetMetalEdgeFlange {
             height,
             width,
@@ -2645,6 +2651,7 @@ mod tests {
                 form: SheetMetalTransitionForm::StyleDefault,
                 radius: NonNegativeLength::new(6.0).expect("transition"),
             },
+            rule: None,
         });
         crate::decode::with_service_context(|ctx| {
             scale_feature_definition(ctx, &mut definition, positive(2.0))
