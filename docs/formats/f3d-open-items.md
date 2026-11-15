@@ -3232,8 +3232,8 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which planar face does an Extrude profile selection member select when its local identity is bound to no ASM entity of the history?
 
-**Known.** The member's local identity is read as an entity slot of the preceding state. This read can name a loop or coedge of a cylinder wall. A profile face is planar, so the cylinder wall is not the selected face.
+**Known.** The member's local identity is read as an entity slot of the preceding state. This read can name a loop or coedge of a cylinder wall. A profile face is planar, so the cylinder wall is not the selected face. The planar face across an edge of that wall is a face the Extrude's transition deletes in one inspected design, and no changed face in two others; adjacency to the wall does not select the profile face. The faces the Extrude inserts carry persistent tags whose design references name Design records, not the member identities.
 
-**Need.** A save in which a bound and an unbound member select the same planar face, or a save that stores the planar face's own identity beside the unbound member.
+**Need.** A save in which a bound and an unbound member select the same planar face, or a save that stores the planar face's own identity beside the unbound member. A save in which the sketch records named by the inserted faces' persistent tags are renamed or deleted, to show whether those records carry the profile.
 
 **Note.** A selection whose one face has a cylinder, axis, or radius carrier row and no plane row stays native and reports `feature.extrude-profile-face-curved` with the entity read and the face.
