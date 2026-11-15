@@ -5334,9 +5334,8 @@ fn project_hem(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use crate::records::feature::sheet_metal::DesignHemParameterOwners;
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
-    };
+    use cadmpeg_ir::features::sheet_metal::{SheetMetalHemDirection, SheetMetalHemForm};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let ProjectInputs {
         native: parameters,

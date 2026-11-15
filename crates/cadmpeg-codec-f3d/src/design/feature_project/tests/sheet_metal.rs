@@ -1349,9 +1349,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             construction::DesignConstructionOperandGroupFrame,
         },
     };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
-    };
+    use cadmpeg_ir::features::sheet_metal::{SheetMetalHemDirection, SheetMetalHemForm};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let owner = |scope_record_index: u32,
@@ -1457,7 +1456,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         .unwrap()
     };
     let operation = |parameter_owners| DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal::SheetMetalHemBendPosition::Adjacent,
         flipped: false,
         edge_wrapper_record_index: 708,
         edge_group_record_index: 710_u32.try_into().unwrap(),
@@ -1528,7 +1527,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         reversed,
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
             direction: SheetMetalHemDirection::Reverse,
-            bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+            bend_position: cadmpeg_ir::features::sheet_metal::SheetMetalHemBendPosition::Adjacent,
             ..
         })
     ));

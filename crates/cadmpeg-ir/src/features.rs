@@ -53,7 +53,10 @@ pub mod mesh;
 
 #[doc = "Sheet-metal construction inputs and controls."]
 pub mod sheet_metal;
-use sheet_metal::SheetMetalBendLinesConstruction;
+use sheet_metal::{
+    SheetMetalBendLinesConstruction, SheetMetalHemBendPosition, SheetMetalHemDirection,
+    SheetMetalHemForm,
+};
 
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
@@ -6203,80 +6206,6 @@ pub enum SheetMetalBendPosition {
     Adjacent,
     /// The bend is tangent to the side reference plane.
     TangentToSide,
-}
-
-/// Dimensional owner layout carried by a sheet-metal hem.
-///
-/// The source uses one owner layout for flat and open hems. A resolved
-/// transition projects that layout to [`Self::Flat`] or [`Self::Open`];
-/// [`Self::GapLength`] retains the dimensional owners when the transition does
-/// not prove either semantic form.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum SheetMetalHemForm {
-    /// Flat hem with its developed length.
-    Flat {
-        /// Developed length of the hem.
-        length: PositiveLength,
-    },
-    /// Open hem with a gap and a developed length.
-    Open {
-        /// Gap between the folded wall and its source.
-        gap: NonNegativeLength,
-        /// Developed length of the hem.
-        length: PositiveLength,
-    },
-    /// Unresolved flat-or-open form with a gap and a length owner.
-    GapLength {
-        /// Gap between the folded wall and its source.
-        gap: NonNegativeLength,
-        /// Developed length of the hem.
-        length: PositiveLength,
-    },
-    /// Rolled source form with radius and included-angle owners.
-    Rolled {
-        /// Rolled section radius.
-        radius: PositiveLength,
-        /// Included angle of the rolled section.
-        angle: Angle,
-    },
-    /// Teardrop source form with gap, length, and radius owners.
-    Teardrop {
-        /// Gap between the folded wall and its source.
-        gap: NonNegativeLength,
-        /// Developed length of the hem.
-        length: PositiveLength,
-        /// Teardrop section radius.
-        radius: PositiveLength,
-    },
-}
-
-/// Placement of a sheet-metal hem bend against its selected edge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum SheetMetalHemBendPosition {
-    /// The bend starts at the selected edge.
-    Adjacent,
-    /// The bend is tangent to the source sheet face.
-    Tangent,
-}
-
-/// Direction of a sheet-metal hem fold.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum SheetMetalHemDirection {
-    /// Fold in the source operation's forward direction.
-    Forward,
-    /// Fold opposite the source operation's forward direction.
-    Reverse,
-    /// Source direction carrier is not resolved.
-    Unresolved,
 }
 
 /// Construction feature used as the reference for a sheet-metal flange height.

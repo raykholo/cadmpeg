@@ -1043,11 +1043,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !edge_selection_is_resolved(edges)
                 || matches!(
                     direction,
-                    cadmpeg_ir::features::SheetMetalHemDirection::Unresolved
+                    cadmpeg_ir::features::sheet_metal::SheetMetalHemDirection::Unresolved
                 )
                 || matches!(
                     form,
-                    cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
+                    cadmpeg_ir::features::sheet_metal::SheetMetalHemForm::GapLength { .. }
                 )
         }
         FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, tool }) => {

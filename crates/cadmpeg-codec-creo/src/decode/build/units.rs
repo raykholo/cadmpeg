@@ -834,10 +834,10 @@ fn scale_sheet_metal_flange_width(
 }
 
 fn scale_sheet_metal_hem_form(
-    form: &mut cadmpeg_ir::features::SheetMetalHemForm,
+    form: &mut cadmpeg_ir::features::sheet_metal::SheetMetalHemForm,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::SheetMetalHemForm;
+    use cadmpeg_ir::features::sheet_metal::SheetMetalHemForm;
 
     match form {
         SheetMetalHemForm::Flat { length } | SheetMetalHemForm::Rolled { radius: length, .. } => {
