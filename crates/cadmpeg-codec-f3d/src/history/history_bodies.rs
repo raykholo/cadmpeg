@@ -157,6 +157,7 @@ pub(crate) fn fill(
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     for (index, wants) in wants {
         let history = &histories[index];
+        eprintln!("DBG fill history {} wants {}", history.id.len(), wants.len());
         let Some(facts) = container::history_breps(scan).find(|facts| {
             history
                 .id
@@ -240,6 +241,7 @@ fn unbound_base_slots(
         .iter()
         .find(|state| state.state_id == current)?;
     let transition = state.transition.as_ref()?;
+    if dbg { eprintln!("DBG transition prev {:?} inserted {:?}", transition.previous_state_id, transition.topology.bodies.inserted); }
     if transition.previous_state_id != Some(previous) {
         return None;
     }
@@ -322,6 +324,7 @@ fn fill_history(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let Some(header) = cadmpeg_asm::asm_header::parse(bytes) else {
+        eprintln!("DBG no header");
         return Ok(());
     };
     let states = history.states();
@@ -331,6 +334,7 @@ fn fill_history(
         .or_else(|| super::insert_only_active_record_count(states))
         .and_then(|count| i64::try_from(count).ok())
     else {
+        eprintln!("DBG no active count");
         return Ok(());
     };
     let archived_ids = states
@@ -364,6 +368,7 @@ fn fill_history(
                 // body as this state holds it only in the record archive.
                 let produced = want.producer.filter(|_| changed);
                 let consumed = want.consumer.filter(|_| changed);
+                eprintln!("DBG want slot {} state {} rev {:?} changed {}", want.slot, state_id, revision, changed);
                 if produced.is_none() && consumed.is_none() {
                     continue;
                 }
@@ -393,6 +398,7 @@ fn fill_history(
                 let subtypes = subtypes.get_or_insert_with(|| {
                     archive_subtypes(archive, header.metadata.save_format_version)
                 });
+                eprintln!("DBG build");
                 match build(
                     ctx,
                     (archive, versions),
