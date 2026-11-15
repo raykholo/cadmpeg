@@ -6110,6 +6110,10 @@ pub enum ThickenSide {
 pub enum SheetMetalReliefForm {
     /// Use the active document rule's bend-relief form.
     StyleDefault,
+    /// Rectangular cut of the relief width and depth.
+    Rectangular,
+    /// Cut of the relief width and depth with a rounded end.
+    Round,
 }
 
 /// Bend-relief operands with lengths in millimetres.
