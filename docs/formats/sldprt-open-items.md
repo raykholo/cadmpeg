@@ -1113,3 +1113,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** Establish the class-scoped operation carrier and the configuration-local state against producing-face orientation and body ownership.
 
 **Note.** Withheld operations retain their existing losses.
+
+### DI-71. Sketch plane of profiles that carry a plane copy
+
+**Question.** Which bytes of a sketch profile object give its sketch plane when the object has a plane copy that disagrees with the lane plane?
+
+**Known.** A profile object can end with a plane copy: a box (f64 `-1`, `1`, `1`, `-1`), a point (three f64, metres) and a unit normal, then a flag byte, three f64 and f64 `1`, then 47 bytes, then flag byte `1`, a 3×3 matrix, a translation and f64 `1`. The set has 1903 planar sketches. A complete plane copy that disagrees with the lane plane occurs in 387 profile objects in 75 parts. 184 profile objects hold a box sequence that is not a complete plane copy. 1764 profile objects hold no box sequence. Placing the 90 affected sketches (30 parts, 10 independent design groups) with the plane copy was compared with the lane frame by profile endpoints, point entities and circle centres against B-rep points and cylinder axes. The plane-copy frame matches more points for 12 sketches in 4 groups. The lane frame matches more points for 14 sketches in 5 groups. 29 sketches match some points under both frames. 35 sketches match no point under either frame.
+
+**Need.** Establish which frame a profile uses when it carries a plane copy that disagrees with the lane plane, with independent designs and no case in which the other frame fits the B-rep better. Establish the 47 bytes at +113 through +159 of the plane copy. Establish whether the trailer transform's translation gives the plane offset along the plane normal.
+
+**Note.** The decoder reads the lane plane for every such profile. The plane copy and the trailer transform are not read.
