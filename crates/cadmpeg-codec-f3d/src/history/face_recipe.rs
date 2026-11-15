@@ -170,12 +170,6 @@ impl FaceRecipeIndex {
         {
             return false;
         }
-        let (Some(first), Some(second)) = (
-            self.fan(edge, vertices[0], *left),
-            self.fan(edge, vertices[1], *left),
-        ) else {
-            return false;
-        };
         let matches = |side: usize, fan: &[i64]| {
             let side = &node.sides[side];
             let ordinals = std::iter::once(side.header_value)
@@ -183,7 +177,35 @@ impl FaceRecipeIndex {
                 .collect::<Vec<_>>();
             fan_matches(&ordinals, fan, lanes)
         };
-        matches(0, &first) && matches(1, &second) || matches(1, &first) && matches(0, &second)
+        match node.sides.len() {
+            // A closed edge has one end vertex, and its one clause binds the
+            // fan at that vertex.
+            1 if vertices[0] == vertices[1] => self
+                .closed_edge_fan(edge, vertices[0])
+                .is_some_and(|fan| matches(0, &fan)),
+            2 => {
+                let (Some(first), Some(second)) = (
+                    self.fan(edge, vertices[0], *left),
+                    self.fan(edge, vertices[1], *left),
+                ) else {
+                    return false;
+                };
+                matches(0, &first) && matches(1, &second)
+                    || matches(1, &first) && matches(0, &second)
+            }
+            _ => false,
+        }
+    }
+
+    /// The faces around the single end vertex of a closed edge. Every corner
+    /// at the vertex joins the edge to itself, so the edge is the only edge
+    /// at the vertex.
+    fn closed_edge_fan(&self, edge: i64, vertex: i64) -> Option<Vec<i64>> {
+        let corners = self.corners.get(&vertex)?;
+        corners
+            .iter()
+            .map(|corner| (corner.edges == [edge, edge]).then_some(corner.face))
+            .collect()
     }
 
     pub(super) fn resolve(&self, operand: &DesignFaceOperand) -> Option<i64> {
@@ -214,10 +236,15 @@ impl FaceRecipeIndex {
                 lanes.push(BTreeSet::new());
             }
             let lane = lanes.get_mut(ordinal)?;
-            if reference.design_reference < 0 {
+            let faces = super::effective_faces(reference);
+            // A negative Design reference names the earlier feature that
+            // changed the face. Its token can match every face that feature
+            // changed, and then it does not identify one face. A token that
+            // matches exactly one face names that face.
+            if reference.design_reference < 0 && faces.len() != 1 {
                 continue;
             }
-            for face in super::effective_faces(reference) {
+            for face in faces {
                 if let Some(slot) = super::stable_ref(face.as_str()) {
                     if self.boundaries.contains_key(&slot) {
                         lane.insert(slot);
@@ -232,7 +259,7 @@ impl FaceRecipeIndex {
             .collect::<Option<Vec<_>>>()?;
         if nodes
             .iter()
-            .any(|node| !node.has_valid_operand_ordinals(&operand.recipe_references))
+            .any(|node| !node.has_valid_edge_operand_ordinals(&operand.recipe_references))
         {
             return None;
         }

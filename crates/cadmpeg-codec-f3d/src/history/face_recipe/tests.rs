@@ -124,8 +124,9 @@ fn bounded_face_nodes_resolve_the_complete_referenced_boundary() {
     assert!(operand.candidate_faces.is_empty());
 }
 
-#[test]
-fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
+/// The tetrahedron with closed edge 20 at vertex 5 between face 100 and
+/// face 104.
+fn topology_with_inner_closed_edge() -> AsmHistoricalTopology {
     let mut topology = topology();
     topology.faces.push(104);
     topology.edges.push(20);
@@ -154,6 +155,12 @@ fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
             radial_next,
         });
     }
+    topology
+}
+
+#[test]
+fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
+    let topology = topology_with_inner_closed_edge();
     let index = FaceRecipeIndex::new(&topology);
     let mut operand = operand();
     assert_eq!(index.resolve(&operand), None);
@@ -161,6 +168,44 @@ fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
     operand.recipe_nodes.truncate(2);
     operand.recipe_program[2] = 2;
     assert_eq!(index.resolve_loop(&operand), None);
+}
+
+#[test]
+fn a_one_clause_node_binds_a_closed_edge_by_the_fan_at_its_vertex() {
+    let topology = topology_with_inner_closed_edge();
+    let index = FaceRecipeIndex::new(&topology);
+    let mut operand = operand();
+    let mut reference = operand.recipe_references[3].clone();
+    reference.selector_offset = 4;
+    reference.token_offset = 4;
+    reference.token = "face4".into();
+    reference.design_reference = 4;
+    reference.candidate_faces = vec![crate::ids::brep_face_id(104)];
+    operand.recipe_references.push(reference);
+    let fields = [
+        0, -1, 4, -1, 1, -1, 2, 4, -1, 0, -1, 0, 1, 0, 2, 2, 2, 2, 1, 0, 1, -1,
+    ];
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+            .unwrap()
+            .unwrap()
+    });
+    let mut program = vec![-1, -1, 2];
+    program.extend(fields);
+    operand.recipe_program[2] = 4;
+    operand.recipe_program.extend(&program);
+    operand.recipe_nodes.push(DesignFaceRecipeNode {
+        byte_offset: 0,
+        end_byte_offset: 12,
+        program,
+        recipe_structure: Some(structure),
+    });
+    assert_eq!(index.resolve(&operand), Some(100));
+    // The clause names the faces around the vertex; a fan of other faces
+    // binds no edge.
+    let structure = operand.recipe_nodes[3].recipe_structure.as_mut().unwrap();
+    structure.sides[0].header_value = 2;
+    assert_eq!(index.resolve(&operand), None);
 }
 
 #[test]
@@ -258,6 +303,20 @@ fn a_negative_design_reference_adds_no_face_to_its_lane() {
     }
     operand.recipe_references = references;
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
+}
+
+#[test]
+fn a_negative_design_reference_that_names_one_face_adds_it_to_its_lane() {
+    let topology = topology();
+    let mut operand = operand();
+    for reference in &mut operand.recipe_references {
+        reference.design_reference = -5;
+    }
+    assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
+    operand.recipe_references[0]
+        .candidate_faces
+        .push(crate::ids::brep_face_id(101));
+    assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
 }
 
 #[test]

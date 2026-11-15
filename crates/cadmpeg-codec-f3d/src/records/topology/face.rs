@@ -852,15 +852,27 @@ impl DesignFaceRecipeNode {
 
 impl DesignFaceRecipeStructure {
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
+        self.prelude[1] == 2 && self.sides.len() == 2 && self.names_operands(references)
+    }
+
+    /// Whether the node has two side clauses, or one side clause, and names
+    /// only prefix operands. A one-clause node binds a closed edge.
+    pub(crate) fn has_valid_edge_operand_ordinals(
+        &self,
+        references: &[DesignRecipeReference],
+    ) -> bool {
+        matches!((self.prelude[1], self.sides.len()), (1, 1) | (2, 2))
+            && self.names_operands(references)
+    }
+
+    fn names_operands(&self, references: &[DesignRecipeReference]) -> bool {
         let Some(ordinals) = prefix_operand_ordinals(references) else {
             return false;
         };
         let operand_count = ordinals.iter().max().map_or(0, |ordinal| ordinal + 1);
         let in_range =
             |value: i32| usize::try_from(value).is_ok_and(|ordinal| ordinal < operand_count);
-        self.prelude[1] == 2
-            && self.sides.len() == 2
-            && in_range(self.root)
+        in_range(self.root)
             && in_range(self.prelude[0])
             && self.sides.iter().all(|side| {
                 in_range(side.header_value) && side.scalars.iter().copied().all(in_range)
