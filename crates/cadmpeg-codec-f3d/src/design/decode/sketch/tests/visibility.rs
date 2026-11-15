@@ -569,6 +569,7 @@ fn unrecognised_container_header_is_a_loss_not_a_decode_failure() {
 fn good_container_survives_a_neighbour_with_an_unrecognised_header() {
     let (good, mut metadata) = visibility_stream();
     let mut bad = good.clone();
+    bad[7..15].copy_from_slice(&(ENTITY_SUFFIX + 1).to_le_bytes());
     bad[15] = 1;
     let good_at = bad.len();
     let mut bytes = bad;
