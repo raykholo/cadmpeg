@@ -751,6 +751,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        &design.design_edge_operands,
         &design.asm_histories,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
@@ -1892,6 +1893,7 @@ fn extend_related_design_records(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        &[],
         &design.asm_histories,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
@@ -1938,6 +1940,17 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
     );
+    // The faces that the edge operands' recipe references tag name the history
+    // of a scope that several histories hold.
+    for (scope, history) in crate::history::bind_scope_histories(
+        &design.design_parameter_scopes,
+        &prereqs.design_body_bindings,
+        &design.design_body_recipe_operands,
+        &design.design_edge_operands,
+        &design.asm_histories,
+    ) {
+        scope_histories.entry(scope).or_insert(history);
+    }
     let (face_boundaries, edge_selection_notes) =
         crate::history::bind_edge_operand_history_candidates_with_notes(
             &mut design.design_edge_operands,
