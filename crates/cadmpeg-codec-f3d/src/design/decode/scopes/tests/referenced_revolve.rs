@@ -271,6 +271,29 @@ fn both_forms_refuse_other_prologue_values() {
 }
 
 #[test]
+fn direction_kind_one_states_a_full_turn() {
+    let mut full = Fixture::marked();
+    full.direction_kind = 1;
+    full.angle = std::f64::consts::TAU;
+    let construction = full.decode().expect("full turn");
+    assert_eq!(
+        construction.travel,
+        crate::records::feature::path_features::DesignRevolveTravel::Angle(
+            cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap()
+        )
+    );
+    assert!(!construction.reversed);
+    full.angle = -std::f64::consts::TAU;
+    assert!(full.decode().is_none());
+    full.angle = std::f64::consts::PI;
+    assert!(full.decode().is_none());
+    let mut unmarked = Fixture::unmarked();
+    unmarked.direction_kind = 1;
+    unmarked.angle = std::f64::consts::TAU;
+    assert!(unmarked.decode().is_none());
+}
+
+#[test]
 fn a_negative_angle_states_its_magnitude_and_a_reversed_turn() {
     for base in [Fixture::marked(), Fixture::unmarked()] {
         let mut negative = base.clone();

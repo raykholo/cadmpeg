@@ -73,6 +73,7 @@ struct Fixture {
     swapped_targets: bool,
     extra_padding: usize,
     extra_references: bool,
+    owner_first: bool,
 }
 
 impl Fixture {
@@ -95,6 +96,7 @@ impl Fixture {
             swapped_targets: false,
             extra_padding: 0,
             extra_references: false,
+            owner_first: false,
         }
     }
 
@@ -125,6 +127,9 @@ impl Fixture {
     /// owner, and the final reference; each group is followed by its member.
     fn table(&self) -> Vec<u32> {
         let mut table = Vec::new();
+        if self.owner_first {
+            table.extend([OWNER, FINAL_REFERENCE]);
+        }
         if self.form.boolean() {
             table.extend([79, 80]);
         }
@@ -135,7 +140,9 @@ impl Fixture {
         if self.extra_references {
             table.extend([89, 90]);
         }
-        table.extend([OWNER, FINAL_REFERENCE]);
+        if !self.owner_first {
+            table.extend([OWNER, FINAL_REFERENCE]);
+        }
         table
     }
 
@@ -304,6 +311,27 @@ fn a_two_sided_scope_reads_its_side_two_target_before_its_side_one_target() {
             side_two: Some(located(FIRST_TARGET, 58)),
         }
     );
+}
+
+#[test]
+fn the_owner_can_precede_the_target_groups_in_the_ordered_table() {
+    for base in [
+        Fixture::one_sided(),
+        Fixture::one_sided_boolean(),
+        Fixture::two_sided(),
+        Fixture::unmarked_two_sided_boolean(),
+    ] {
+        let mut first = base.clone();
+        first.owner_first = true;
+        assert_eq!(
+            first.decode().expect("owner-first table"),
+            base.decode().expect("owner-last table"),
+            "{:?}",
+            base.form
+        );
+        first.final_reference = 99;
+        assert!(first.decode().is_none(), "{:?}", base.form);
+    }
 }
 
 #[test]

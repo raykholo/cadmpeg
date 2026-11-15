@@ -144,7 +144,10 @@ fn referenced_angle_revolve_construction(
             ) && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
-                && bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&0) =>
+                && matches!(
+                    bytes.get(start + referenced_revolve::DIRECTION_KIND),
+                    Some(0 | 1)
+                ) =>
         {
             (
                 referenced_revolve::OPERATION,
@@ -186,6 +189,12 @@ fn referenced_angle_revolve_construction(
     let angle_record_index = marked_record_reference(bytes, start + angle_reference)?;
     let angle = referenced_revolve_angle_owner(scope, parameter_owners, angle_record_index)?;
     let value = angle.evaluated_value().get();
+    // Direction kind 1 occurs only with a full turn.
+    if bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&1)
+        && value != std::f64::consts::TAU
+    {
+        return None;
+    }
     Some(path_features::DesignRevolveConstruction {
         operation: extrude_operation_at(bytes, start + operation)?,
         operation_offset: u64::try_from(start + operation).ok()?,
@@ -303,8 +312,11 @@ fn to_object_revolve_construction(
         }
         (None, side_two_at + 1)
     };
-    if marked_record_reference(bytes, final_reference_at)
-        != scope.reference_members().values().last().copied()
+    // The final reference names the record two after the owner, wherever the
+    // owner stands in the ordered table.
+    let final_reference = marked_record_reference(bytes, final_reference_at)?;
+    if Some(final_reference) != owner_record_index.checked_add(2)
+        || ordinal(final_reference).is_none()
     {
         return None;
     }

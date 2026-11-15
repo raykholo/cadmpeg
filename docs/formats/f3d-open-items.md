@@ -3289,3 +3289,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-710. Direction kind one of a referenced-angle Revolve
+
+**Question.** What does direction kind `1` at offset 33 of a marked referenced-angle `Revolve` scope select?
+
+**Known.** `f3d.md` §3.1 "A one-sided fixed-angle `Revolve` scope has a 372-byte token-independent frame" states that the field is `1` when the angular owner stores `2π` in a marked referenced-angle form. A design with the Full extent and a profile that has one side on the revolve axis stores `1`. A design with the Angle extent, an angle of `360 deg`, and a profile away from its axis stores `0`.
+
+**Need.** A Full-extent `Revolve` whose profile does not touch its axis, and an angle-extent `Revolve` whose profile touches its axis.
+
+**Note.** The decoder admits `1` only with a `2π` owner and reads the travel as a full turn.
