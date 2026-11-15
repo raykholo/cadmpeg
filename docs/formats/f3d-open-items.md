@@ -3249,3 +3249,43 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Controlled to-object flanges whose selected construction remains external or unresolved while the signed offset is retained.
 
 **Note.** `feature.edge-flange-height-target-native` retains the decoded target selection program. `feature.edge-flange-height-target-scope-assumed` retains the owning scope program when that target selection is unresolved. The target and signed offset remain independent neutral construction inputs.
+
+### DR-690. Revolve scope with a flag byte after the direction-pair marker
+
+**Question.** What do the flag byte at offset 31 and the u32 `1` at offset 97 of a 393-byte `Revolve` scope select?
+
+**Known.** The scope has class tag pair 401/259, eight ordered references, no previous history-state field, and the direction-pair prologue through offset 30: zero run at 11 through 20, operation u32 at 21, extent kind `2` at 25, direction kind `0` at 29, marker `1` at 30. Offset 31 stores `1` where the 387-byte direction-pair form stores zero, and offsets 32 through 34 are zero. The marked angle-owner reference is at offset 35 and the auxiliary marked references are at offsets 46, 58, and 74, each one byte after its position in the 387-byte form. A u32 `1` at offset 97 precedes the fifth marked reference at offset 101. The null GUID is at offset 112, the ordered-reference count `8` is at offset 191, the history-state field is at offset 283, the kind at offset 291, and the feature ordinal at offset 305. Every marked target occurs in the ordered reference table.
+
+**Need.** Saves of the same Revolve that vary Project Axis, the solid flag, and the result operation independently, to show which of the two added fields each option sets.
+
+**Note.** The scope stays native with `feature.scope-payload-uninterpreted`; no admitted `Revolve` form has this frame length.
+
+### DR-691. GeometricRelationship feature scope
+
+**Question.** Which construction does a `GeometricRelationship` scope perform, and which of its ordered references are operands and which are parameter owners?
+
+**Known.** The kind text is `GeometricRelationship`. No type GUID of the feature type table names it. The class tag pair is 300/267. The ordered-reference count is a multiple of ten, 10, 20, 30, or 40, and the frame length is `412 + 121 * (count / 10 - 1)` bytes. Its parameter owners carry length expressions in millimetres and angle expressions in degrees, and the decoder retains them as native parameter strings. The scope has a feature ordinal and a history-state field like every other scope.
+
+**Need.** Saves with a single relationship of one kind, with each operand changed alone, and with one relationship, then two, then three, so that the ten-reference unit and each reference role are identified.
+
+**Note.** The feature stays `FeatureOperation::Native` with `feature.definition-incomplete` and `feature.scope-payload-uninterpreted`.
+
+### DR-692. Assemble scope with a marker-one prologue
+
+**Question.** Does the 810-byte class-377 `Assemble` scope use the compact wide operand-frame grammar with a four-byte longer prologue, and does its joint then project?
+
+**Known.** The class tag pair is 377/267 and the scope has four ordered references. Offset 20 stores marker `1`, offsets 21 through 24 are a u32 zero, and offset 25 stores a single byte `1` where the 806-byte compact wide form stores its frame-sense byte at offset 21. The two operand references are at offsets 36 and 258, four bytes after the compact wide positions 32 and 254. A GUID with an LP-UTF16 prefix follows each rigid transform. The u32 limit-owner count is `0` at offset 530 and the two wide operand-path locator markers are at offsets 538 and 549, each four bytes after the 806-byte form. Every marked target occurs in the ordered reference table.
+
+**Need.** A second design with an `Assemble` scope of this class pair, with the joint saved under two different frame senses, to prove the byte at offset 25 is the frame sense and the layout shift is constant.
+
+**Note.** No admitted `AssemblyScopeGeneration` has frame length 810, so the alignment lanes, operand frames, and locators are not decoded and the joint stays native (`assembly.joint-unprojected`).
+
+### DR-693. Base Feature result body that exists only in ASM history
+
+**Question.** Which neutral body selection names the result body of a `Base Feature` whose body is in no final Body container?
+
+**Known.** The scope stores one body entity suffix. The Design body map stores a history-only pair for that suffix: every Body container omits the entity and the body is either consumed by a later feature or has a hidden browser node. The pair names the BREP blob and the ASM body key.
+
+**Need.** A save where a later feature consumes a `Base Feature` body and the transition chain from the previous state to the producing state is complete, to fix the body slot the scope produces.
+
+**Note.** The feature keeps `BodySelection::Native` with `feature.stored-bodies-unbound`, `feature.output-body-unbound`, and `feature.body-selection-native`.
