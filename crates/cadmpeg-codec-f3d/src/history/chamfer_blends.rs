@@ -59,12 +59,17 @@ fn transition_bevels(
     input: &AsmHistoricalTopology,
     output: &AsmHistoricalTopology,
 ) -> Option<Vec<Bevel>> {
-    let TreatmentFaces {
+    let dbg = std::env::var_os("F3D_DBG_BLEND").is_some();
+    let Some(TreatmentFaces {
         input_boundaries,
         input_carriers,
         supports,
         ..
-    } = treatment_faces(transition, input, output)?;
+    }) = treatment_faces(transition, input, output) else {
+        if dbg { eprintln!("DBGCH treatment_faces none inserted={}", transition.topology.faces.inserted.len()); }
+        return None;
+    };
+    if dbg { eprintln!("DBGCH supports={:?}", supports); }
     let output_planes = plane_rows(output);
     let input_planes = plane_rows(input);
     let edges = edge_geometry(input);
@@ -80,9 +85,13 @@ fn transition_bevels(
     let mut replaced = HashSet::new();
     for (_, carrier, supports, complete) in supports {
         if !complete {
+            if dbg { eprintln!("DBGCH incomplete supports"); }
             return None;
         }
-        let (origin, normal) = output_planes.get(&carrier).copied().flatten()?;
+        let Some((origin, normal)) = output_planes.get(&carrier).copied().flatten() else {
+            if dbg { eprintln!("DBGCH carrier {carrier} not a plane"); }
+            return None;
+        };
         let normal = normal.unit()?;
         let mut along = Vec::new();
         for (ordinal, left) in supports.iter().enumerate() {
@@ -99,9 +108,11 @@ fn transition_bevels(
             }
         }
         let [(edge, left, right, tangent)] = along.as_slice() else {
+            if dbg { eprintln!("DBGCH along edges {}: {:?}", along.len(), along.iter().map(|a| a.0).collect::<Vec<_>>()); }
             return None;
         };
         if !deleted.contains(edge) || !replaced.insert(*edge) {
+            if dbg { eprintln!("DBGCH edge {edge} not deleted or replaced twice"); }
             return None;
         }
         let point = points.get(edge).copied().flatten()?;
@@ -114,6 +125,7 @@ fn transition_bevels(
             setback((origin, normal), support_normal(right)?, (point, *tangent))?,
         ];
         setbacks.sort_by(f64::total_cmp);
+        if dbg { eprintln!("DBGCH bevel edge {edge} setbacks {setbacks:?}"); }
         bevels.push(Bevel {
             setbacks,
             edge: *edge,
@@ -189,14 +201,17 @@ pub(super) fn bind_chamfer_groups(
         return GroupBinding::Unbound;
     };
     let (transition, input, output) = states;
+    if std::env::var_os("F3D_DBG_BLEND").is_some() { eprintln!("DBGCH bind_chamfer_groups {}", feature_id.as_str()); }
     let Some(bevels) = transition_bevels(transition, input, output) else {
         return GroupBinding::Unbound;
     };
+    if std::env::var_os("F3D_DBG_BLEND").is_some() { eprintln!("DBGCH bind {} bevels {:?} specs {:?}", feature_id.as_str(), bevels, chamfer_groups.iter().map(|g| spec_setbacks(g.spec)).collect::<Vec<_>>()); }
     let specs = chamfer_groups
         .iter()
         .map(|group| spec_setbacks(group.spec))
         .collect::<Vec<_>>();
     let Some(edges) = group_edges(&specs, &bevels) else {
+        if std::env::var_os("F3D_DBG_BLEND").is_some() { eprintln!("DBGCH group_edges none"); }
         return GroupBinding::Unbound;
     };
     if !chamfer_groups
@@ -204,6 +219,7 @@ pub(super) fn bind_chamfer_groups(
         .zip(&edges)
         .all(|(group, slots)| agrees(&group.edges, feature_id, previous_state_id, slots))
     {
+        if std::env::var_os("F3D_DBG_BLEND").is_some() { eprintln!("DBGCH disagrees {edges:?}"); }
         return GroupBinding::Unbound;
     }
     let stream = crate::ids::native_stream(&scope.id);

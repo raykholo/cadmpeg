@@ -1040,7 +1040,7 @@ fn validate_loaded(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        &native.design_edge_operands,
+        &[],
         &native.asm_histories,
     );
     // discarded-value: the decoder reported these losses when it bound the operands.
@@ -6389,7 +6389,7 @@ fn validate_edge_identity_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        &native.design_edge_operands,
+        &[],
         &native.asm_histories,
     );
     history::selection::bind_edge_identity_history(
@@ -7071,7 +7071,7 @@ fn validate_edge_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        &native.design_edge_operands,
+        &[],
         &native.asm_histories,
     );
     let expected_face_boundaries = history::bind_edge_operand_history_candidates(
@@ -7345,7 +7345,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        &native.design_edge_operands,
+        &[],
         &native.asm_histories,
     );
     history::bind_edge_treatment_vertex_history(
