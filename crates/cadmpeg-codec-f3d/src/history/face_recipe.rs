@@ -218,14 +218,29 @@ impl FaceRecipeIndex {
     }
 
     pub(super) fn resolve(&self, operand: &DesignFaceOperand) -> Option<i64> {
-        self.resolve_boundary(operand, false)
+        self.resolve_boundary(operand, false, false)
     }
 
     pub(super) fn resolve_loop(&self, operand: &DesignFaceOperand) -> Option<i64> {
-        self.resolve_boundary(operand, true)
+        self.resolve_boundary(operand, true, false)
     }
 
-    fn resolve_boundary(&self, operand: &DesignFaceOperand, single_loop: bool) -> Option<i64> {
+    /// Resolve the complete boundary when a negative Design reference whose
+    /// effective candidates are exactly one face also adds that face to its
+    /// lane.
+    pub(super) fn resolve_with_single_face_negative_references(
+        &self,
+        operand: &DesignFaceOperand,
+    ) -> Option<i64> {
+        self.resolve_boundary(operand, false, true)
+    }
+
+    fn resolve_boundary(
+        &self,
+        operand: &DesignFaceOperand,
+        single_loop: bool,
+        single_face_negative_references: bool,
+    ) -> Option<i64> {
         use crate::design::decode::operands::{face_recipe_program_kind, FaceRecipeProgramKind};
         if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
             return None;
@@ -245,10 +260,17 @@ impl FaceRecipeIndex {
                 lanes.push(BTreeSet::new());
             }
             let lane = lanes.get_mut(ordinal)?;
-            if reference.design_reference < 0 {
+            let faces = super::effective_faces(reference);
+            // A negative Design reference names the earlier feature that
+            // changed the face. Its token can match every face that feature
+            // changed, and then it does not identify one face. A token that
+            // matches exactly one face names that face.
+            if reference.design_reference < 0
+                && (!single_face_negative_references || faces.len() != 1)
+            {
                 continue;
             }
-            for face in super::effective_faces(reference) {
+            for face in faces {
                 if let Some(slot) = super::stable_ref(face.as_str()) {
                     if self.boundaries.contains_key(&slot) {
                         lane.insert(slot);
@@ -313,6 +335,37 @@ impl FaceRecipeIndex {
         }
         resolved
     }
+}
+
+/// Whether a recipe face replaces the operand's current selection. A recipe
+/// without a closed-edge node always does. A closed-edge recipe face fills an
+/// empty selection only, and not as an Extrude start or profile face the
+/// transition left unchanged: the Extrude joins to or cuts from that face, so
+/// the transition changes it.
+pub(super) fn recipe_face_replaces_selection(
+    closed_edge_node: bool,
+    selection_empty: bool,
+    unchanged_extrude_face: bool,
+) -> bool {
+    !closed_edge_node || (selection_empty && !unchanged_extrude_face)
+}
+
+/// Whether a recipe face that binds only through single-face negative Design
+/// references replaces the operand's current selection. It fills an empty
+/// selection. As an Extrude start or profile face it must be a face that the
+/// transition changes, because the Extrude joins to or cuts from that face;
+/// for the same reason it then also replaces a selection whose faces the
+/// transition leaves unchanged.
+pub(super) fn negative_lane_face_replaces_selection(
+    selection: &[i64],
+    extrude_start_or_profile: bool,
+    changed_faces: &HashSet<i64>,
+    face: i64,
+) -> bool {
+    if !extrude_start_or_profile {
+        return selection.is_empty();
+    }
+    changed_faces.contains(&face) && selection.iter().all(|slot| !changed_faces.contains(slot))
 }
 
 fn fan_matches(ordinals: &[i32], fan: &[i64], lanes: &[BTreeSet<i64>]) -> bool {

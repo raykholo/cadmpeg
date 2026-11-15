@@ -5850,10 +5850,12 @@ fn bind_historical_face_operand<'a>(
             | crate::records::feature::scope::DesignFeatureKind::OffsetFaces
     ) && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
     {
-        operand.resolved_face_slots = caches
+        let index = caches
             .face_recipes
-            .get(transition.topology, face_recipe::FaceRecipeIndex::new)
+            .get(transition.topology, face_recipe::FaceRecipeIndex::new);
+        operand.resolved_face_slots = index
             .resolve(operand)
+            .or_else(|| index.resolve_with_single_face_negative_references(operand))
             .into_iter()
             .collect();
     }
@@ -5919,11 +5921,14 @@ fn bind_historical_face_operand_candidates<'a>(
                             crate::records::topology::extrude_selection::DesignExtrudeOperandRole::Profile,
                         ))
         });
-    let recipe_face = face_recipes
-        .get(topology, face_recipe::FaceRecipeIndex::new)
-        .resolve(operand);
+    let recipe_index = face_recipes.get(topology, face_recipe::FaceRecipeIndex::new);
+    let recipe_face = recipe_index.resolve(operand);
+    let negative_lane_face = recipe_face
+        .is_none()
+        .then(|| recipe_index.resolve_with_single_face_negative_references(operand))
+        .flatten();
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
-        operand.resolved_face_slots = recipe_face.into_iter().collect();
+        operand.resolved_face_slots = recipe_face.or(negative_lane_face).into_iter().collect();
         return Ok(());
     }
     if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
@@ -6243,10 +6248,20 @@ fn bind_historical_face_operand_candidates<'a>(
         // Every recipe node matches one boundary edge of this face and the
         // face fans around both of its ends. An earlier selection that no
         // check withdrew stays: the recipe fills an empty selection only.
-        if recipe_face_replaces_selection(
+        if face_recipe::recipe_face_replaces_selection(
             operand.has_closed_edge_node(),
             operand.resolved_face_slots.is_empty(),
             has_extrude_start_group && !changed_faces.contains(&face),
+        ) {
+            operand.resolved_face_slots = vec![face];
+        }
+    }
+    if let Some(face) = negative_lane_face {
+        if face_recipe::negative_lane_face_replaces_selection(
+            &operand.resolved_face_slots,
+            has_extrude_start_group,
+            &changed_faces,
+            face,
         ) {
             operand.resolved_face_slots = vec![face];
         }
@@ -6269,19 +6284,6 @@ fn bind_historical_face_operand_candidates<'a>(
         }
     }
     Ok(())
-}
-
-/// Whether a recipe face replaces the operand's current selection. A recipe
-/// without a closed-edge node always does. A closed-edge recipe face fills an
-/// empty selection only, and not as an Extrude start or profile face the
-/// transition left unchanged: the Extrude joins to or cuts from that face, so
-/// the transition changes it.
-fn recipe_face_replaces_selection(
-    closed_edge_node: bool,
-    selection_empty: bool,
-    unchanged_extrude_face: bool,
-) -> bool {
-    !closed_edge_node || (selection_empty && !unchanged_extrude_face)
 }
 
 /// Resolve a Draft face whose persistent selector lane is ambiguous in the

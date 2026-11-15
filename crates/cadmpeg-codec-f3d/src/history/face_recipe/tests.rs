@@ -261,6 +261,28 @@ fn a_negative_design_reference_adds_no_face_to_its_lane() {
 }
 
 #[test]
+fn a_negative_design_reference_that_names_one_face_adds_it_to_its_lane() {
+    let topology = topology();
+    let index = FaceRecipeIndex::new(&topology);
+    let mut operand = operand();
+    for reference in &mut operand.recipe_references {
+        reference.design_reference = -5;
+    }
+    assert_eq!(index.resolve(&operand), None);
+    assert_eq!(
+        index.resolve_with_single_face_negative_references(&operand),
+        Some(100)
+    );
+    operand.recipe_references[0]
+        .candidate_faces
+        .push(crate::ids::brep_face_id(101));
+    assert_eq!(
+        index.resolve_with_single_face_negative_references(&operand),
+        None
+    );
+}
+
+#[test]
 fn a_leading_packed_token_reference_resolves_no_face() {
     let topology = topology();
     let mut operand = operand();
