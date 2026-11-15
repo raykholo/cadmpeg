@@ -61,7 +61,14 @@ fn style_lengths_become_one_preceding_rule_named_by_each_sheet_metal_operation()
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
-    project(&ctx, &mut features, Some(&fixture.style), Fixture::length).expect("project");
+    project(
+        &ctx,
+        &mut features,
+        Some(&fixture.style),
+        Fixture::length,
+        None,
+    )
+    .expect("project");
     assert_eq!(features.len(), 3);
     let rule = &features[0];
     let id = crate::feature::history_feature_id(&fixture.style.identity).expect("identity");
@@ -100,12 +107,28 @@ fn unresolved_style_lengths_or_no_style_leave_the_history_unchanged() {
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
     let mut features = history();
-    project(&ctx, &mut features, Some(&fixture.style), |_| None).expect("project");
+    project(&ctx, &mut features, Some(&fixture.style), |_| None, None).expect("project");
     assert_eq!(features, history());
-    project(&ctx, &mut features, None, Fixture::length).expect("project");
+    project(&ctx, &mut features, None, Fixture::length, None).expect("project");
     assert_eq!(features, history());
     let mut plain = history();
     plain.truncate(1);
-    project(&ctx, &mut plain, Some(&fixture.style), Fixture::length).expect("project");
+    project(
+        &ctx,
+        &mut plain,
+        Some(&fixture.style),
+        Fixture::length,
+        None,
+    )
+    .expect("project");
     assert_eq!(plain.len(), 1);
+}
+
+#[test]
+fn active_unfold_factor_is_the_rule_neutral_factor() {
+    let fixture = Fixture::new();
+    let factor = FiniteReal::new(0.37).expect("factor");
+    let construction =
+        construction(&fixture.style, Fixture::length, Some(factor)).expect("construction");
+    assert_eq!(construction.neutral_factor, Some(factor));
 }

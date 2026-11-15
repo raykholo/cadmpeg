@@ -8,7 +8,7 @@ use cadmpeg_ir::features::{
     sheet_metal::SheetMetalRuleConstruction, DistinctMembers, Feature, FeatureContent,
     FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
 };
-use cadmpeg_ir::scalar::{Length, NonNegativeLength, PositiveLength};
+use cadmpeg_ir::scalar::{FiniteReal, Length, NonNegativeLength, PositiveLength};
 
 use super::style::Style;
 use crate::pmdc::PmDcReference;
@@ -17,17 +17,19 @@ use crate::pmdc::PmDcReference;
 pub(crate) const SOURCE_TAG: &str = "sheet_metal_rule";
 
 /// The rule construction of a style, when its thickness and bend radius
-/// resolve to lengths.
+/// resolve to lengths. The neutral factor is the K-factor of the active
+/// unfold rule.
 pub(crate) fn construction(
     style: &Style,
     length: impl Fn(PmDcReference) -> Option<Length>,
+    neutral_factor: Option<FiniteReal>,
 ) -> Option<SheetMetalRuleConstruction> {
     let thickness = PositiveLength::try_from(length(style.thickness)?).ok()?;
     let inside_radius = NonNegativeLength::try_from(length(style.bend_radius)?).ok()?;
     Some(SheetMetalRuleConstruction {
         thickness: Some(thickness),
         inside_radius: Some(inside_radius),
-        neutral_factor: None,
+        neutral_factor,
     })
 }
 
@@ -74,6 +76,7 @@ pub(in crate::feature) fn project(
     features: &mut Vec<Feature>,
     style: Option<&Style>,
     length: impl Fn(PmDcReference) -> Option<Length>,
+    neutral_factor: Option<FiniteReal>,
 ) -> Result<(), CodecError> {
     let Some(first) = features
         .iter()
@@ -86,7 +89,7 @@ pub(in crate::feature) fn project(
     let Some(style) = style else {
         return Ok(());
     };
-    let Some(construction) = construction(style, length) else {
+    let Some(construction) = construction(style, length, neutral_factor) else {
         return Ok(());
     };
     let Some(ordinal) = free_ordinal_before(features, first) else {

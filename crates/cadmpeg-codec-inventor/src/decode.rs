@@ -563,6 +563,20 @@ fn decode_container<'a>(
             &feature_inventory.sheet_metal_flanges,
         )?;
     }
+    if !feature_inventory.sheet_metal_unfold_rules.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_app_sheet_metal_unfold_rules",
+            &feature_inventory.sheet_metal_unfold_rules,
+        )?;
+    }
+    if !feature_inventory.sheet_metal_unfold_selections.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_app_sheet_metal_unfold_selections",
+            &feature_inventory.sheet_metal_unfold_selections,
+        )?;
+    }
     namespace.set_arena(
         ctx,
         "pm_dc_entity_style_links",

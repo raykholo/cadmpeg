@@ -192,6 +192,8 @@ pub(crate) struct FeatureInventory {
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
+    pub(crate) sheet_metal_unfold_rules: Vec<sheet_metal::unfold::Rule>,
+    pub(crate) sheet_metal_unfold_selections: Vec<sheet_metal::unfold::Selection>,
     pub(crate) dimensions: Vec<revolve::Dimension>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
     pub(crate) thread_definitions: Vec<thread::Definition>,
@@ -962,6 +964,13 @@ pub(crate) fn inventory(
             }
         }
     }
+    sheet_metal::unfold::admit(
+        ctx,
+        document,
+        &mut inventory.sheet_metal_unfold_rules,
+        &mut inventory.sheet_metal_unfold_selections,
+        &mut inventory.issues,
+    )?;
     mirror::admit_operands(ctx, document, &mut inventory)?;
     Ok(inventory)
 }
@@ -2794,6 +2803,10 @@ pub(crate) fn project(
         token
             .and_then(|token| sheet_metal::projection::style(&inventory.sheet_metal_styles, token)),
         |reference| length_reference(token?, reference.index(), &index),
+        sheet_metal::unfold::neutral_factor(
+            &inventory.sheet_metal_unfold_rules,
+            &inventory.sheet_metal_unfold_selections,
+        ),
     )?;
     let unresolved_chamfers = features
         .iter()
