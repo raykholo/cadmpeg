@@ -9218,7 +9218,9 @@ pub(super) fn project_split(
             };
             let mut tools = if let Some(selection) = resolved_historical_face_operand(scope, tool) {
                 selection
-            } else if let Some(selection) = split_tool_resolved_slots(scope, tool) {
+            } else if let Some(selection) =
+                crate::design::face_resolve::split_tool_resolved_slots(scope, tool)
+            {
                 selection
             } else {
                 direct_face_selection(scope, face_operands)
@@ -9254,23 +9256,6 @@ pub(super) fn project_split(
             tool,
         },
     )))
-}
-
-/// Historical selection of the preceding faces that history proved for a
-/// Split tool operand whose persistent reference names several faces.
-fn split_tool_resolved_slots(
-    scope: &DesignParameterScope,
-    tool: &DesignFaceOperand,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if tool.resolved_face_slots.len() < 2 {
-        return None;
-    }
-    crate::design::face_resolve::historical_face_selection_with_native(
-        scope,
-        scope.previous_history_state_id()?,
-        tool.resolved_face_slots.clone(),
-        tool.id.clone(),
-    )
 }
 
 fn face_scope_frame(scope: &DesignParameterScope) -> Option<(u64, u64)> {

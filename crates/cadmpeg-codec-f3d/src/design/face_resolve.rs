@@ -236,6 +236,23 @@ pub(super) fn resolved_historical_face_operand(
     historical_face_selection_with_native(scope, previous_state_id, vec![face_slot], native)
 }
 
+/// Historical selection of the preceding faces that history proved for a
+/// Split tool operand whose persistent reference names several faces.
+pub(super) fn split_tool_resolved_slots(
+    scope: &DesignParameterScope,
+    tool: &DesignFaceOperand,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    if tool.resolved_face_slots.len() < 2 {
+        return None;
+    }
+    historical_face_selection_with_native(
+        scope,
+        scope.previous_history_state_id()?,
+        tool.resolved_face_slots.clone(),
+        tool.id.clone(),
+    )
+}
+
 /// Resolve the complete input-state body boundaries selected by a body-recipe
 /// group. Persistent-reference candidate faces identify each body; they do
 /// not define a partial target boundary.
