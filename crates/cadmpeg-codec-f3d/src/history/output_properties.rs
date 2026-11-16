@@ -19,7 +19,7 @@ const EPS_HISTORY_SPLIT_PLANE_CROSS_SQ_E5: f64 = 1.0e-5;
 const EPS_HISTORY_SPLIT_PLANE_DIST_E4: f64 = 1.0e-4;
 pub(super) const EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4: f64 = 1.0e-4;
 
-fn planes_are_equivalent(o1: Point3, n1: Vector3, o2: Point3, n2: Vector3) -> bool {
+pub(super) fn planes_are_equivalent(o1: Point3, n1: Vector3, o2: Point3, n2: Vector3) -> bool {
     let Some(u1) = n1.unit() else {
         return false;
     };

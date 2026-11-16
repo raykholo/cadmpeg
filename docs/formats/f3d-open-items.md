@@ -3289,3 +3289,33 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-725. Split tool member with an obsolete entity-recipe identity
+
+**Question.** Which entity does a role-`0x0000002100000000` Split tool member select when its identity record stores the `ENTITY_RECIPE_OBSOLETE_ID` property?
+
+**Known.** The member has the entity-selection prefix with the asset and context identifiers and the four-record envelope. Its fourth record stores the `IntrinsicMetaTypeuint64` property `ENTITY_RECIPE_OBSOLETE_ID` followed by a u64 of all ones, instead of an owner and identity pair. No entity-selection operand decodes for the member. The property value is equal to the value stored by the Split's body-recipe target operand in one local design.
+
+**Need.** A rule that maps the property value to a preceding-state face or body, and a Split that pairs the value with the surfaces where its result bodies meet.
+
+**Note.** The tool group stays native.
+
+### DR-726. Split tool selections that name no face
+
+**Question.** Which neutral splitting geometry does a role-`0x0000002100000000` Split tool group select when its entity-selection members name coedges, vertices, or a mixture of a face and a vertex?
+
+**Known.** Three public designs store such groups. One group holds four coedge selections that name the same coedge identity with four different secondary identities. One holds a face selection and a vertex selection. One holds a single compact record without an entity-selection operand. A local design stores one further group of this form with two entity-selection members of serialization form 1.
+
+**Need.** The meaning of a coedge or vertex member in a splitting tool and a Split whose result bodies meet on the surface that the group selects.
+
+**Note.** The tool group stays native.
+
+### DR-727. Split tool face recipe without face candidates
+
+**Question.** Which preceding face does a Split tool face operand select when its recipe references carry no candidate face?
+
+**Known.** One public design stores a role-`0x0000000900000000` face operand with program `[0, -1]`, two prefix references, and no active, preceding, or changed candidate. The Split inserts no body.
+
+**Need.** A Split of this form whose result bodies meet on a face that history identifies.
+
+**Note.** The tool selection stays native.

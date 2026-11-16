@@ -55,9 +55,9 @@ use cache::SnapshotCache;
 use loop_index::LoopIndex;
 use output_properties::{
     classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
-    feature_consumes_tool_body, feature_supports_body_absorption, resolve_split_result_plane,
-    resolve_split_tool_plane, EdgeMidpointRequest, InsertedFaceClassification,
-    SplitResultPlaneContext, StateFacePlanes, StateSplitCandidates,
+    feature_consumes_tool_body, feature_supports_body_absorption, planes_are_equivalent,
+    resolve_split_result_plane, resolve_split_tool_plane, EdgeMidpointRequest,
+    InsertedFaceClassification, SplitResultPlaneContext, StateFacePlanes, StateSplitCandidates,
     EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2, EPS_HISTORY_BODY_BBOX_GROWTH_E3,
     EPS_HISTORY_BODY_BBOX_UNCHANGED_E4, EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4,
 };
@@ -6128,8 +6128,16 @@ fn bind_historical_face_operand_candidates<'a>(
     }
     if feature_family == Some(crate::design::DesignFeatureFamily::Split) {
         operand.resolved_face_slots = resolve_split_tool_face(operand, topology)
-            .into_iter()
-            .collect();
+            .map(|face| vec![face])
+            .or_else(|| {
+                resolve_split_tool_coplanar_faces(
+                    operand,
+                    topology,
+                    history.topology(state)?,
+                    &state.transition.as_ref()?.topology,
+                )
+            })
+            .unwrap_or_default();
     }
     if feature_family == Some(crate::design::DesignFeatureFamily::Loft)
         && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
@@ -6457,6 +6465,68 @@ fn resolve_split_tool_face(
         return None;
     };
     stable_ref(face.as_str())
+}
+
+/// Resolve a Split tool face operand whose persistent reference names several
+/// preceding faces. Every reference of the recipe names the same preceding face
+/// set, every face of the set lies in one plane, and at least two planar faces
+/// inserted by the Split lie in that plane while the Split inserts a body.
+pub(crate) fn resolve_split_tool_coplanar_faces(
+    operand: &crate::records::topology::face::DesignFaceOperand,
+    topology: &crate::history_records::AsmHistoricalTopology,
+    result: &crate::history_records::AsmHistoricalTopology,
+    delta: &AsmHistoricalTopologyDelta,
+) -> Option<Vec<i64>> {
+    if operand.group_record_index().is_some()
+        || operand.group_member_ordinal().is_some()
+        || operand.scope_reference_ordinal != 1
+        || operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::Face
+        || operand.recipe_program != [0, -1]
+        || delta.bodies.inserted.is_empty()
+    {
+        return None;
+    }
+    let (first, rest) = operand.recipe_references.split_first()?;
+    let mut named = first.candidate_faces.clone();
+    named.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    named.dedup();
+    for reference in rest {
+        let mut other = reference.candidate_faces.clone();
+        other.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        other.dedup();
+        if other != named {
+            return None;
+        }
+    }
+    let mut slots = Vec::new();
+    for face in selection::faces_in_topology(&named, topology) {
+        slots.push(stable_ref(face.as_str())?);
+    }
+    if slots.len() < 2 || slots.len() != named.len() {
+        return None;
+    }
+    slots.sort_unstable();
+    slots.dedup();
+    let mut planes = slots
+        .iter()
+        .map(|&slot| classify_face_plane(topology, slot));
+    let (origin, normal) = planes.next()??;
+    for plane in planes {
+        let (other_origin, other_normal) = plane?;
+        if !planes_are_equivalent(origin, normal, other_origin, other_normal) {
+            return None;
+        }
+    }
+    let coplanar_inserted = delta
+        .faces
+        .inserted
+        .iter()
+        .filter_map(|&face| classify_face_plane(result, face))
+        .filter(|&(other_origin, other_normal)| {
+            planes_are_equivalent(origin, normal, other_origin, other_normal)
+        })
+        .count();
+    (coplanar_inserted >= 2).then_some(slots)
 }
 
 fn effective_faces(
