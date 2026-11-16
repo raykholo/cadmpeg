@@ -196,6 +196,29 @@ fn split_body_historical_face_tool_keeps_native_id() {
 }
 
 #[test]
+fn split_body_face_tool_with_several_proven_faces_is_historical() {
+    let mut scope = split_body_scope();
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
+    let mut tool = split_body_face_tool();
+    tool.resolved_face_slots = vec![42, 43];
+    let definition = project_split(&scope, &[], &groups, &[], std::slice::from_ref(&tool))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { ref faces, ref native, .. }), ..
+        }) if faces.len() == 2 && native.as_str() == tool.id
+    ));
+}
+
+#[test]
 fn delete_face_falls_back_to_group_id() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
