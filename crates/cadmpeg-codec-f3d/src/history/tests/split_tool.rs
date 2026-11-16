@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::history::resolve_split_tool_coplanar_faces;
+use super::move_face::{history, SCOPE_ID};
+use crate::history::bind_feature_face_selections;
+use crate::history::split_tool::resolve_split_tool_coplanar_faces;
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalPlane, AsmHistoricalTopology,
     AsmHistoricalTopologyDelta,
@@ -139,4 +141,98 @@ fn split_tool_faces_stay_unresolved_without_the_meeting_plane() {
     assert_eq!(on_plane(&operand, &offset, inserted.clone()), None);
     // A face outside the preceding topology rejects the selection.
     assert_eq!(on_plane(&tool(&[&[1, 7]]), &before, inserted), None);
+}
+
+fn bind_tool(slots: Vec<i64>) -> cadmpeg_ir::features::FaceSelection {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use cadmpeg_ir::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureInputTopology, FeatureOperation, SplitBodyTool,
+    };
+    let mut scope = DesignParameterScope::empty(SCOPE_ID, DesignFeatureKind::Split, 42);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut operand = tool(&[&[10, 20]]);
+    operand.scope_record_index = 42;
+    operand.resolved_face_slots = slots;
+    let feature_id = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
+    let mut feature = Feature {
+        product_definition: None,
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::SplitBody {
+                targets: cadmpeg_ir::features::BodySelection::Native("f3d:test:targets".into()),
+                tool: SplitBodyTool::Faces(FaceSelection::Native(operand.id.clone())),
+            },
+        )),
+        native_ref: Some(SCOPE_ID.into()),
+    };
+    let mut input_topologies = vec![FeatureInputTopology {
+        id: crate::ids::feature_input_topology_id(&feature_id, 1),
+        input_of: feature_id,
+        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edge_geometry: Vec::new(),
+        native_ref: None,
+    }];
+    bind_feature_face_selections(
+        std::slice::from_mut(&mut feature),
+        &mut input_topologies,
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: &[],
+            operands: std::slice::from_ref(&operand),
+            entity_operands: &[],
+            body_recipe_operands: &[],
+            histories: &mut [history(8.0, 5.0)],
+            scope_histories: &std::collections::HashMap::new(),
+        },
+    );
+    let FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        tool: SplitBodyTool::Faces(tools),
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("expected a SplitBody");
+    };
+    tools.clone()
+}
+
+#[test]
+fn split_tool_bound_in_the_header_predecessor_state_when_the_scope_stores_none() {
+    let cadmpeg_ir::features::FaceSelection::Historical { faces, .. } = bind_tool(vec![10, 20])
+    else {
+        panic!("expected a historical selection");
+    };
+    let faces: Vec<&str> = faces
+        .iter()
+        .map(cadmpeg_ir::ids::HistoricalFaceId::as_str)
+        .collect();
+    assert_eq!(faces.len(), 2);
+    assert!(
+        faces[0].ends_with(":10") && faces[1].ends_with(":20"),
+        "{faces:?}"
+    );
+}
+
+#[test]
+fn split_tool_without_proven_faces_stays_native() {
+    assert!(matches!(
+        bind_tool(Vec::new()),
+        cadmpeg_ir::features::FaceSelection::Native(_)
+    ));
 }
