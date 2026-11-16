@@ -183,3 +183,153 @@ pub(super) fn undecoded_tool_group(
         }))
     .then_some(())
 }
+
+/// Net topology change of the transitions from the state `previous_state_id` to
+/// `state`. An entity inserted and deleted within the chain does not appear; an
+/// inserted entity that a later transition updates stays inserted.
+pub(crate) fn composed_delta(
+    state: &AsmDeltaState,
+    previous_state_id: i64,
+    states: &std::collections::HashMap<i64, Option<&AsmDeltaState>>,
+) -> Option<AsmHistoricalTopologyDelta> {
+    let mut chain = Vec::new();
+    let mut current = state;
+    while current.state_id != previous_state_id {
+        if chain.len() > states.len() {
+            return None;
+        }
+        let transition = current.transition.as_ref()?;
+        chain.push(&transition.topology);
+        current = states
+            .get(&transition.previous_state_id?)
+            .copied()
+            .flatten()?;
+    }
+    let mut out = AsmHistoricalTopologyDelta::default();
+    for delta in chain.into_iter().rev() {
+        compose_entities(&mut out.bodies, &delta.bodies);
+        compose_entities(&mut out.faces, &delta.faces);
+    }
+    Some(out)
+}
+
+fn compose_entities(
+    net: &mut crate::history_records::AsmHistoricalEntityDelta,
+    step: &crate::history_records::AsmHistoricalEntityDelta,
+) {
+    for &entity in &step.inserted {
+        if let Some(position) = net.deleted.iter().position(|&other| other == entity) {
+            net.deleted.remove(position);
+            net.updated.push(entity);
+        } else {
+            net.inserted.push(entity);
+        }
+    }
+    for &entity in &step.updated {
+        if !net.inserted.contains(&entity) && !net.updated.contains(&entity) {
+            net.updated.push(entity);
+        }
+    }
+    for &entity in &step.deleted {
+        if let Some(position) = net.inserted.iter().position(|&other| other == entity) {
+            net.inserted.remove(position);
+        } else {
+            net.updated.retain(|&other| other != entity);
+            if !net.deleted.contains(&entity) {
+                net.deleted.push(entity);
+            }
+        }
+    }
+}
+
+/// Largest distance from the tool plane, in model units, of a vertex that the
+/// tool group names.
+const EPS_SPLIT_TOOL_VERTEX_ON_PLANE: f64 = 1.0e-4;
+
+/// Resolve a Split tool group of entity selections that names one face and
+/// one or more vertices. The face is in the preceding topology and planar,
+/// each vertex is in the preceding topology and lies in the plane of the face,
+/// the Split inserts a body, and the result faces that the Split inserts or
+/// updates include at least one inserted face and two faces in total in that
+/// plane. The splitting tool is the named face.
+pub(crate) fn resolve_split_tool_face_and_vertices(
+    face: i64,
+    vertices: &[i64],
+    topology: &AsmHistoricalTopology,
+    result: &AsmHistoricalTopology,
+    delta: &AsmHistoricalTopologyDelta,
+) -> Option<Vec<i64>> {
+    if vertices.is_empty() || delta.bodies.inserted.is_empty() || !topology.faces.contains(&face) {
+        return None;
+    }
+    let (origin, normal) = classify_face_plane(topology, face)?;
+    let unit = normal.unit()?;
+    for &vertex in vertices {
+        let point = topology
+            .vertex_points
+            .iter()
+            .find(|binding| binding.entity == vertex)
+            .and_then(|binding| {
+                topology
+                    .point_positions
+                    .iter()
+                    .find(|position| position.point == binding.carrier)
+            })?
+            .position;
+        if point.vector_from(origin).dot(unit).abs() >= EPS_SPLIT_TOOL_VERTEX_ON_PLANE {
+            return None;
+        }
+    }
+    result_meets_on_plane(origin, normal, result, delta).then_some(vec![face])
+}
+
+/// The face and vertex slots that the members of the role-`0x21` tool group
+/// `native` of the Split scope name. Every member decodes to an entity
+/// selection. Exactly one member selects a face and every other member selects
+/// a vertex.
+pub(super) fn entity_tool_members(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    native: &str,
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    entity_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) -> Option<(i64, Vec<i64>)> {
+    use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+    let mut named = groups.iter().filter(|group| group.id == native);
+    let (Some(group), None) = (named.next(), named.next()) else {
+        return None;
+    };
+    if group.scope_record_index != scope.record_index
+        || group.role() != crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X21
+        || group.members().len() < 2
+    {
+        return None;
+    }
+    let mut face = None;
+    let mut vertices = Vec::new();
+    for member in group.members() {
+        let mut found = entity_operands.iter().filter(|operand| {
+            operand.scope_record_index == scope.record_index
+                && operand.record_index() == member.value
+        });
+        let (Some(operand), None) = (found.next(), found.next()) else {
+            return None;
+        };
+        match (
+            operand.historical_face_candidates.as_slice(),
+            operand.historical_edge_candidates.as_slice(),
+        ) {
+            ([candidate], []) if candidate.historical.kind == AsmHistoricalEntityKind::Face => {
+                if face.replace(candidate.face_slot).is_some() {
+                    return None;
+                }
+            }
+            ([], [candidate])
+                if candidate.historical_entity_kind == AsmHistoricalEntityKind::Vertex =>
+            {
+                vertices.push(candidate.historical_entity_ref);
+            }
+            _ => return None,
+        }
+    }
+    Some((face?, vertices))
+}

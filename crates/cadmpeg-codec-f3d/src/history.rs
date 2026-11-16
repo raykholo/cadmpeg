@@ -1101,7 +1101,7 @@ pub(crate) fn bind_feature_outputs(
                     inferred_histories.push(crate::loss::F3dLossCode::HistoricalOutputBlobHistoryInferred.note(
                         format!(
                             "feature {}: its scope has no bound history and several histories hold its state pair; it reads {}, the one history of the BREP blob that holds its outputs.",
-                            feature.id.as_str(),
+                            feature.id,
                             history.id
                         ),
                     ));
@@ -3584,6 +3584,12 @@ pub(crate) fn bind_feature_face_selections(
                     let cadmpeg_ir::features::FaceSelection::Native(native) = &*tools else {
                         break 'feature_edit;
                     };
+                    let states = unique_feature_history_states(history);
+                    let Some(delta) =
+                        split_tool::composed_delta(selection_state_row, previous_state_id, &states)
+                    else {
+                        break 'feature_edit;
+                    };
                     let mut tool_operands = operands.iter().filter(|operand| {
                         operand.id == *native && operand.scope_record_index == scope.record_index
                     });
@@ -3597,7 +3603,22 @@ pub(crate) fn bind_feature_face_selections(
                                 split_tool::consumed_tool_body_faces(
                                     history.topology(selection_previous_row)?,
                                     history.topology(selection_state_row)?,
-                                    &transition.topology,
+                                    &delta,
+                                )
+                            })
+                            .or_else(|| {
+                                let (face, vertices) = split_tool::entity_tool_members(
+                                    scope,
+                                    native,
+                                    groups,
+                                    entity_operands,
+                                )?;
+                                split_tool::resolve_split_tool_face_and_vertices(
+                                    face,
+                                    &vertices,
+                                    history.topology(selection_previous_row)?,
+                                    history.topology(selection_state_row)?,
+                                    &delta,
                                 )
                             })
                     };
@@ -3765,6 +3786,12 @@ fn face_selection_state<'a>(
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::MoveFace { .. }
                 | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
+                | cadmpeg_ir::features::FeatureOperation::SplitBody {
+                    tool: cadmpeg_ir::features::SplitBodyTool::Faces(
+                        cadmpeg_ir::features::FaceSelection::Native(_)
+                    ),
+                    ..
+                }
         )
     );
     if !spans_transitions && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
