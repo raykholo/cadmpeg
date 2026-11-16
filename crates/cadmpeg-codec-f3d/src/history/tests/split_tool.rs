@@ -306,3 +306,251 @@ fn consumed_tool_bodies_resolve_to_their_faces_on_the_meeting_plane() {
     missing.bodies.deleted.push(102);
     assert_eq!(consumed_tool_body_faces(&before, &result, &missing), None);
 }
+
+fn entity_group(
+    members: &[u32],
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
+        .map(|ordinal| ordinal * 11)
+        .collect();
+    serde_json::from_value(serde_json::json!({
+        "id": "f3d:Design/BulkStream.dat:group#43",
+        "byte_offset": 0,
+        "class_tag": "275",
+        "record_index": 43,
+        "scope_record_index": 42,
+        "scope_reference_ordinal": 0,
+        "members": members,
+        "member_offsets": member_offsets,
+        "role": 141_733_920_768_u64,
+        "role_offset": 0,
+        "paired_byte_offset": 200,
+        "paired_class_tag": "261",
+        "frame": {
+            "member_count_offset": 0,
+            "opaque_index": 1,
+            "opaque_index_offset": 18,
+            "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 22,
+            "trailing_flags": [],
+            "trailing_record_indices": [],
+            "trailing_record_offsets": [],
+            "variant": false
+        }
+    }))
+    .unwrap()
+}
+
+fn entity_selection(
+    record_index: u32,
+    candidates: &serde_json::Value,
+) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
+    let mut value = serde_json::json!({
+        "id": format!("f3d:Design/BulkStream.dat:entity-selection#{record_index}"),
+        "scope_record_index": 42,
+        "group_record_index": 43,
+        "group_member_ordinal": 0,
+        "record_index": record_index,
+        "byte_offset": 0,
+        "class_tag": "386",
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "asset_id_offset": 0,
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+        "context_id_offset": 0,
+        "identity_record_index": record_index + 3,
+        "identity_record_offset": 0,
+        "primary_identity": 7,
+        "primary_identity_offset": 21,
+        "next_record_index": record_index + 4,
+        "next_byte_offset": 29
+    });
+    value
+        .as_object_mut()
+        .unwrap()
+        .extend(candidates.as_object().unwrap().clone());
+    serde_json::from_value(value).unwrap()
+}
+
+fn face_member(
+    record_index: u32,
+    face: i64,
+) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
+    entity_selection(
+        record_index,
+        &serde_json::json!({"historical_face_candidates": [{
+            "history_id": "f3d:history",
+            "historical_entity_kind": "face",
+            "historical_entity_ref": face,
+            "face_slot": face
+        }]}),
+    )
+}
+
+fn vertex_member(
+    record_index: u32,
+    vertex: i64,
+) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
+    entity_selection(
+        record_index,
+        &serde_json::json!({"historical_edge_candidates": [{
+            "identity_ordinal": 0,
+            "local_id": 7,
+            "historical_entity_kind": "vertex",
+            "historical_entity_ref": vertex,
+            "edge_slots": [1, 2]
+        }]}),
+    )
+}
+
+fn split_scope() -> crate::records::feature::scope::DesignParameterScope {
+    crate::records::feature::scope::DesignParameterScope::empty(
+        SCOPE_ID,
+        crate::records::feature::scope::DesignFeatureKind::Split,
+        42,
+    )
+}
+
+#[test]
+fn entity_tool_members_name_one_face_and_the_vertices() {
+    use crate::history::split_tool::entity_tool_members;
+    let scope = split_scope();
+    let group = entity_group(&[100, 101, 102]);
+    let operands = [
+        face_member(100, 5),
+        vertex_member(101, 8),
+        vertex_member(102, 9),
+    ];
+    assert_eq!(
+        entity_tool_members(&scope, &group.id, std::slice::from_ref(&group), &operands),
+        Some((5, vec![8, 9]))
+    );
+    // A member without a decoded selection.
+    assert_eq!(
+        entity_tool_members(
+            &scope,
+            &group.id,
+            std::slice::from_ref(&group),
+            &operands[..2]
+        ),
+        None
+    );
+    // Two face members.
+    let twice = [
+        face_member(100, 5),
+        face_member(101, 6),
+        vertex_member(102, 9),
+    ];
+    assert_eq!(
+        entity_tool_members(&scope, &group.id, std::slice::from_ref(&group), &twice),
+        None
+    );
+    // No face member.
+    let none = entity_group(&[101, 102]);
+    assert_eq!(
+        entity_tool_members(
+            &scope,
+            &none.id,
+            std::slice::from_ref(&none),
+            &operands[1..]
+        ),
+        None
+    );
+}
+
+fn with_vertices(
+    mut topology: AsmHistoricalTopology,
+    vertices: &[(i64, Point3)],
+) -> AsmHistoricalTopology {
+    use crate::history_records::AsmHistoricalPoint;
+    for &(vertex, position) in vertices {
+        topology.vertices.push(vertex);
+        topology.vertex_points.push(AsmHistoricalCarrierBinding {
+            entity: vertex,
+            carrier: vertex + 5000,
+        });
+        topology.point_positions.push(AsmHistoricalPoint {
+            point: vertex + 5000,
+            position,
+        });
+    }
+    topology
+}
+
+#[test]
+fn split_tool_face_with_vertices_resolves_when_the_vertices_and_result_lie_on_its_plane() {
+    use crate::history::split_tool::resolve_split_tool_face_and_vertices as resolve;
+    let up = Vector3::new(0.0, 0.0, 1.0);
+    let down = Vector3::new(0.0, 0.0, -1.0);
+    let before = with_vertices(
+        planar(&[(1, 5.0, up), (2, 9.0, up)]),
+        &[
+            (30, Point3::new(1.0, 2.0, 5.0)),
+            (31, Point3::new(-4.0, 7.0, 5.0)),
+            (32, Point3::new(0.0, 0.0, 9.0)),
+        ],
+    );
+    let result = planar(&[(20, 5.0, up), (21, 5.0, down)]);
+    let split = delta(&[20, 21], &[9]);
+    assert_eq!(
+        resolve(1, &[30, 31], &before, &result, &split),
+        Some(vec![1])
+    );
+    // A vertex off the plane.
+    assert_eq!(resolve(1, &[30, 32], &before, &result, &split), None);
+    // A vertex outside the preceding topology.
+    assert_eq!(resolve(1, &[30, 33], &before, &result, &split), None);
+    // No vertex.
+    assert_eq!(resolve(1, &[], &before, &result, &split), None);
+    // A face outside the preceding topology.
+    assert_eq!(resolve(3, &[30], &before, &result, &split), None);
+    // The Split inserts no body.
+    assert_eq!(
+        resolve(1, &[30], &before, &result, &delta(&[20, 21], &[])),
+        None
+    );
+    // The result faces lie in another plane.
+    let elsewhere = planar(&[(20, 7.0, up), (21, 7.0, down)]);
+    assert_eq!(resolve(1, &[30], &before, &elsewhere, &split), None);
+}
+
+#[test]
+fn composed_delta_nets_the_transitions_of_a_state_chain() {
+    use crate::history::split_tool::composed_delta;
+    use crate::history_records::AsmHistoricalTopologyDelta;
+    let step = |state_id: i64, previous: i64, delta: AsmHistoricalTopologyDelta| {
+        let mut state =
+            super::move_face::state(state_id, AsmHistoricalTopology::default(), None, 1).0;
+        state.transition = Some(crate::history_records::AsmHistoricalTransition {
+            geometry_unchanged: false,
+            previous_state_id: Some(previous),
+            records: Default::default(),
+            topology: delta,
+            record_revisions: Vec::new(),
+            rows: Default::default(),
+        });
+        state
+    };
+    let mut first = delta(&[20, 21], &[9]);
+    first.faces.deleted = vec![1];
+    let mut second = AsmHistoricalTopologyDelta::default();
+    second.faces.updated = vec![20, 2];
+    second.faces.deleted = vec![21, 3];
+    second.bodies.inserted = vec![10];
+    let states = [
+        step(3, 2, second),
+        step(2, 1, first),
+        super::move_face::state(1, AsmHistoricalTopology::default(), None, 1).0,
+    ];
+    let index: std::collections::HashMap<i64, Option<&crate::history_records::AsmDeltaState>> =
+        states
+            .iter()
+            .map(|state| (state.state_id, Some(state)))
+            .collect();
+    let net = composed_delta(&states[0], 1, &index).unwrap();
+    assert_eq!(net.bodies.inserted, vec![9, 10]);
+    assert_eq!(net.faces.inserted, vec![20]);
+    assert_eq!(net.faces.updated, vec![2]);
+    assert_eq!(net.faces.deleted, vec![1, 3]);
+    // The chain does not reach the requested state.
+    assert!(composed_delta(&states[0], 7, &index).is_none());
+}

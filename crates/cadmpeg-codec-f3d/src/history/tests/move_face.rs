@@ -38,7 +38,7 @@ fn topology(top_z: f64) -> AsmHistoricalTopology {
     }
 }
 
-fn state(
+pub(super) fn state(
     state_id: i64,
     topology: AsmHistoricalTopology,
     next_ref: Option<i64>,

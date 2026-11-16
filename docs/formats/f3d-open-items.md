@@ -3352,13 +3352,23 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The projected tool is the face set of the deleted bodies.
 
-### DR-726. Split tool selections that name no face
+### DR-730. Split tool group of Sketch-curve selections
 
-**Question.** Which neutral splitting geometry does a role-`0x0000002100000000` Split tool group select when its entity-selection members name coedges, vertices, or a mixture of a face and a vertex?
+**Question.** Which neutral splitting geometry does a role-`0x0000002100000000` Split tool group select when its members are expanded-form entity selections of Sketch curves?
 
-**Known.** Three public designs store such groups. One group holds four coedge selections that name the same coedge identity with four different secondary identities. One holds a face selection and a vertex selection. One holds a single compact record without an entity-selection operand. A local design stores one further group of this form with two entity-selection members of serialization form 1.
+**Known.** One public design stores a group of four members. Their primary identity is the same Sketch suffix and their curve identities are the four curves of one Sketch rectangle. The Sketch is planar. The Split inserts one body. The result faces that the Split inserts or updates hold one inserted face and one updated face in the Sketch plane, and the same counts in one parallel plane. The face-candidate lane of each member names a coedge slot that equals the Sketch suffix; that slot is not a selection.
 
-**Need.** The meaning of a coedge or vertex member in a splitting tool and a Split whose result bodies meet on the surface that the group selects.
+**Need.** A rule that maps the curve set to a plane, a region, or a surface, proven against the faces that separate the result bodies, and a neutral Split tool that can name it.
+
+**Note.** The tool group stays native.
+
+### DR-731. Split tool group of one compact record
+
+**Question.** Which neutral splitting geometry does a role-`0x0000002100000000` Split tool group select when its single member is a compact record that decodes to no entity-selection operand and the Split deletes no body?
+
+**Known.** One public design stores such a group. The Split inserts one body. Six planes each hold one inserted face and one updated face of the result.
+
+**Need.** The meaning of the record and the one plane or surface among the six that it selects.
 
 **Note.** The tool group stays native.
 
