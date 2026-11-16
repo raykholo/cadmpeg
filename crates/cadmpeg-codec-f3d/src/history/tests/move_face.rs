@@ -12,7 +12,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
-const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#42";
+pub(super) const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#42";
 const GROUP_ID: &str = "f3d:Design/BulkStream.dat:group#43";
 
 fn topology(top_z: f64) -> AsmHistoricalTopology {
@@ -75,7 +75,7 @@ fn state(
     )
 }
 
-fn history(after_top_z: f64, before_top_z: f64) -> AsmHistory {
+pub(super) fn history(after_top_z: f64, before_top_z: f64) -> AsmHistory {
     crate::test_support::history::history(
         "f3d:history".into(),
         0,
