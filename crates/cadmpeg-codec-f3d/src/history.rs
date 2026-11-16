@@ -3588,16 +3588,28 @@ pub(crate) fn bind_feature_face_selections(
                     let mut tool_operands = operands.iter().filter(|operand| {
                         operand.id == *native && operand.scope_record_index == scope.record_index
                     });
-                    let (Some(operand), None) = (tool_operands.next(), tool_operands.next()) else {
-                        break 'feature_edit;
+                    let faces = if let (Some(operand), None) =
+                        (tool_operands.next(), tool_operands.next())
+                    {
+                        Some(operand.resolved_face_slots.clone())
+                    } else {
+                        split_tool::undecoded_tool_group(scope, native, groups, entity_operands)
+                            .and_then(|()| {
+                                split_tool::consumed_tool_body_faces(
+                                    history.topology(selection_previous_row)?,
+                                    history.topology(selection_state_row)?,
+                                    &transition.topology,
+                                )
+                            })
                     };
-                    if let Some(selection) =
+                    if let Some(selection) = faces.and_then(|faces| {
                         crate::design::face_resolve::split_tool_selection_in_state(
                             scope,
                             previous_state_id,
-                            operand,
+                            native,
+                            &faces,
                         )
-                    {
+                    }) {
                         *tools = selection;
                     }
                 }

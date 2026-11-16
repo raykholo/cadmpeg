@@ -3346,11 +3346,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which entity does a role-`0x0000002100000000` Split tool member select when its identity record stores the `ENTITY_RECIPE_OBSOLETE_ID` property?
 
-**Known.** The member has the entity-selection prefix with the asset and context identifiers and the four-record envelope. Its fourth record stores the `IntrinsicMetaTypeuint64` property `ENTITY_RECIPE_OBSOLETE_ID` followed by a u64 of all ones, instead of an owner and identity pair. No entity-selection operand decodes for the member. The property value is equal to the value stored by the Split's body-recipe target operand in one local design.
+**Known.** The member has the entity-selection prefix with the asset and context identifiers and the four-record envelope. Its fourth record stores the `IntrinsicMetaTypeuint64` property `ENTITY_RECIPE_OBSOLETE_ID` followed by a u64 of all ones, instead of an owner and identity pair. No entity-selection operand decodes for the member. In two designs the property value equals the value that the Split's body-recipe target operand stores. In each of them the Split transition deletes the bodies that carry the tool faces and the faces of those bodies lie in the plane that holds the result faces of the Split.
 
-**Need.** A rule that maps the property value to a preceding-state face or body, and a Split that pairs the value with the surfaces where its result bodies meet.
+**Need.** A rule that maps the property value to the tool faces, independent of the Split transition.
 
-**Note.** The tool group stays native.
+**Note.** The projected tool is the face set of the deleted bodies.
 
 ### DR-726. Split tool selections that name no face
 
