@@ -613,6 +613,8 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeProfileDeletedFacesInferred,
     /// An Extrude face profile stays native because its end caps or deleted faces contradict a face set.
     FeatureExtrudeProfileFaceSetDisputed,
+    /// An Extrude face profile stays native because the face its selection names is on a curved carrier.
+    FeatureExtrudeProfileFaceCurved,
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
@@ -1411,6 +1413,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileCapFacesInferred,
         Self::FeatureExtrudeProfileDeletedFacesInferred,
         Self::FeatureExtrudeProfileFaceSetDisputed,
+        Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
@@ -2232,6 +2235,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeProfileFaceSetDisputed => {
                 "feature.extrude-profile-face-set-disputed"
             }
+            Self::FeatureExtrudeProfileFaceCurved => "feature.extrude-profile-face-curved",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
@@ -2986,6 +2990,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileCapFacesInferred
             | Self::FeatureExtrudeProfileDeletedFacesInferred
             | Self::FeatureExtrudeProfileFaceSetDisputed
+            | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -3569,6 +3574,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileCapFacesInferred
             | Self::FeatureExtrudeProfileDeletedFacesInferred
             | Self::FeatureExtrudeProfileFaceSetDisputed
+            | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -4269,6 +4275,7 @@ mod tests {
                 "feature.extrude-profile-cap-faces-inferred",
                 "feature.extrude-profile-deleted-faces-inferred",
                 "feature.extrude-profile-face-set-disputed",
+                "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",

@@ -3342,3 +3342,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A second Hole whose carrier input names a sketch selection, and a save that moves the sketch.
 
 **Note.** The sketch frame is not used for placement.
+
+### DR-665. Planar face of an Extrude profile selection with an unbound member identity
+
+**Question.** Which planar face does an Extrude profile selection member select when its local identity is bound to no ASM entity of the history?
+
+**Known.** The member's local identity is read as an entity slot of the preceding state. This read can name a loop or coedge of a cylinder wall. A profile face is planar, so the cylinder wall is not the selected face.
+
+**Need.** A save in which a bound and an unbound member select the same planar face, or a save that stores the planar face's own identity beside the unbound member.
+
+**Note.** A selection whose one face has a cylinder, axis, or radius carrier row and no plane row stays native and reports `feature.extrude-profile-face-curved` with the entity read and the face.
