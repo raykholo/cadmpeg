@@ -129,6 +129,10 @@ fn split_tool_faces_stay_unresolved_without_the_meeting_plane() {
     );
     // No body is inserted.
     assert_eq!(on_plane(&operand, &before, delta(&[20, 21], &[])), None);
+    // One inserted face and one updated face lie on the plane.
+    let mut updated = delta(&[20], &[9]);
+    updated.faces.updated = vec![21];
+    assert_eq!(on_plane(&operand, &before, updated), Some(vec![1, 2]));
     // Only one result face lies on the plane.
     assert_eq!(on_plane(&operand, &before, delta(&[20], &[9])), None);
     // The references name different face sets.

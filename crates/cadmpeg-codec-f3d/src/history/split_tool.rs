@@ -46,8 +46,9 @@ pub(super) fn split_tool_coplanar_slots(
 
 /// Resolve a Split tool face operand whose persistent reference names several
 /// preceding faces. Every reference of the recipe names the same preceding face
-/// set, every face of the set lies in one plane, and at least two planar faces
-/// inserted by the Split lie in that plane while the Split inserts a body.
+/// set, every face of the set lies in one plane, the Split inserts a body, and
+/// the result faces that the Split inserts or updates include at least one
+/// inserted face and two faces in total in that plane.
 pub(crate) fn resolve_split_tool_coplanar_faces(
     operand: &crate::records::topology::face::DesignFaceOperand,
     topology: &AsmHistoricalTopology,
@@ -94,14 +95,22 @@ pub(crate) fn resolve_split_tool_coplanar_faces(
             return None;
         }
     }
-    let coplanar_inserted = delta
+    let on_plane = |face: i64| {
+        classify_face_plane(result, face).is_some_and(|(other_origin, other_normal)| {
+            planes_are_equivalent(origin, normal, other_origin, other_normal)
+        })
+    };
+    let inserted = delta
         .faces
         .inserted
         .iter()
-        .filter_map(|&face| classify_face_plane(result, face))
-        .filter(|&(other_origin, other_normal)| {
-            planes_are_equivalent(origin, normal, other_origin, other_normal)
-        })
+        .filter(|&&face| on_plane(face))
         .count();
-    (coplanar_inserted >= 2).then_some(slots)
+    let updated = delta
+        .faces
+        .updated
+        .iter()
+        .filter(|&&face| on_plane(face))
+        .count();
+    (inserted >= 1 && inserted + updated >= 2).then_some(slots)
 }
