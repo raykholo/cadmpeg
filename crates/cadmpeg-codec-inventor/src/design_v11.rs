@@ -18,6 +18,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::CadIr;
 
+mod datums;
 mod sheet_metal;
 
 pub(crate) fn project(
@@ -51,6 +52,7 @@ pub(crate) fn project(
         )
         .collect();
     project_history(ctx, ir, &flags)?;
+    datums::project(ctx, ir)?;
     sheet_metal::project(ctx, ir, features, parameters)
 }
 
