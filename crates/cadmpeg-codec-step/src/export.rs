@@ -43,6 +43,7 @@ mod implicit_outer;
 mod non_manifold;
 mod ownership;
 mod representations;
+mod ring_outer;
 mod wire;
 
 const EPS_IDENTITY: f64 = 1.0e-12;
@@ -3104,6 +3105,7 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|loop_id| self.seam_rings.contains_key(loop_id.as_str()))
             .collect();
+        let ring_outer = self.unclassified_ring_outer(face);
         let mut face_bounds = vec![None; loop_ids.len()];
         let mut incomplete = false;
         for index in (0..loop_ids.len())
@@ -3114,7 +3116,9 @@ impl<'a> Builder<'a> {
             let lid = loop_id.as_str();
             let beside_a_bound = !bound_refs.is_empty() || face_bounds.iter().any(Option::is_some);
             if let Some(loop_ref) = self.emit_loop(lid, beside_a_bound) {
-                let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer {
+                let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer
+                    || ring_outer.as_ref() == Some(loop_id)
+                {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"

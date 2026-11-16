@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod box_brep;
+pub(crate) mod cone_band;
 pub(crate) mod curve_bounded;
 pub(crate) mod exchange;
 pub(crate) mod revolved_wedge;
