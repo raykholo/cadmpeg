@@ -237,17 +237,18 @@ pub(super) fn resolved_historical_face_operand(
 }
 
 /// Historical selection of the preceding faces that history proved for a
-/// Split tool face operand, in the given input state of the Split.
+/// Split tool, in the given input state of the Split.
 pub(crate) fn split_tool_selection_in_state(
     scope: &DesignParameterScope,
     previous_state_id: i64,
-    tool: &DesignFaceOperand,
+    native: &str,
+    faces: &[i64],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     historical_face_selection_with_native(
         scope,
         previous_state_id,
-        tool.resolved_face_slots.clone(),
-        tool.id.clone(),
+        faces.to_vec(),
+        native.to_owned(),
     )
 }
 
@@ -260,7 +261,12 @@ pub(super) fn split_tool_resolved_slots(
     if tool.resolved_face_slots.len() < 2 {
         return None;
     }
-    split_tool_selection_in_state(scope, scope.previous_history_state_id()?, tool)
+    split_tool_selection_in_state(
+        scope,
+        scope.previous_history_state_id()?,
+        &tool.id,
+        &tool.resolved_face_slots,
+    )
 }
 
 /// Resolve the complete input-state body boundaries selected by a body-recipe

@@ -240,3 +240,69 @@ fn split_tool_without_proven_faces_stays_native() {
         cadmpeg_ir::features::FaceSelection::Native(_)
     ));
 }
+
+fn with_tool_bodies(
+    mut topology: AsmHistoricalTopology,
+    bodies: &[(i64, i64)],
+) -> AsmHistoricalTopology {
+    use crate::history_records::AsmHistoricalRelation;
+    for &(body, face) in bodies {
+        let (region, shell) = (body + 1000, body + 2000);
+        topology.bodies.push(body);
+        topology.regions.push(region);
+        topology.shells.push(shell);
+        topology.body_regions.push(AsmHistoricalRelation {
+            owner_ref: body,
+            member_refs: vec![region],
+        });
+        topology.region_shells.push(AsmHistoricalRelation {
+            owner_ref: region,
+            member_refs: vec![shell],
+        });
+        topology.shell_faces.push(AsmHistoricalRelation {
+            owner_ref: shell,
+            member_refs: vec![face],
+        });
+    }
+    topology
+}
+
+#[test]
+fn consumed_tool_bodies_resolve_to_their_faces_on_the_meeting_plane() {
+    use crate::history::split_tool::consumed_tool_body_faces;
+    let up = Vector3::new(0.0, 0.0, 1.0);
+    let down = Vector3::new(0.0, 0.0, -1.0);
+    let before = with_tool_bodies(
+        planar(&[(1, 0.0, up), (200, 5.0, up), (201, 5.0, down)]),
+        &[(100, 200), (101, 201)],
+    );
+    let result = planar(&[(20, 5.0, up), (21, 5.0, down)]);
+    let mut split = delta(&[20], &[2]);
+    split.faces.updated = vec![21];
+    split.bodies.deleted = vec![100, 101];
+    assert_eq!(
+        consumed_tool_body_faces(&before, &result, &split),
+        Some(vec![200, 201])
+    );
+    // The Split inserts no body.
+    let mut no_body = split.clone();
+    no_body.bodies.inserted.clear();
+    assert_eq!(consumed_tool_body_faces(&before, &result, &no_body), None);
+    // The Split deletes no body.
+    let mut kept = split.clone();
+    kept.bodies.deleted.clear();
+    assert_eq!(consumed_tool_body_faces(&before, &result, &kept), None);
+    // The deleted bodies' faces lie in different planes.
+    let apart = with_tool_bodies(
+        planar(&[(1, 0.0, up), (200, 5.0, up), (201, 6.0, down)]),
+        &[(100, 200), (101, 201)],
+    );
+    assert_eq!(consumed_tool_body_faces(&apart, &result, &split), None);
+    // The result faces lie in another plane.
+    let elsewhere = planar(&[(20, 9.0, up), (21, 9.0, down)]);
+    assert_eq!(consumed_tool_body_faces(&before, &elsewhere, &split), None);
+    // A deleted body that the preceding state does not hold completely.
+    let mut missing = split;
+    missing.bodies.deleted.push(102);
+    assert_eq!(consumed_tool_body_faces(&before, &result, &missing), None);
+}
