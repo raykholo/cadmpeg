@@ -781,15 +781,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 )
             })
             .expect("spatial-profile Extrude feature");
+        // The frame stays native until profile-selection binding certifies
+        // profile indices against the stored selection and transition.
+        let frame_selection = format!(
+            "f3d:Design/BulkStream.dat:design-record-header#{}",
+            scope.extrude_profile().expect("profile frame").byte_offset()
+        );
         assert!(matches!(
             spatial_extrude.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::SpatialSketchProfiles {
+                profile: ProfileRef::SpatialSketchSelection {
                     ref sketch,
-                    ref profiles
+                    ref selections
                 },
                 ..
-            }) if sketch == &spatial_sketch.id && profiles.as_slice() == [0]
+            }) if sketch == &spatial_sketch.id && selections.as_slice() == [frame_selection]
         ));
         assert_eq!(
             spatial_extrude.dependencies.as_slice(),
