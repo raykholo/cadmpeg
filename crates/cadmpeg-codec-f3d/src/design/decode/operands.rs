@@ -5865,7 +5865,7 @@ fn parse_sketch_profile_region_members(
             bytes,
             cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
         )?)?;
-        let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
+        let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORD_AFTER_PRIMARY)?;
         let mut incidence_words = [0; 8];
         for (ordinal, word) in incidence_words.iter_mut().enumerate() {
             *word = View::u32_le_at(
@@ -5874,7 +5874,8 @@ fn parse_sketch_profile_region_members(
             )?;
         }
         if kind != 3
-            || incidence_words[..3] != [0; 3]
+            || incidence_words[0] != 0
+            || incidence_words[2] != 0
             || !matches!(incidence_words[3], 0 | 1)
             || incidence_words[6..] != [0; 2]
         {
@@ -5887,6 +5888,7 @@ fn parse_sketch_profile_region_members(
                 cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
             )
             .ok()?,
+            curve_secondary_id: std::num::NonZeroU32::new(incidence_words[1]),
             incidence_flag: incidence_words[3] == 1,
             incidence_values: [
                 crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
