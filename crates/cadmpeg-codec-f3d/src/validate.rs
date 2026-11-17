@@ -778,6 +778,18 @@ fn valid_axial_assembly_targets(
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+/// The edge-recipe evidence that scope history binding reads from the
+/// native namespace.
+fn native_edge_recipe_faces(
+    native: &native::F3dNative,
+) -> history::edge_recipe_faces::EdgeRecipeFaces<'_> {
+    history::edge_recipe_faces::EdgeRecipeFaces {
+        operands: &native.design_edge_operands,
+        recipes: &native.construction_recipes,
+        tags: &native.persistent_subentity_tags,
+    }
+}
+
 fn reload_native_arena<T: serde::de::DeserializeOwned>(
     decode: &DecodeContext<'_>,
     ir: &CadIr,
@@ -1060,6 +1072,7 @@ fn validate_loaded(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
     );
     // discarded-value: the decoder reported these losses when it bound the operands.
@@ -1611,6 +1624,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
@@ -2258,6 +2272,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
                     scope,
                     operation.distance_record_index,
+                    |record_index| {
+                        native
+                            .design_construction_operand_groups
+                            .iter()
+                            .any(|group| {
+                                design_stream(&group.id) == native_stream
+                                    && group.scope_record_index == scope.record_index
+                                    && group.record_index == record_index
+                                    && group.role() == DesignOperandRole::ROLE_0X10
+                            })
+                    },
                 )
             }
             _ => true,
@@ -3108,6 +3133,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     (261, "266", None) if scope.class_tag.as_str() == "434" => true,
                     (257 | 261 | 267, "264", None) if scope.class_tag.as_str() == "414" => true,
                     (257, "262", None) if scope.class_tag.as_str() == "283" => true,
+                    (261, _, None)
+                        if crate::records::feature::assembly_features::legacy_identity_insert_class(
+                            scope.class_tag.as_str(),
+                        ) =>
+                    {
+                        true
+                    }
                     (385, "262", Some(matrix)) if scope.class_tag.as_str() == "283" => {
                         scope
                             .byte_offset()
@@ -3130,6 +3162,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             (381, _) => Some(49),
                             (395, _) => Some(46),
                             (389, "264") if scope.class_tag.as_str() == "414" => Some(50),
+                            (
+                                crate::records::feature::assembly_features::TYPED_COMPONENT_INSERT_FRAME_LENGTH,
+                                _,
+                            ) => Some(u64_from_index(
+                                crate::layout::component_insert_typed_matrix_scope_584_prefix::TRANSFORM,
+                            )),
                             _ => None,
                         };
                         scope_delta.is_some_and(|delta| {
@@ -6460,6 +6498,7 @@ fn validate_edge_identity_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
     );
     history::selection::bind_edge_identity_history(
@@ -7141,6 +7180,7 @@ fn validate_edge_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
     );
     let expected_face_boundaries = history::bind_edge_operand_history_candidates(
@@ -7414,6 +7454,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
     );
     history::bind_edge_treatment_vertex_history(
