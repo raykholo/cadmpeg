@@ -7592,6 +7592,9 @@ impl FaceBoundaryArena {
     }
 }
 
+/// [`edge_recipe_reference_context_by`] with the union of each name's
+/// Design references.
+#[cfg(test)]
 fn edge_recipe_reference_context<'a>(
     reference_ordinal: u32,
     lane: &[crate::records::dimensions::DesignRecipeReference],
@@ -7601,7 +7604,30 @@ fn edge_recipe_reference_context<'a>(
     topology_queries: &mut TopologyQueryCache<'a>,
     face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
-    let candidate_faces = recipe_index::reference_lane_faces(lane);
+    edge_recipe_reference_context_by(
+        reference_ordinal,
+        (lane, recipe_index::NameReferences::Union),
+        result,
+        preceding,
+        changed_edges,
+        topology_queries,
+        face_boundaries,
+    )
+}
+
+fn edge_recipe_reference_context_by<'a>(
+    reference_ordinal: u32,
+    (lane, names): (
+        &[crate::records::dimensions::DesignRecipeReference],
+        recipe_index::NameReferences,
+    ),
+    result: EdgeBoundaryContext<'a, '_>,
+    preceding: EdgeBoundaryContext<'a, '_>,
+    changed_edges: &HashSet<i64>,
+    topology_queries: &mut TopologyQueryCache<'a>,
+    face_boundaries: &mut FaceBoundaryArena,
+) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+    let candidate_faces = recipe_index::reference_lane_faces_by(lane, names);
     let candidate_faces = candidate_faces.faces.as_slice();
     let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
         faces
@@ -8103,7 +8129,11 @@ fn bind_historical_edge_operand<'a>(
         .iter()
         .map(|&edge| edge_contexts.context(edge))
         .collect::<Vec<_>>();
+    // Contexts whose persistent names join their Design references as a
+    // union, and contexts whose names select the faces common to all their
+    // Design references.
     let mut reference_contexts = Vec::new();
+    let mut common_reference_contexts = Vec::new();
     for (ordinal, lane) in crate::records::dimensions::reference_lanes(&operand.recipe_references)
         .into_iter()
         .enumerate()
@@ -8111,25 +8141,31 @@ fn bind_historical_edge_operand<'a>(
         let Ok(reference_ordinal) = u32::try_from(ordinal) else {
             continue;
         };
-        let context = edge_recipe_reference_context(
-            reference_ordinal,
-            lane,
-            EdgeBoundaryContext {
-                state,
-                topology: result_topology,
-                boundary_edges: &operand.result_boundary_edge_slots,
-            },
-            EdgeBoundaryContext {
-                state: previous,
-                topology,
-                boundary_edges: &operand.preceding_boundary_edge_slots,
-            },
-            &changed_edges,
-            topology_queries,
-            face_boundaries,
-        );
-
-        reference_contexts.push(context);
+        for (names, contexts) in [
+            (recipe_index::NameReferences::Union, &mut reference_contexts),
+            (
+                recipe_index::NameReferences::Common,
+                &mut common_reference_contexts,
+            ),
+        ] {
+            contexts.push(edge_recipe_reference_context_by(
+                reference_ordinal,
+                (lane, names),
+                EdgeBoundaryContext {
+                    state,
+                    topology: result_topology,
+                    boundary_edges: &operand.result_boundary_edge_slots,
+                },
+                EdgeBoundaryContext {
+                    state: previous,
+                    topology,
+                    boundary_edges: &operand.preceding_boundary_edge_slots,
+                },
+                &changed_edges,
+                topology_queries,
+                face_boundaries,
+            ));
+        }
     }
     operand.recipe_reference_contexts = reference_contexts;
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
@@ -8226,12 +8262,25 @@ fn bind_historical_edge_operand<'a>(
         operand.recipe_structure.as_ref(),
         &changed_edge_contexts,
     );
+    // The faces that carry every Design reference of each name take
+    // precedence; the union of the references applies when they select no
+    // edge.
     operand.resolved_edge_slot = side_one_recipe_edge(
         operand.recipe_structure.as_ref(),
-        &operand.recipe_reference_contexts,
+        &common_reference_contexts,
         &operand.recipe_selectors,
         &operand.preceding_boundary_edge_slots,
     );
+    if operand.resolved_edge_slot.is_some() {
+        operand.recipe_reference_contexts = common_reference_contexts;
+    } else {
+        operand.resolved_edge_slot = side_one_recipe_edge(
+            operand.recipe_structure.as_ref(),
+            &operand.recipe_reference_contexts,
+            &operand.recipe_selectors,
+            &operand.preceding_boundary_edge_slots,
+        );
+    }
     if operand.resolved_edge_slot.is_none()
         && operand.preceding_candidate_faces.is_empty()
         && matches!(
