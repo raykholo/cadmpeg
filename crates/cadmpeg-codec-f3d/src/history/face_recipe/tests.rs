@@ -451,3 +451,5 @@ fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
     structure.sides.truncate(1);
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
 }
+
+mod edge_fans;

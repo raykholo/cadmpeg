@@ -1299,6 +1299,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the operand proofs for these groups.
 
+### DR-653. `Chamfer` edges on bevel faces without a plane carrier
+
+**Question.** Which edges does a `Chamfer` group select when its transition inserts a bevel face on a carrier without a plane row, such as the bevel of an edge between a plane and a cylinder?
+
+**Known.** The specification states the edges from the bevel faces of the transition when every new carrier is a plane and both supports of each bevel are planes. A chamfer along a chain that crosses a cylinder inserts bevel faces whose carriers have no plane row. The history rows of a cone carrier state an axis line and no half-angle.
+
+**Need.** The history rows of a controlled chamfer on the edge between a plane and a cylinder with two distances, and the row that states the half-angle or the apex of the bevel cone.
+
+**Conflict.** None.
+
+**Note.** Keep the operand proofs for these groups.
+
 The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are tracked in DR-481.
 
 ### DR-390. Fillet set flag of the chordal and compact forms, marker bytes, and compact flag run
@@ -3341,18 +3353,6 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A second Hole whose carrier input names a sketch selection, and a save that moves the sketch.
 
 **Note.** The sketch frame is not used for placement.
-
-### DR-760. Structured Chamfer recipes on faces with several deleted boundary edges
-
-**Question.** Which input edge does a member of a counted Chamfer group select when its standard edge recipe has a two-sided recipe structure and its primary-reference faces own several boundary edges that the operation transition deletes?
-
-**Known.** The scope binds to one ASM history through the BREP of its edge-recipe faces, as DR-150 records. The member recipe then resolves against the input state of that history. Each side of the recipe structure lists boundary-edge counts and topology triplets of incident edges and vertices. A member whose primary-reference faces own exactly one candidate edge resolves to that edge. The other members name two faces, or a face set, whose boundaries hold eight or more edges of the transition-deleted set, and no recipe proof selects one of them. The projector retains the resolved edges and the unresolved operand identities in a partial historical selection.
-
-**Need.** A rule that maps the side entries and topology triplets of the recipe structure to one boundary edge of the input topology, or a group rule that assigns every transition-deleted edge to one member.
-
-**Conflict.** None.
-
-**Note.** DR-342 tracks chamfer recipes whose transition selections conflict.
 
 ### DR-705. Cut Extrude whose removed planes disagree with the sampled regions
 

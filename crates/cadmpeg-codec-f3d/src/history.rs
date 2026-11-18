@@ -20,6 +20,7 @@ mod body_candidates;
 mod body_index;
 pub(crate) mod body_recipe_operands;
 mod cache;
+pub(crate) mod chamfer_blends;
 pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
@@ -7882,6 +7883,7 @@ struct EdgeOperandCaches<'a> {
     treatment: TreatmentCache<'a>,
     topology_queries: TopologyQueryCache<'a>,
     recipe_topologies: RecipeTopologyCache<'a>,
+    face_recipes: SnapshotCache<'a, AsmHistoricalTopology, face_recipe::FaceRecipeIndex>,
 }
 
 fn bind_historical_edge_operand<'a>(
@@ -7904,6 +7906,7 @@ fn bind_historical_edge_operand<'a>(
         treatment: treatment_cache,
         topology_queries,
         recipe_topologies,
+        face_recipes,
     } = caches;
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
@@ -8003,11 +8006,6 @@ fn bind_historical_edge_operand<'a>(
         .iter()
         .map(|&edge| edge_contexts.context(edge))
         .collect::<Vec<_>>();
-    // Contexts whose persistent names join their Design references as a
-    // union, and contexts whose names select the faces common to all their
-    // Design references.
-    // Each set interns its boundaries apart; a boundary that no retained
-    // context names leaves the arena.
     let mut reference_contexts = Vec::new();
     let mut common_reference_contexts = Vec::new();
     let mut union_boundaries = FaceBoundaryArena::default();
@@ -8146,9 +8144,6 @@ fn bind_historical_edge_operand<'a>(
         operand.recipe_structure.as_ref(),
         &changed_edge_contexts,
     );
-    // For a Fillet or Chamfer, the faces that carry every Design reference of
-    // each name take precedence when they select an edge that the treatment
-    // transition deletes; otherwise the union of the references applies.
     operand.resolved_edge_slot = matches!(
         crate::design::design_feature_family(&scope.kind()),
         Some(
@@ -8176,6 +8171,15 @@ fn bind_historical_edge_operand<'a>(
             &operand.recipe_selectors,
             &operand.preceding_boundary_edge_slots,
         );
+    }
+    if operand.resolved_edge_slot.is_none()
+        && crate::design::design_feature_family(&scope.kind())
+            == Some(crate::design::DesignFeatureFamily::Chamfer)
+    {
+        operand.resolved_edge_slot = face_recipes
+            .get(topology, face_recipe::FaceRecipeIndex::new)
+            .resolve_edge(operand)
+            .filter(|edge| operand.transition_deleted_edge_slots.contains(edge));
     }
     if operand.resolved_edge_slot.is_none()
         && operand.preceding_candidate_faces.is_empty()
@@ -8783,7 +8787,20 @@ fn treatment_face_supports(
             let persists = preceding_faces.contains(&face);
             let source = loop_ancestry(face).and_then(|ancestry| {
                 let source = if persists {
-                    (preceding_carriers.get(&face).copied().flatten() == Some(carrier))
+                    // A persisting face whose carrier the transition recorded
+                    // again with the same geometry keeps its support role.
+                    preceding_carriers
+                        .get(&face)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|before| {
+                            before == carrier
+                                || (!preceding_surfaces.contains(&carrier)
+                                    && blend_spine::same_surface(
+                                        (preceding, before),
+                                        (result, carrier),
+                                    ))
+                        })
                         .then_some(face)?
                 } else if let Some(only) = preceding_carrier_faces.get(&carrier).copied().flatten()
                 {
