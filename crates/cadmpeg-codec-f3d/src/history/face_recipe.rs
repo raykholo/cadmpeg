@@ -186,6 +186,56 @@ impl FaceRecipeIndex {
         matches(0, &first) && matches(1, &second) || matches(1, &first) && matches(0, &second)
     }
 
+    pub(super) fn resolve_edge(
+        &self,
+        operand: &crate::records::topology::edge_identity::DesignEdgeOperand,
+    ) -> Option<i64> {
+        if operand.recipe_program.get(..9) != Some(&[-1, -1, 2, 0, -1, 1, -1, 2, -1]) {
+            return None;
+        }
+        let structure = operand.recipe_structure.as_ref()?;
+        if structure.root != 2 || structure.sides.len() != 2 {
+            return None;
+        }
+        let node = DesignFaceRecipeStructure {
+            root: 0,
+            prelude: [1, 2],
+            sides: structure.sides.clone(),
+            postlude_value: None,
+        };
+        if !node.has_valid_operand_ordinals(&operand.recipe_references) {
+            return None;
+        }
+        let ordinals = prefix_operand_ordinals(&operand.recipe_references)?;
+        let mut references = Vec::<Vec<_>>::new();
+        for (reference, &ordinal) in operand.recipe_references.iter().zip(&ordinals) {
+            if ordinal == references.len() {
+                references.push(Vec::new());
+            }
+            references.get_mut(ordinal)?.push(reference.clone());
+        }
+        let lanes = references
+            .iter()
+            .map(|references| {
+                super::recipe_index::reference_lane_faces_by(
+                    references,
+                    super::recipe_index::NameReferences::Common,
+                )
+                .faces
+                .iter()
+                .filter_map(|face| super::stable_ref(face.as_str()))
+                .collect::<BTreeSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        let mut edges = self
+            .edge_faces
+            .keys()
+            .copied()
+            .filter(|edge| self.node_matches(&node, *edge, &lanes));
+        let edge = edges.next()?;
+        edges.next().is_none().then_some(edge)
+    }
+
     pub(super) fn resolve(&self, operand: &DesignFaceOperand) -> Option<i64> {
         self.resolve_boundary(operand, false)
     }
