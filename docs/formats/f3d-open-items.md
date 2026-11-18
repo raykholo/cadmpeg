@@ -3514,7 +3514,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** These selections retain their native construction groups and `feature.profile-selection-native` losses.
 
-### DR-811. Region member lists across a crossing curve that leaves the arrangement
+### DR-820. Region member lists across a crossing curve that leaves the arrangement
 
 **Question.** Which stored relation selects one member per fragment or one member per curve run at an interior crossing whose other curve leaves the arrangement?
 
