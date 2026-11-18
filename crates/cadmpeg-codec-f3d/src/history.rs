@@ -19,6 +19,7 @@ mod blend_spine;
 mod body_candidates;
 mod body_index;
 mod cache;
+pub(crate) mod chamfer_blends;
 pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
@@ -9059,7 +9060,20 @@ fn treatment_face_supports(
             let persists = preceding_faces.contains(&face);
             let source = loop_ancestry(face).and_then(|ancestry| {
                 let source = if persists {
-                    (preceding_carriers.get(&face).copied().flatten() == Some(carrier))
+                    // A persisting face whose carrier the transition recorded
+                    // again with the same geometry keeps its support role.
+                    preceding_carriers
+                        .get(&face)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|before| {
+                            before == carrier
+                                || (!preceding_surfaces.contains(&carrier)
+                                    && blend_spine::same_surface(
+                                        (preceding, before),
+                                        (result, carrier),
+                                    ))
+                        })
                         .then_some(face)?
                 } else if let Some(only) = preceding_carrier_faces.get(&carrier).copied().flatten()
                 {
