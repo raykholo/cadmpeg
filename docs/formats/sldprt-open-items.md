@@ -841,7 +841,7 @@ resolve a seed feature?
 
 **Note.** Retain these records under their current projection until the mapping resolves.
 
-### DI-70. Extrusion profile ownership and curve roster
+### DI-76. Extrusion profile ownership and curve roster
 
 **Question.** Which feature-input reference or contained child selects the complete extrusion profile when the history record has an unresolved profile reference?
 
