@@ -1,0 +1,114 @@
+name: SolidWorks public face comparison
+
+on:
+  push:
+    branches: ['bisect/sm-faces-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sm-faces-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_RELEASE_DEBUG: 0
+  CARGO_BUILD_JOBS: 2
+
+jobs:
+  inputs:
+    if: github.repository == 'raykholo/cadmpeg'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.prepare.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Test the comparison harness
+        run: python3 -m unittest discover -s scripts/sm-faces -p 'test_*.py' -v
+      - name: Download public CC0 inputs and verify digests
+        id: prepare
+        run: python3 scripts/sm-faces/runner.py prepare --out inputs --shas scripts/sm-faces/shas.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sm-faces-inputs
+          path: inputs/
+          if-no-files-found: error
+          retention-days: 14
+
+  measure:
+    needs: inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.inputs.outputs.matrix) }}
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v7.0.1
+        with:
+          path: harness
+      - name: Checkout measured revision
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ matrix.sha }}
+          path: source
+      - uses: actions/download-artifact@v4
+        with:
+          name: sm-faces-inputs
+          path: inputs
+      - name: Build measured CLI
+        working-directory: source
+        run: |
+          mkdir -p ../results
+          rustup show active-toolchain > ../results/toolchain.txt
+          cargo build -q --locked --release -p cadmpeg --no-default-features --features sldprt,step
+          sha256sum target/release/cadmpeg > ../results/binary.sha256
+      - name: Retain the production CLI for endpoint geometry comparisons
+        if: matrix.trace
+        run: cp source/target/release/cadmpeg results/cadmpeg
+      - name: Convert, measure, and retain topology
+        env:
+          MEASURED_SHA: ${{ matrix.sha }}
+        run: python3 harness/scripts/sm-faces/runner.py run --bin source/target/release/cadmpeg --inputs inputs --out results --sha "$MEASURED_SHA" ${{ matrix.trace && '--details' || '' }}
+      - name: Add source identity tracing to a separate build
+        if: matrix.trace
+        run: |
+          python3 harness/scripts/sm-faces/runner.py instrument --source source --out results/trace.patch
+          cd source
+          cargo build -q --locked --release -p cadmpeg --no-default-features --features sldprt,step
+      - name: Trace partition and emitted face identities
+        if: matrix.trace
+        run: python3 harness/scripts/sm-faces/runner.py trace --bin source/target/release/cadmpeg --inputs inputs --out results
+      - name: Upload results and failure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sm-faces-${{ matrix.sha }}
+          path: results/
+          if-no-files-found: error
+          retention-days: 14
+
+  collect:
+    if: always() && needs.inputs.result == 'success'
+    needs: [inputs, measure]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sm-faces-*
+          path: artifacts
+      - name: Compare revisions
+        run: python3 scripts/sm-faces/runner.py collect --inputs artifacts/sm-faces-inputs --results artifacts --out comparison
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sm-faces-comparison
+          path: comparison/
+          if-no-files-found: error
+          retention-days: 14
