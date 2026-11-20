@@ -1,6 +1,8 @@
 name: Checktime bisect
 
 on:
+  push:
+    branches: ['bisect/**']
   workflow_dispatch:
     inputs:
       commits:
@@ -10,11 +12,11 @@ on:
         type: string
       source_url:
         description: Public HTTPS download URL from the public 50 source list
-        required: true
+        required: false
         type: string
       source_sha256:
         description: SHA-256 of the public 50 input file
-        required: true
+        required: false
         type: string
 
 permissions:
@@ -35,9 +37,9 @@ jobs:
     steps:
       - id: validate
         env:
-          COMMITS: ${{ inputs.commits }}
-          SOURCE_URL: ${{ inputs.source_url }}
-          SOURCE_SHA256: ${{ inputs.source_sha256 }}
+          COMMITS: ${{ inputs.commits || '["f1338aa25aecb8bdc68aa3e95a8b3c512c6a524a","800f0ddfa42edf7fd8bb4355ad901e8095809dad","5577fe81f2cc00129ce9429fb9cc22013db8a1c9","0c5dace116320e21528bf8b0e4548174eec1e24f","20abb6277a84ef3ada4040cff452a3e69024a83c"]' }}
+          SOURCE_URL: ${{ inputs.source_url || 'https://raw.githubusercontent.com/VoronDesign/Voron-1/538f354c7b1dcb14607b40784650e141bd49edae/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z' }}
+          SOURCE_SHA256: ${{ inputs.source_sha256 || '50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2' }}
         run: |
           python3 - <<'PYTHON'
           import json, os, re
@@ -81,8 +83,8 @@ jobs:
           free -k
       - name: Download public input and verify bytes
         env:
-          SOURCE_URL: ${{ inputs.source_url }}
-          SOURCE_SHA256: ${{ inputs.source_sha256 }}
+          SOURCE_URL: ${{ inputs.source_url || 'https://raw.githubusercontent.com/VoronDesign/Voron-1/538f354c7b1dcb14607b40784650e141bd49edae/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z' }}
+          SOURCE_SHA256: ${{ inputs.source_sha256 || '50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2' }}
         run: |
           set -euo pipefail
           curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
