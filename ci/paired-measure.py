@@ -138,6 +138,9 @@ def fetch():
     Path('fetch-errors.json').write_text(json.dumps(errors, indent=2) + '\n')
 
 
+QUERY_INPUT_LIMIT = 256 * 1024 * 1024
+
+
 def command(binary, args, prefix, seconds=900):
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.err').open('w') as err:
         return subprocess.run(['timeout', '--kill-after=30', str(seconds), str(binary), *map(str, args)],
@@ -202,11 +205,16 @@ def measure(binary, path, folder):
             raise ValueError('check has no report')
         if result['dump_exit'] == 0:
             result['cadir_sha256'] = digest(cadir)
-            counts = query(binary, 'counts', cadir, folder / 'counts')
-            count = counts.get('model.features', 0)
-            records = query(binary, 'item', cadir, folder / 'features', 'model.features', '--head', str(count)) if count else []
-            if len(records) != count:
-                raise ValueError('feature query count mismatch')
+            if cadir.stat().st_size > QUERY_INPUT_LIMIT:
+                # `cadmpeg query` refuses inputs above its 256 MiB limit; read the
+                # feature arena directly for large assemblies.
+                records = (json.loads(cadir.read_text()).get('model') or {}).get('features') or []
+            else:
+                counts = query(binary, 'counts', cadir, folder / 'counts')
+                count = counts.get('model.features', 0)
+                records = query(binary, 'item', cadir, folder / 'features', 'model.features', '--head', str(count)) if count else []
+                if len(records) != count:
+                    raise ValueError('feature query count mismatch')
             result['features'] = features(records)
     except (OSError, ValueError, KeyError, TypeError) as error:
         result['metric_errors'].append(str(error))
