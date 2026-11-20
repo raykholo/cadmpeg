@@ -1,0 +1,176 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Paired public Fusion measure
+
+on:
+  push:
+    branches: ['measure/**']
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Commit or branch in cadmpeg/cadmpeg (origin/main means main)
+        default: origin/main
+        required: true
+      head_ref:
+        description: Commit or branch in raykholo/cadmpeg
+        default: f3d-railcore-profiles-6
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CADMPEG_JOBS: 3
+  CARGO_BUILD_JOBS: 3
+  CARGO_INCREMENTAL: 0
+  GIT_TERMINAL_PROMPT: 0
+
+jobs:
+  plan:
+    if: github.repository == 'raykholo/cadmpeg'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      base: ${{ steps.plan.outputs.base }}
+      head: ${{ steps.plan.outputs.head }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test measurement helpers
+        run: python3 -B -m unittest discover -s ci -p test_paired_measure.py
+      - id: plan
+        env:
+          BASE_REF: ${{ inputs.base_ref || 'origin/main' }}
+          HEAD_REF: ${{ inputs.head_ref || 'f3d-railcore-profiles-6' }}
+        run: python3 ci/paired-measure.py plan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paired-plan
+          path: paired-plan.json
+          retention-days: 14
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - side: base
+            repository: cadmpeg/cadmpeg
+            ref: ${{ needs.plan.outputs.base }}
+          - side: head
+            repository: raykholo/cadmpeg
+            ref: ${{ needs.plan.outputs.head }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.ref }}
+          path: source
+          persist-credentials: false
+      - id: toolchain
+        working-directory: source
+        run: |
+          python3 - <<'PY'
+          import os, tomllib
+          with open('rust-toolchain.toml', 'rb') as source:
+              channel = tomllib.load(source)['toolchain']['channel']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'channel={channel}\n')
+          PY
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: source
+          key: paired-f3d-${{ matrix.side }}
+      - working-directory: source
+        run: cargo build -q --release -p cadmpeg --no-default-features --features f3d
+      - env:
+          SIDE: ${{ matrix.side }}
+          REPOSITORY: ${{ matrix.repository }}
+        run: |
+          mkdir -p binary
+          cp source/target/release/cadmpeg "binary/cadmpeg-$SIDE"
+          git -C source rev-parse HEAD > "binary/$SIDE.sha"
+          printf '%s\n' "$REPOSITORY" > "binary/$SIDE.repository"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paired-bin-${{ matrix.side }}
+          path: binary
+          retention-days: 14
+
+  measure:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: paired-bin-*
+          path: binary
+          merge-multiple: true
+      - run: chmod +x binary/cadmpeg-*
+      - name: Fetch pinned public inputs
+        env:
+          IDS: ${{ matrix.ids }}
+        run: python3 ci/paired-measure.py fetch
+      - name: Measure both commits
+        env:
+          IDS: ${{ matrix.ids }}
+        run: python3 ci/paired-measure.py run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paired-shard-${{ matrix.shard }}
+          path: paired-results
+          if-no-files-found: error
+          retention-days: 14
+
+  report:
+    needs: [plan, build, measure]
+    if: always() && github.repository == 'raykholo/cadmpeg'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: paired-*
+          path: artifacts
+      - name: Write paired diff
+        run: python3 ci/paired-measure.py report artifacts > paired-report.md
+      - if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          report = Path('paired-report.md').read_bytes()
+          if len(report) > 900_000:
+              report = report[:900_000].rsplit(b'\n', 1)[0]
+              report += b'\n\nFull diff: paired-report artifact on this run.\n'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'ab') as summary:
+              summary.write(report)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paired-report
+          path: paired-report.md
+          retention-days: 14
