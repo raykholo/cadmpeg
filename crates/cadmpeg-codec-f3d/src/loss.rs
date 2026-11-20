@@ -623,6 +623,10 @@ pub(crate) enum F3dLossCode {
     ConfigurationPropertyUnprojected,
     /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
     HistoryRollbackUnread,
+    /// A coordinate frame retains its source construction references and expressions.
+    CoordinateSystemConstructionNative,
+    /// A coordinate-system scope has an unresolved solved frame.
+    CoordinateSystemFrameUnresolved,
     /// Feature history-state dependency links were not projected.
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
@@ -1660,6 +1664,8 @@ impl F3dLossCode {
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
+        Self::CoordinateSystemConstructionNative,
+        Self::CoordinateSystemFrameUnresolved,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
@@ -2623,6 +2629,10 @@ impl F3dLossCode {
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::CoordinateSystemConstructionNative => {
+                "feature.coordinate-system-construction-native"
+            }
+            Self::CoordinateSystemFrameUnresolved => "feature.coordinate-system-frame-unresolved",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
@@ -3607,6 +3617,8 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4322,6 +4334,8 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -5142,6 +5156,8 @@ mod tests {
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",
+                "feature.coordinate-system-construction-native",
+                "feature.coordinate-system-frame-unresolved",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
