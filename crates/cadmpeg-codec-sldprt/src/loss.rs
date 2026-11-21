@@ -160,6 +160,12 @@ pub(crate) enum SldprtLossCode {
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
     FeatureEdgeTerminalUnresolved,
+    /// Generated blend edge retains its identity while source geometry is unresolved.
+    FeatureBlendEdgeGeometryUnavailable,
+    /// Blend operands lack a resolved source-edge chain traversal.
+    FeatureBlendEdgeChainUnavailable,
+    /// Variable-radius stations lack a resolved source-chain start vertex.
+    FeatureVariableFilletStartVertexUnavailable,
     /// A compact body-path boundary has competing local-ID and tagged-entry spellings.
     FeatureBodyPathAmbiguous,
     /// Body delete/keep feature retains native selection without a decoded mode.
@@ -410,6 +416,9 @@ impl SldprtLossCode {
         Self::FeatureExtrudeStartUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
+        Self::FeatureBlendEdgeGeometryUnavailable,
+        Self::FeatureBlendEdgeChainUnavailable,
+        Self::FeatureVariableFilletStartVertexUnavailable,
         Self::FeatureBodyPathAmbiguous,
         Self::FeatureBodyRetentionUnresolved,
         Self::GeometryFaceSupportSurfaceUntyped,
@@ -549,6 +558,11 @@ impl SldprtLossCode {
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
+            Self::FeatureBlendEdgeGeometryUnavailable => "feature.blend-edge-geometry-unavailable",
+            Self::FeatureBlendEdgeChainUnavailable => "feature.blend-edge-chain-unavailable",
+            Self::FeatureVariableFilletStartVertexUnavailable => {
+                "feature.variable-fillet-start-vertex-unavailable"
+            }
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
@@ -722,6 +736,9 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
+            | Self::FeatureBlendEdgeGeometryUnavailable
+            | Self::FeatureBlendEdgeChainUnavailable
+            | Self::FeatureVariableFilletStartVertexUnavailable
             | Self::FeatureBodyPathAmbiguous
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
@@ -941,6 +958,9 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
+            | Self::FeatureBlendEdgeGeometryUnavailable
+            | Self::FeatureBlendEdgeChainUnavailable
+            | Self::FeatureVariableFilletStartVertexUnavailable
             | Self::FeatureBodyPathAmbiguous
             | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
         }
@@ -1171,6 +1191,9 @@ mod tests {
                 "feature.extrude-start-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
+                "feature.blend-edge-geometry-unavailable",
+                "feature.blend-edge-chain-unavailable",
+                "feature.variable-fillet-start-vertex-unavailable",
                 "feature.body-path-ambiguous",
                 "feature.body-retention-unresolved",
                 "geometry.face-support-surface-untyped",

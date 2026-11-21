@@ -8,6 +8,7 @@ fn empty_report(geometry_transferred: bool) -> cadmpeg_ir::codec::DecodeBody {
 }
 
 mod admission;
+mod blend_edge_geometry;
 mod body_membership;
 mod configuration;
 mod configuration_completeness;

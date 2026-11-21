@@ -818,3 +818,17 @@ fn a_mark_record_is_noted_with_the_feature_that_holds_it() {
         }]
     );
 }
+
+#[test]
+fn an_unread_named_owner_keeps_its_edge_operand_unbound() {
+    let references = vec![super::reader::EdgeReference {
+        owner: Some(10),
+        marker: 40,
+        faces: None,
+    }];
+    assert!(super::edge_operands(&references, &HashMap::new()).is_empty());
+    let completed = super::edge_operands(&references, &HashMap::from([(10, 90)]));
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].owner, 10..90);
+    assert_eq!(completed[0].marker, 40);
+}

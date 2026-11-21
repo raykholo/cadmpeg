@@ -70,11 +70,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-05. Variable-radius law and result parameterization
 
-**Question.** How does a complete variable-radius law, including intermediate controls, map to the parameterization and individual faces of every result patch?
+**Question.** How do variable-radius stations bind to the source-chain start vertex, intermediate chain positions, and individual result patches?
 
-**Known.** The design law and evaluated result have separate carriers. An owned generated-surface identity joins a typed FACE through its complete `FACE_ID_2001` identity; the FACE's surface reference selects the stored NURBS carrier. Resolve the attribute definition's identifier, not an adjacent KEY name. Two independently checked joins retain ordered endpoint radii of 5–50 mm and 50–4 mm, and four rational NURBS endpoint sections reproduce those radii. The existing reader retains both laws and the generated identities.
+**Known.** The design law and evaluated result have separate carriers. An owned generated-surface identity joins a typed FACE through its complete `FACE_ID_2001` identity; the FACE's surface reference selects the stored NURBS carrier. Resolve the attribute definition's identifier, not an adjacent KEY name. Two independently checked joins retain ordered endpoint radii of 5–50 mm and 50–4 mm, and four rational NURBS endpoint sections reproduce those radii. The existing reader retains both laws and the generated identities. Radius-station index order and selected-edge record order are separate carriers. A station-to-source-start-vertex binding remains unresolved.
 
-**Need.** Prove intermediate-control parameterization, complete selector-tail and collision behavior, and the explicit per-feature result-face association across arbitrary patches. Missing or nonunique complete identities must remain unresolved; geometric resemblance and history order cannot choose a result.
+**Need.** Resolve the source start vertex for the first radius station and the oriented source-edge chain. Prove intermediate-control parameterization, complete selector-tail and collision behavior, and the per-feature result-face association across arbitrary patches.
 
 ### GC-08. Duplicate geometry carrier identities
 
@@ -499,19 +499,19 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 ### DI-25. Component-edge path reconciliation
 
-**Question.** How does an edge selected by an entry-form `moCompEdge_c` path map to an edge in the final B-rep?
+**Question.** How do component-edge identities establish source curves, chain membership, and oriented traversal order?
 
-**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `attr` is a pointer cell at body +0" define final B-rep edge identity and direction. `FACE_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
+**Known.** The entry path identifies a generated feature-local edge. The four-surface form in `sldprt.md` §2.3 identifies support and endpoint surfaces through complete `FACE_ID_2001` lists. Four planar carriers establish a bounded source line. Repeated component references can name one selected edge. Native record order preserves the operand roster. Multiple selected edges can be disjoint. The source-chain partition, traversal order, and traversal senses remain unresolved. The ordered endpoint-surface hops establish endpoint positions. A one-edge operand still requires its authored traversal sense. Direct edge-identity forms retain their producer and class fields. `EDGE_PERM_ID_2_2003` occurs on final B-rep edges.
 
-**Need.** We must know the mapping to bind the selected operation edge.
+**Need.** Establish the source-chain partition, ordered edge traversal, and chain endpoint orientation. Establish the `EDGE_PERM_ID_2_2003` grammar and its relation to direct edge-identity hops. Establish source curves for curved support and endpoint surfaces.
 
 ### DI-26. Compact edge-vector B-rep reconciliation
 
 **Question.** How does a compact edge vector map its feature-local edge path to a final B-rep edge?
 
-**Known.** `sldprt.md` §2 defines the duplicated-marker framing, count, lane-local selector, typed and reference-list entry forms, separators, terminal slots, and lane-local type signatures. The ordered compact vector and its producer-feature paths are retained. The terminal component identifies a feature-local generated edge, but it does not by itself identify the final B-rep edge.
+**Known.** `sldprt.md` §2 defines the duplicated-marker framing, count, lane-local selector, typed and reference-list entry forms, separators, terminal slots, and lane-local type signatures. The ordered compact vector and its producer-feature paths are retained. The object-pointer form preserves each complete surface hop. Its component-edge parent establishes the operand role.
 
-**Need.** We must define the topology join from the retained compact edge identity to the final B-rep edge before projecting the selected edge.
+**Need.** Establish the topology join for compact vectors whose surface-hop classes and complete fields remain unresolved.
 
 ### DI-28. Sweep reference child versions
 
@@ -930,9 +930,9 @@ resolve a seed feature?
 
 **Question.** What are the layouts of the `Fillet_c` and `Chamfer_c` objects that do not follow `sldprt.md` §2.3, and what do their fields mean?
 
-**Known.** Some fillets write a long body of repeated records after the +54 u32, with `0e 01 00 00` and a class tag in each record. Some write a body shorter than 68 bytes. Some have other values in the first 54 bytes. In a fillet the two u32 at second-table +30 and +64 usually differ by one; in a chamfer the +30 value is usually zero.
+**Known.** Some fillets write a long body of repeated records after the +54 u32, with `0e 01 00 00` and a class tag in each record. Some write a body shorter than 68 bytes. Some have other values in the first 54 bytes. In a fillet the two u32 at second-table +30 and +64 usually differ by one; in a chamfer the +30 value is usually zero. The chamfer tail-form word after the 66 zero bytes has values `1` and `2`; both precede the same 40-byte end block. Its relation to the chamfer parameter mode remains unresolved.
 
-**Need.** A writer that creates or changes a fillet or chamfer, including multi-edge and variable forms, has to write these bytes.
+**Need.** Establish the chamfer tail-form word's parameter-mode semantics. A writer that creates or changes a fillet or chamfer, including multi-edge and variable forms, has to write these bytes.
 
 ### EV-13. Feature folder bytes
 

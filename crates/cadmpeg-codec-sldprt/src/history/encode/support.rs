@@ -127,6 +127,8 @@ pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> 
             Some(native.clone())
         }
         EdgeSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
+        EdgeSelection::Historical { native, .. }
+        | EdgeSelection::HistoricalPartial { native, .. } => Some(native.as_str().to_owned()),
         EdgeSelection::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()
@@ -250,5 +252,30 @@ pub(super) fn path_source(
                 .join(","),
         ),
         PathRef::Edges(_) | PathRef::Curves(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::edge_selection_value;
+    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+
+    #[test]
+    fn historical_blend_edges_keep_the_native_selection_for_rewrite() {
+        let state = FeatureInputTopologyId::mint("synthetic:test:id#state").expect("state");
+        let edge = HistoricalEdgeId::mint("synthetic:test:id#edge").expect("edge");
+        let native = "sldprt:feature-input:edge-ids:4,2,1,0";
+        let complete = EdgeSelection::historical(state.clone(), vec![edge.clone()], native.into())
+            .expect("historical edge");
+        let partial = EdgeSelection::historical_partial(
+            state,
+            vec![edge],
+            vec!["native:unread-edge".into()],
+            native.into(),
+        )
+        .expect("partial historical edges");
+        assert_eq!(edge_selection_value(&complete).as_deref(), Some(native));
+        assert_eq!(edge_selection_value(&partial).as_deref(), Some(native));
     }
 }

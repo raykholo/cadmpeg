@@ -2798,9 +2798,18 @@ pub(crate) fn fillet(r: &mut Reader<'_>) -> Res<V> {
     Ok(n)
 }
 
+fn chamfer_tail_form(reader: &mut Reader<'_>) -> Res<u32> {
+    let form = reader.u32()?;
+    if matches!(form, 1 | 2) {
+        Ok(form)
+    } else {
+        Err(bad("chamfer tail form"))
+    }
+}
+
 /// `Chamfer_c`.
 pub(crate) fn chamfer(r: &mut Reader<'_>) -> Res<V> {
-    let n = feature(r, "Fillet_c")?;
+    let mut n = feature(r, "Fillet_c")?;
     r.skip(58);
     r.ptr(Some(PMARK))?;
     lists_lead(r)?;
@@ -2836,7 +2845,8 @@ pub(crate) fn chamfer(r: &mut Reader<'_>) -> Res<V> {
         r.skip(pre);
         r.ptr(None)?;
         r.expect_zeros(66, "chamfer 66 zero")?;
-        r.expect_bytes(&[1, 0, 0, 0], "chamfer u32 1")?;
+        let tail_form = chamfer_tail_form(r)?;
+        n.set("tail_form", V::from(tail_form));
         if !r.eq(r.p, &[6, 0, 0, 0, 0, 0]) || !r.zeros(r.p + 26, 14) {
             return Err(bad("chamfer end block"));
         }
@@ -3809,4 +3819,29 @@ pub(crate) fn lineaxis(r: &mut Reader<'_>) -> Res<V> {
     r.ptr(None)?;
     axistail(r)?;
     Ok(list(v))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::chamfer_tail_form;
+    use crate::carchive::reader::Reader;
+    use std::collections::HashMap;
+
+    #[test]
+    fn chamfer_tail_forms_preserve_both_complete_words() {
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        for form in [1u32, 2] {
+            let bytes = form.to_le_bytes();
+            let mut reader = Reader::new(&ctx, &bytes, 0, HashMap::new(), 1, Some(16000));
+            assert_eq!(chamfer_tail_form(&mut reader).expect("tail form"), form);
+            assert_eq!(reader.p, bytes.len());
+        }
+        for form in [0u32, 3] {
+            let bytes = form.to_le_bytes();
+            let mut reader = Reader::new(&ctx, &bytes, 0, HashMap::new(), 1, Some(16000));
+            assert!(chamfer_tail_form(&mut reader).is_err());
+        }
+        let mut reader = Reader::new(&ctx, &[2, 0], 0, HashMap::new(), 1, Some(16000));
+        assert!(chamfer_tail_form(&mut reader).is_err());
+    }
 }

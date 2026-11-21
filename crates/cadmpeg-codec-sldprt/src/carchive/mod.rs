@@ -42,9 +42,71 @@ pub(crate) struct Walk {
     /// The `moPMarkRecord_c` objects read, each with the named object that
     /// holds it.
     pub(crate) marks: Vec<reader::MarkOwner>,
+    pub(crate) edge_references: Vec<EdgeOperand>,
+    pub(crate) reference_rules: ReferenceRules,
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ReferenceRules {
+    known: HashMap<u32, Arc<str>>,
+    counter: u32,
+    version: Option<u32>,
+}
+
+impl ReferenceRules {
+    pub(crate) fn surface_hops(
+        &self,
+        ctx: &DecodeContext<'_>,
+        payload: &[u8],
+        marker: usize,
+    ) -> Result<Option<[rules::idrep::SurfaceIdentity; 4]>, cadmpeg_core::CodecError> {
+        use crate::layout::identity_reference_header as header;
+        let Some(start) = marker.checked_sub(header::MARKER) else {
+            return Ok(None);
+        };
+        if start
+            .checked_add(header::LEN)
+            .is_none_or(|end| end > payload.len())
+        {
+            return Ok(None);
+        }
+        if View::u32_le_at(payload, start + header::FORM) != Some(1)
+            || View::u32_le_at(payload, start + header::ZERO_WORD) != Some(0)
+            || View::u32_le_at(payload, start + header::HOP_COUNT) != Some(4)
+            || View::u32_le_at(
+                payload,
+                start + header::HOP_COUNT + std::mem::size_of::<u32>(),
+            )
+            .is_none_or(|selector| selector & 0xffff_ff00 != 0x0000_0200)
+            || View::u16_le_at(payload, start + header::ZERO_TAIL) != Some(0)
+        {
+            return Ok(None);
+        }
+        let mut reader = reader::Reader::new(
+            ctx,
+            payload,
+            start,
+            self.known.clone(),
+            self.counter,
+            self.version,
+        );
+        match rules::refs::surface_hops(&mut reader) {
+            Ok(faces) => Ok(faces),
+            Err(reader::Stop::Refused(limit)) => Err(limit.into()),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
+/// A component-edge operand in a completed named object.
+#[derive(Debug, Clone)]
+pub(crate) struct EdgeOperand {
+    pub(crate) owner: std::ops::Range<usize>,
+    pub(crate) marker: usize,
+    pub(crate) faces: Option<[rules::idrep::SurfaceIdentity; 4]>,
 }
 
 /// A sketch's profile body and the stream extent of the profile-family object
@@ -71,6 +133,23 @@ fn sketch_profiles(
                 stream: body.stream,
                 owner_start: body.owner,
                 owner_end: *ends.get(&body.owner)?,
+            })
+        })
+        .collect()
+}
+
+fn edge_operands(
+    references: &[reader::EdgeReference],
+    ends: &HashMap<usize, usize>,
+) -> Vec<EdgeOperand> {
+    references
+        .iter()
+        .filter_map(|edge| {
+            let owner = edge.owner?;
+            Some(EdgeOperand {
+                owner: owner..*ends.get(&owner)?,
+                marker: edge.marker,
+                faces: edge.faces,
             })
         })
         .collect()
@@ -107,11 +186,18 @@ pub(crate) fn walk<'b>(
             Err(stop) => break Status::Stop(stop),
         }
     };
+    let edge_references = edge_operands(&r.edge_references, &r.ends);
     Some(Walk {
         sketch_profiles: sketch_profiles(&r.profile_bodies, &r.ends),
         status,
         parameters: r.parameters,
         marks: r.marks,
+        edge_references,
+        reference_rules: ReferenceRules {
+            known: r.known,
+            counter: r.counter,
+            version: ver,
+        },
         #[cfg(test)]
         trace: r.trace,
         #[cfg(test)]

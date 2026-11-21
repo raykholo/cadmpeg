@@ -2119,6 +2119,39 @@ pub(crate) fn append_design_losses(
         )));
     }
 
+    let missing_blend_edge_geometry = evaluated_feature_states
+        .iter()
+        .map(|state| {
+            crate::history::blend_edges::missing_geometry_count(state.definition.operation())
+        })
+        .sum::<usize>();
+    if missing_blend_edge_geometry > 0 {
+        report.losses.push(SldprtLossCode::FeatureBlendEdgeGeometryUnavailable.note(format!(
+            "{missing_blend_edge_geometry} selected generated blend edge(s) retain their producer and persistent path; their saved support and endpoint identities do not establish a bounded source edge in the final blend result."
+        )));
+    }
+
+    let missing_blend_chains = evaluated_feature_states
+        .iter()
+        .map(|state| crate::history::blend_edges::missing_chain_count(state.definition.operation()))
+        .sum::<usize>();
+    if missing_blend_chains > 0 {
+        report.losses.push(SldprtLossCode::FeatureBlendEdgeChainUnavailable.note(format!(
+            "{missing_blend_chains} fillet/chamfer group(s) lack a resolved oriented source-edge chain: the chain partition, edge traversal order, and traversal senses remain native."
+        )));
+    }
+    let missing_station_starts = evaluated_feature_states
+        .iter()
+        .map(|state| {
+            crate::history::blend_edges::missing_station_start_count(state.definition.operation())
+        })
+        .sum::<usize>();
+    if missing_station_starts > 0 {
+        report.losses.push(SldprtLossCode::FeatureVariableFilletStartVertexUnavailable.note(format!(
+            "{missing_station_starts} variable-radius fillet group(s) have no binding from the first radius station to a resolved source-chain start vertex."
+        )));
+    }
+
     let missing_profile_curves = profile_data.missing_extrudes(&ir.model).count();
     if missing_profile_curves > 0 {
         report.losses.push(SldprtLossCode::FeatureProfileCurvesUnavailable.note(format!(
@@ -3450,7 +3483,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, mut blend_inputs) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3459,6 +3492,7 @@ fn build_geometry_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    blend_inputs.retain_operands(&mut lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -3892,6 +3926,13 @@ fn build_geometry_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
+    crate::history::blend_edges::project(
+        ctx,
+        &mut ir,
+        &brep.native_face_identities,
+        &all_lanes,
+        &blend_inputs,
+    )?;
     ir.model.pmi = crate::swift::annotations(
         ctx,
         scan,
@@ -3915,7 +3956,7 @@ fn build_geometry_ir(
     )?;
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
-        feature_input_lanes: all_lanes,
+        feature_input_lanes: blend_inputs.native_lanes(all_lanes),
         pmi_dimensions,
     };
     assign_native_configuration_indices(&ir, &mut native);
@@ -4711,7 +4752,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, mut blend_inputs) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -4720,6 +4761,7 @@ fn build_metadata_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    blend_inputs.retain_operands(&mut lanes)?;
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -5143,7 +5185,7 @@ fn build_metadata_ir(
     }
     let native = crate::native::SldprtNative {
         feature_histories: histories,
-        feature_input_lanes: all_lanes,
+        feature_input_lanes: blend_inputs.native_lanes(all_lanes),
         pmi_dimensions,
     };
     ctx.admit_entities(

@@ -2,6 +2,7 @@
 //! `SolidWorks` Keywords XML feature history.
 
 pub(crate) mod bind;
+pub(crate) mod blend_edges;
 pub(crate) mod classify;
 pub(crate) mod configuration;
 mod encode;

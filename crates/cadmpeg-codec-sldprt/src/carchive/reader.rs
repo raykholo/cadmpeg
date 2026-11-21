@@ -326,7 +326,7 @@ pub(crate) struct Reader<'b> {
     pub(crate) favflag: Option<usize>,
     /// The objects being read, outermost first: class and tag position.
     pub(crate) open: Vec<(Arc<str>, usize)>,
-    /// Where each profile-family object read ends, by its tag position.
+    /// Completed named and profile object extents, by tag position.
     pub(crate) ends: HashMap<usize, usize>,
     /// The sketch profile bodies read.
     pub(crate) profile_bodies: Vec<ProfileBody>,
@@ -334,6 +334,7 @@ pub(crate) struct Reader<'b> {
     pub(crate) names: HashMap<usize, String>,
     /// The `moPMarkRecord_c` objects read, in stream order.
     pub(crate) marks: Vec<MarkOwner>,
+    pub(crate) edge_references: Vec<EdgeReference>,
 }
 
 /// A `moPMarkRecord_c` object the walk read and the named object that holds it.
@@ -343,6 +344,14 @@ pub(crate) struct MarkOwner {
     pub(crate) at: usize,
     /// The name of the innermost open named object around the record.
     pub(crate) owner: Option<String>,
+}
+
+/// An edge-reference object owned by a component-edge carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EdgeReference {
+    pub(crate) marker: usize,
+    pub(crate) owner: Option<usize>,
+    pub(crate) faces: Option<[super::rules::idrep::SurfaceIdentity; 4]>,
 }
 
 /// Reader state saved before a speculative read.
@@ -362,6 +371,7 @@ pub(crate) struct Snapshot {
     profile_bodies: Vec<ProfileBody>,
     names: HashMap<usize, String>,
     marks: Vec<MarkOwner>,
+    edge_references: Vec<EdgeReference>,
 }
 
 impl<'b> Reader<'b> {
@@ -393,6 +403,7 @@ impl<'b> Reader<'b> {
             profile_bodies: Vec::new(),
             names: HashMap::new(),
             marks: Vec::new(),
+            edge_references: Vec::new(),
         }
     }
 
@@ -414,6 +425,7 @@ impl<'b> Reader<'b> {
             profile_bodies: self.profile_bodies.clone(),
             names: self.names.clone(),
             marks: self.marks.clone(),
+            edge_references: self.edge_references.clone(),
         }
     }
 
@@ -434,6 +446,7 @@ impl<'b> Reader<'b> {
         self.profile_bodies = snapshot.profile_bodies;
         self.names = snapshot.names;
         self.marks = snapshot.marks;
+        self.edge_references = snapshot.edge_references;
     }
 
     fn take<const N: usize>(&mut self) -> Res<[u8; N]> {
@@ -655,7 +668,7 @@ impl<'b> Reader<'b> {
         drop(guard);
         self.depth -= 1;
         let value = value?;
-        if PROFILE_FAMILY.contains(&&*class) {
+        if PROFILE_FAMILY.contains(&&*class) || self.names.contains_key(&at) {
             self.ends.insert(at, self.p);
         }
         let retained = retained_value_bytes(&value)?;
@@ -690,11 +703,16 @@ impl<'b> Reader<'b> {
     /// The name of the innermost open named object other than the object
     /// being read.
     pub(crate) fn holder_name(&self) -> Option<String> {
+        self.holder_start()
+            .and_then(|at| self.names.get(&at).cloned())
+    }
+
+    pub(crate) fn holder_start(&self) -> Option<usize> {
         self.open
             .iter()
             .rev()
             .skip(1)
-            .find_map(|(_, at)| self.names.get(at).cloned())
+            .find_map(|(_, at)| self.names.contains_key(at).then_some(*at))
     }
 
     /// The class of the most recently opened object.

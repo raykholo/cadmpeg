@@ -942,8 +942,6 @@ A `moCompEdge_c` child carries an ordered compact edge-selection vector. The vec
 
 A reference-list edge vector stores a record identifier at marker −4 and begins its references after the two zero bytes at marker +16. The selector at marker −8 has byte 1 equal to `02`; byte 0 is a lane-specific subtype. Each reference contains one or more adjacent hops followed by one little-endian u32 local identifier. A hop is a non-sentinel high-bit u16 instance token, u16 zero, and a 12-byte type signature. The signature contains a four-byte prefix learned from the lane, a nonzero u32 producer object identifier, and a nonzero u32 timestamp. The prefix is constant within a lane and is not fixed across lanes; its first u16 is a non-sentinel high-bit token and its second u16 is nonzero. The producer object identifier is the native object identifier of the feature that created the referenced entity. The local identifier closes the reference because it is not followed by another valid hop signature. An `ff ff ff ff` sentinel and zero through ten zero padding bytes may separate consecutive references; the references may instead be adjacent when the next hop is structurally valid. The count at marker −12 is the reference count and frames the complete reference list. It may include one terminal null slot encoded as 16 through 18 zero bytes followed by `ff fe ff`; the preceding non-null references remain complete. Reference and hop boundaries are retained independently.
 
-Structurally valid edge-selection vectors in a fillet or chamfer feature-object interval whose component path or terminal feature-reference cell identifies a feature preceding the consumer are the feature's input edge operands. Within one history, a positive feature object ID smaller than the consumer's positive object ID precedes it; when either object omits a positive ID, Keywords serialization order supplies the fallback. When the interval contains at least one such input-owned vector, vectors without a preceding producer are cached result references and do not belong to the selection. Multiple input-owned vectors retain stream order as one ordered native edge selection. If no vector identifies a preceding producer, every structurally valid vector remains the native selection. The first vector following a child declaration and repeated children whose body begins `2d 80 02` use the same vector grammar.
-
 The input-edge roster of a fillet object ends before its first `moEdgeDim_c` or `moVertDim_c` child. A direct dimension child begins with `20 81 08 00`, the direct class declaration, and the lane-scoped class token. A repeated dimension child begins with `20 81 10 00`, a non-sentinel high-bit instance token, and that same class token. Component vectors inside these dimension children are radius-control references and are not fillet edge operands.
 
 In an entry-form edge-selection vector, type-signature bytes 4 through 7 contain the native feature object ID traversed by that path entry. The ordered component identifiers form the persistent edge identity. The terminal feature-reference cell identifies the feature result owning that identity when present. Otherwise the last entry whose native object ID uniquely names a history feature identifies the owner; trailing entries may name non-feature result components. An object ID shared by multiple history features leaves the owner unresolved. The consuming fillet or chamfer depends on the ordered unique features traversed by all entries and terminal feature-reference cells.
@@ -1812,6 +1810,35 @@ The hop a pattern or mirror hop points to is written in place inside it, and so 
 
 A `moFR_c` object names the feature that produced the entity. It writes an object pointer to a `moExtObject_c` object (written in place on its first use, and referenced after), a little-endian u32, and a little-endian u32 time stamp in seconds since 1970-01-01 UTC. The u32 is the object identifier of the producing history feature, the identifier that `FACE_ID_2001` value 1 carries (§5).
 
+A `Fillet_c` or `Chamfer_c` object stores its selected edge references inside
+`moCompEdge_c` objects. Edge references in the feature head also carry cached result identities.
+The component-edge parent assigns the input-operand role. Component references
+preserve serialized operand-roster order. Repeated component references can
+identify the same selected edge.
+
+A `VarFillet_c` input roster precedes its first `moEdgeDim_c` or
+`moVertDim_c` dimension child. Each selected edge's four-surface reference
+uses the same identity-reference header and complete surface-hop fields.
+The dimension children carry the radius-control references.
+
+A four-surface edge reference has two support-surface hops followed by two
+endpoint-surface hops. Each hop includes its document, producer, timestamp,
+class, and complete class fields. An end-face hop includes both the end selector
+and the region. These fields join the hop to the complete `FACE_ID_2001` list
+in §5. Equal local identifiers with different class fields name different
+surfaces.
+
+For four planar surfaces, the first endpoint is the intersection of the two
+support planes and the first endpoint plane. The second endpoint uses the
+second endpoint plane. The midpoint is the mean of the endpoints. The support
+planes define the source line before the blend. The blend's generated face
+joins both support faces and both endpoint faces. A variable fillet can store
+the result as a NURBS carrier. Its source line remains the intersection of
+the two planar supports. A straight fillet has a cylindrical carrier whose
+axis is parallel to this line and whose distance from each support plane is
+the cylinder radius. A straight chamfer has a planar carrier parallel to this
+line.
+
 A `moExtObject_c` object names a document. It writes two object pointers to `moCStringHandle_c` objects (the document's path and its name), little-endian u16 `2`, a byte, a little-endian u32, three Unicode `CString` values, 17 or 18 bytes, and a Unicode `CString` holding a configuration name; in a file whose `swVersion` is below 17000, 12 bytes follow the configuration name. A `moCStringHandle_c` object writes one Unicode `CString`. The other `moExtObject_c` forms are open item EV-14.
 
 After the feature-object block, a `Fillet_c` fillet and a `Chamfer_c` chamfer write these bytes of their own, or one of the forms of open item EV-12:
@@ -2022,7 +2049,7 @@ An extrusion that ends at a face writes its 76-byte block in two parts: the firs
 
 A `moPMarkRecord_c` object writes a little-endian u32 and a little-endian u32 form flag. In the flag-`0` form a further little-endian u32 can precede the object (a record with X `5`); after the object and its u16, further pairs of a GUID `CString` and a face object can follow, and a last GUID `CString`. The object pointer and u16 after the 32 zero bytes and the u32 are, when the next word is not a class token, a little-endian u32 count *n*, *n* eight-byte entries (a little-endian u32 Unix time stamp and a u32; or, when that u32 is `-1`, 24-byte entries: the time stamp, i32 `-1`, u32 `1`, `2`, `0`, `1`) and, when *n* is non-zero, little-endian u32 `0`; a count of zero writes the same four zero bytes as a null pointer and u16 `0`. With flag `1` it writes a little-endian u32 count *n*, *n* six-byte entries, eight zero bytes, little-endian u32 `20`, u32 `0`, u32 `20` and sixteen zero bytes. With flag `0` it writes 32 bytes — twelve bytes (zero, or a u32 time stamp first, `swVersion` 15000), then two lists each of a little-endian u32 count, that many pairs of u32 (body identifiers: a body mirror's) and u32 `0`, then u32 `0`; zero when both lists are empty — a little-endian u32, an object pointer, a little-endian u16 and a little-endian u32 *g*: fourteen zero bytes follow when *g* is `0`; when *g* is `1`, a little-endian u32, a Unicode `CString` holding a GUID, fourteen zero bytes and, when a string follows, an empty `CString`, little-endian u32 `1` and a `CString` naming the body (a base body's import name).
 
-A `Chamfer_c` chamfer writes a feature, 58 bytes and a `moPMarkRecord_c` (id-range form), `suObList` objects and the display objects of its dimensions. In files of `swVersion` 15000 and 16000, three zero bytes, `0a 01`, the chamfered edge (`moCompEdge_c`), 66 zero bytes, u32 `1`, a 40-byte block of the fillet's form (u32 `6`, u16 `0`, five u32 values, fourteen zero bytes; `0x58b6` and `0x59cf` where the fillet writes `0x58b7` and `0x59d1`), u32 `1`, `00 01` and, in some, four zero bytes follow; files of `swVersion` 14000 and 16000 can write `00 00 01 0a 01` for the first five bytes, and files of 17000 and 19000 write the edge without them. A chamfer of `swVersion` 17000 can also open with a face or edge, u16 `0`, a `suObList` and its display objects before the five bytes and the edge. Other chamfer forms are open item EV-17.
+A `Chamfer_c` chamfer writes a feature, 58 bytes and a `moPMarkRecord_c` (id-range form), `suObList` objects and the display objects of its dimensions. In files of `swVersion` 15000 and 16000, three zero bytes, `0a 01`, the chamfered edge (`moCompEdge_c`), 66 zero bytes, a u32 tail-form word (`1` or `2`), a 40-byte block of the fillet's form (u32 `6`, u16 `0`, five u32 values, fourteen zero bytes; `0x58b6` and `0x59cf` where the fillet writes `0x58b7` and `0x59d1`), u32 `1`, `00 01` and, in some, four zero bytes follow; files of `swVersion` 14000 and 16000 can write `00 00 01 0a 01` for the first five bytes, and files of 17000 and 19000 write the edge without them. A chamfer of `swVersion` 17000 can also open with a face or edge, u16 `0`, a `suObList` and its display objects before the five bytes and the edge. Other chamfer forms are open item EV-17.
 
 A revolve (`moRevolution_c`, `moRevCut_c`) shares the extrusion's head up to its `moPMarkRecord_c`. Then come nine zero bytes (with u32 `1` at +5 in some files, whose `moRevEndSpec_c` also holds a u32 `6` at +8 of its 24 zero bytes), a `suObList` (empty), a little-endian u32 (`3` or `5`), a little-endian u32, the axis reference (a `moLineRef_w`), u32 `0` in files of `swVersion` 16000 and above, seven f64 (a point on the axis, its direction and a value) and a zero byte, then a `moRevEndSpec_c` (a little-endian u32 end type, 24 zero bytes, two f64 (`0.01`) and eight zero bytes), the display objects of its dimensions, and six zero bytes (seven from `swVersion` 18000, and in some `swVersion` 17000 revolves; when an object follows at once the run is seven and not six). It writes no 76-byte block, `moFromEndSpec_c` or trailing pointers. The axis's handle tail writes u16 `1` where a sketch entity handle writes u16 `0`.
 

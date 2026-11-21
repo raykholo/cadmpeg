@@ -621,7 +621,7 @@ fn append_joined_ids(value: &mut String, ids: impl Iterator<Item = impl std::fmt
     }
 }
 
-pub(super) fn compact_edge_path_value(selection: &FeatureInputEdgeSelection) -> String {
+pub(crate) fn compact_edge_path_value(selection: &FeatureInputEdgeSelection) -> String {
     let mut value = String::new();
     append_compact_edge_path(&mut value, selection);
     value
