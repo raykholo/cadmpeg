@@ -1,23 +1,8 @@
-name: Checktime bisect
+name: Checktime bisect (paired)
 
 on:
   push:
     branches: ['bisect/**']
-  workflow_dispatch:
-    inputs:
-      commits:
-        description: JSON array of full main commit SHAs
-        required: true
-        default: '["f1338aa25aecb8bdc68aa3e95a8b3c512c6a524a","800f0ddfa42edf7fd8bb4355ad901e8095809dad","5577fe81f2cc00129ce9429fb9cc22013db8a1c9","0c5dace116320e21528bf8b0e4548174eec1e24f","20abb6277a84ef3ada4040cff452a3e69024a83c"]'
-        type: string
-      source_url:
-        description: Public HTTPS download URL from the public 50 source list
-        required: false
-        type: string
-      source_sha256:
-        description: SHA-256 of the public 50 input file
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -27,123 +12,58 @@ env:
   CARGO_BUILD_JOBS: 3
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: never
+  SOURCE_URL: https://raw.githubusercontent.com/VoronDesign/Voron-1/538f354c7b1dcb14607b40784650e141bd49edae/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z
+  SOURCE_SHA256: 50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2
 
 jobs:
-  select:
-    if: github.repository == 'raykholo/cadmpeg' && startsWith(github.ref, 'refs/heads/bisect/')
+  pair:
+    if: github.repository == 'raykholo/cadmpeg'
+    name: pair ${{ matrix.pair[1] }}
     runs-on: ubuntu-24.04
-    outputs:
-      commits: ${{ steps.validate.outputs.commits }}
-    steps:
-      - id: validate
-        env:
-          COMMITS: ${{ inputs.commits || '["2c7cfac92d40b1a9ad93b0cff80fbfc7f5cba770", "ea40100fab17df9a4d8f0c452afdb2b34045c43c", "4b4c6bb4a5cb77523bea435c17ebcc228f9ec050", "d62b6786000a0d7097606c2cefde82a2a10aed50", "1f7dd5736bbd5ce1db6c6e0662561825141d6755", "0c5dace116320e21528bf8b0e4548174eec1e24f", "7a40aea67ff27ca4509079a505c93eff3cf98a7f", "156573f5e1386ceda6ea1b272018ec3ab8952712", "397e9f49cef3f4f1a973387203ed8267f2601b70", "d31fb41568cb94a98754adf43ef0de92dfb8ddf2", "00368f95f0db9301e65536dab6c34cab8325ee10", "cdb9e671845b73b4b1a147cb93036eaf636b434f"]' }}
-          SOURCE_URL: ${{ inputs.source_url || 'https://raw.githubusercontent.com/VoronDesign/Voron-1/538f354c7b1dcb14607b40784650e141bd49edae/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z' }}
-          SOURCE_SHA256: ${{ inputs.source_sha256 || '50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2' }}
-        run: |
-          python3 - <<'PYTHON'
-          import json, os, re
-          from urllib.parse import urlparse
-          commits = json.loads(os.environ["COMMITS"])
-          assert isinstance(commits, list) and 1 <= len(commits) <= 32
-          assert all(isinstance(c, str) and re.fullmatch(r"[0-9a-f]{40}", c) for c in commits)
-          assert len(set(commits)) == len(commits)
-          url = urlparse(os.environ["SOURCE_URL"])
-          assert url.scheme == "https" and url.hostname and not url.username and not url.password
-          assert re.fullmatch(r"[0-9a-f]{64}", os.environ["SOURCE_SHA256"])
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write("commits=" + json.dumps(commits, separators=(",", ":")) + "\n")
-          PYTHON
-
-  check:
-    needs: select
-    name: check ${{ matrix.commit }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 6
       matrix:
-        commit: ${{ fromJSON(needs.select.outputs.commits) }}
+        pair: [["2c7cfac92d40b1a9ad93b0cff80fbfc7f5cba770","ea40100fab17df9a4d8f0c452afdb2b34045c43c"],["ea40100fab17df9a4d8f0c452afdb2b34045c43c","4b4c6bb4a5cb77523bea435c17ebcc228f9ec050"],["4b4c6bb4a5cb77523bea435c17ebcc228f9ec050","d62b6786000a0d7097606c2cefde82a2a10aed50"],["d62b6786000a0d7097606c2cefde82a2a10aed50","1f7dd5736bbd5ce1db6c6e0662561825141d6755"],["0c5dace116320e21528bf8b0e4548174eec1e24f","7a40aea67ff27ca4509079a505c93eff3cf98a7f"],["7a40aea67ff27ca4509079a505c93eff3cf98a7f","156573f5e1386ceda6ea1b272018ec3ab8952712"],["156573f5e1386ceda6ea1b272018ec3ab8952712","397e9f49cef3f4f1a973387203ed8267f2601b70"],["397e9f49cef3f4f1a973387203ed8267f2601b70","d31fb41568cb94a98754adf43ef0de92dfb8ddf2"],["d31fb41568cb94a98754adf43ef0de92dfb8ddf2","00368f95f0db9301e65536dab6c34cab8325ee10"],["00368f95f0db9301e65536dab6c34cab8325ee10","cdb9e671845b73b4b1a147cb93036eaf636b434f"]]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ matrix.commit }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/pinned-rust
-      - name: Prepare scratch and record runner
-        run: |
-          export TMPDIR="$HOME/builds/checktime/tmp"
-          mkdir -p "$TMPDIR/evidence"
-          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_DIR=$TMPDIR/target" >> "$GITHUB_ENV"
-          git rev-parse HEAD
-          rustc --version
-          lscpu
-          free -k
-      - name: Download public input and verify bytes
-        env:
-          SOURCE_URL: ${{ inputs.source_url || 'https://raw.githubusercontent.com/VoronDesign/Voron-1/538f354c7b1dcb14607b40784650e141bd49edae/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z' }}
-          SOURCE_SHA256: ${{ inputs.source_sha256 || '50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2' }}
+      - name: Fetch input
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-            "$SOURCE_URL" -o "$TMPDIR/00622-Voron_V1.8_Master_Model_v148.f3z"
-          printf '%s  %s\n' "$SOURCE_SHA256" "$TMPDIR/00622-Voron_V1.8_Master_Model_v148.f3z" | sha256sum --check
-      - name: Build F3D release CLI
-        run: cargo build -q --locked --release -p cadmpeg --no-default-features --features f3d
-      - name: Time check twice
+          lscpu | grep -E 'Model name|^CPU\(s\)'
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/in.f3z" "$SOURCE_URL"
+          printf '%s  %s\n' "$SOURCE_SHA256" "$RUNNER_TEMP/in.f3z" | sha256sum --check
+      - name: Build both commits
         env:
-          COMMIT: ${{ matrix.commit }}
+          BASE: ${{ matrix.pair[0] }}
+          CAND: ${{ matrix.pair[1] }}
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/target"
+          for c in "$BASE" "$CAND"; do
+            git checkout -q --force "$c"
+            cargo build -q --locked --release -p cadmpeg --no-default-features --features f3d
+            cp "$CARGO_TARGET_DIR/release/cadmpeg" "$RUNNER_TEMP/cadmpeg-$c"
+          done
+      - name: Time A B A B on this runner
+        env:
+          BASE: ${{ matrix.pair[0] }}
+          CAND: ${{ matrix.pair[1] }}
         run: |
           python3 - <<'PYTHON'
-          import hashlib, json, os, pathlib, subprocess, time
-          scratch = pathlib.Path(os.environ["TMPDIR"])
-          evidence = scratch / "evidence"
-          cli = str(pathlib.Path(os.environ["CARGO_TARGET_DIR"]) / "release/cadmpeg")
-          source = str(scratch / "00622-Voron_V1.8_Master_Model_v148.f3z")
-          records = []
-          failed = False
-          for repeat in (1, 2):
-              prefix = evidence / f"check-{repeat}"
-              with prefix.with_suffix(".stdout").open("wb") as stdout, prefix.with_suffix(".stderr").open("wb") as stderr:
-                  start = time.monotonic()
-                  result = subprocess.run([
-                      "/usr/bin/time", "-f", "%e %U %S %M", "-o", str(prefix.with_suffix(".time")),
-                      "timeout", "1200", cli, "check", source,
-                  ], stdout=stdout, stderr=stderr)
-                  wall = time.monotonic() - start
-              timing = prefix.with_suffix(".time").read_text().splitlines()[-1].split()
-              record = dict(commit=os.environ["COMMIT"], repeat=repeat, wall_s=wall,
-                            elapsed_s=float(timing[0]), user_s=float(timing[1]), system_s=float(timing[2]),
-                            peak_rss_kib=int(timing[3]), exit=result.returncode)
-              for stream in ("stdout", "stderr"):
-                  record[stream + "_sha256"] = hashlib.sha256(prefix.with_suffix("." + stream).read_bytes()).hexdigest()
-              records.append(record)
-              print("CHECKTIME RESULT " + json.dumps(record), flush=True)
-              failed |= result.returncode not in (0, 1)
-          (evidence / "timings.json").write_text(json.dumps(records, indent=2) + "\n")
-          raise SystemExit(1 if failed else 0)
+          import json, os, subprocess, time
+          t = os.environ["RUNNER_TEMP"]; base = os.environ["BASE"]; cand = os.environ["CAND"]
+          times = {base: [], cand: []}
+          for c in (base, cand, base, cand):
+              s = time.monotonic()
+              r = subprocess.run(["timeout", "1500", f"{t}/cadmpeg-{c}", "check", f"{t}/in.f3z"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              times[c].append(round(time.monotonic() - s, 1))
+              print("run", c[:10], times[c][-1], "exit", r.returncode, flush=True)
+          b = sum(times[base]) / 2; k = sum(times[cand]) / 2
+          print("PAIR RESULT " + json.dumps(dict(base=base, cand=cand, base_s=times[base], cand_s=times[cand], ratio=round(k / b, 3))), flush=True)
           PYTHON
-      - name: Save findings report separately from timed checks
-        run: |
-          set -euo pipefail
-          status=0
-          timeout 1200 "$CARGO_TARGET_DIR/release/cadmpeg" check \
-            "$TMPDIR/00622-Voron_V1.8_Master_Model_v148.f3z" \
-            --report "$TMPDIR/evidence/check.json" \
-            > "$TMPDIR/evidence/report.stdout" 2> "$TMPDIR/evidence/report.stderr" || status=$?
-          test "$status" -le 1
-          "$CARGO_TARGET_DIR/release/cadmpeg" query summary "$TMPDIR/evidence/check.json" \
-            > "$TMPDIR/evidence/summary.tsv"
-          "$CARGO_TARGET_DIR/release/cadmpeg" query findings "$TMPDIR/evidence/check.json" \
-            > "$TMPDIR/evidence/findings.tsv"
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: checktime-${{ matrix.commit }}
-          path: ~/builds/checktime/tmp/evidence/
-          if-no-files-found: warn
-      - name: Remove scratch
-        if: always()
-        run: rm -rf "$HOME/builds/checktime/tmp"
