@@ -4,6 +4,40 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
+/// Byte offsets for the `hole_wizard_data_header` record.
+///
+/// Spec §Extrusion feature objects. Record length 18 B.
+pub(crate) mod hole_wizard_data_header {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 18;
+    /// Offset of `diameter` (`f64`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const DIAMETER: usize = 6;
+    /// Offset of `one` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const ONE: usize = 14;
+    /// Stated value of `one` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `hole_wizard_catalog_tail` record.
+///
+/// Spec §Extrusion feature objects. Record length 20 B.
+pub(crate) mod hole_wizard_catalog_tail {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `first_one` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const FIRST_ONE: usize = 0;
+    /// Stated value of `first_one` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const FIRST_ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `second_one` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const SECOND_ONE: usize = 4;
+    /// Stated value of `second_one` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const SECOND_ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `sentinel` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const SENTINEL: usize = 8;
+    /// Stated value of `sentinel` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const SENTINEL_VALUE: u32 = 0xffff_ffff;
+}
+
 /// Byte offsets for the `feature_input_shifted_scalar_trailer` record.
 ///
 /// Spec §2. Record length 35 B.

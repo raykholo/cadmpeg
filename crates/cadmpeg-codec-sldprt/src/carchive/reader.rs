@@ -312,6 +312,9 @@ pub(crate) struct Reader<'b> {
     pub(crate) counter: u32,
     /// Map index to the class of the object read there (`r.objs`).
     pub(crate) objs: HashMap<u32, Arc<str>>,
+    pub(crate) object_starts: HashMap<u32, usize>,
+    pub(crate) sources: HashMap<usize, u32>,
+    pub(crate) pattern_seeds: Vec<super::PatternSeeds>,
     /// Every object opened, in order (`r.trace`).
     pub(crate) trace: Vec<Trace>,
     /// The file's `swVersion`.
@@ -351,6 +354,9 @@ pub(crate) struct Snapshot {
     counter: u32,
     objs: HashMap<u32, Arc<str>>,
     known: HashMap<u32, Arc<str>>,
+    object_starts: HashMap<u32, usize>,
+    sources: HashMap<usize, u32>,
+    pattern_seeds: Vec<super::PatternSeeds>,
     trace: Vec<Trace>,
     parameters: Vec<ParameterRecord>,
     ver: Option<u32>,
@@ -382,6 +388,9 @@ impl<'b> Reader<'b> {
             known,
             counter,
             objs: HashMap::new(),
+            object_starts: HashMap::new(),
+            sources: HashMap::new(),
+            pattern_seeds: Vec::new(),
             trace: Vec::new(),
             ver,
             st: super::rules::State::default(),
@@ -403,6 +412,9 @@ impl<'b> Reader<'b> {
             counter: self.counter,
             objs: self.objs.clone(),
             known: self.known.clone(),
+            object_starts: self.object_starts.clone(),
+            sources: self.sources.clone(),
+            pattern_seeds: self.pattern_seeds.clone(),
             trace: self.trace.clone(),
             parameters: self.parameters.clone(),
             ver: self.ver,
@@ -423,6 +435,9 @@ impl<'b> Reader<'b> {
         self.counter = snapshot.counter;
         self.objs = snapshot.objs;
         self.known = snapshot.known;
+        self.object_starts = snapshot.object_starts;
+        self.sources = snapshot.sources;
+        self.pattern_seeds = snapshot.pattern_seeds;
         self.trace = snapshot.trace;
         self.parameters = snapshot.parameters;
         self.ver = snapshot.ver;
@@ -446,6 +461,15 @@ impl<'b> Reader<'b> {
         out.copy_from_slice(bytes);
         self.p += N;
         Ok(out)
+    }
+
+    pub(crate) fn object_list_storage(&self, count: u32) -> Res<Vec<V>> {
+        let remaining = self.len().checked_sub(self.p).ok_or(Stop::End(self.p))?;
+        let count = cadmpeg_core::decode::bounded_len(u64::from(count), 2, remaining)
+            .ok_or(Stop::End(self.p))?;
+        self.ctx
+            .alloc_filled(count, V::None, "read SLDPRT archive object list")
+            .map_err(stopped)
     }
 
     pub(crate) fn u8(&mut self) -> Res<u8> {
@@ -623,6 +647,7 @@ impl<'b> Reader<'b> {
                 "retain SLDPRT archive class name",
             )
             .map_err(stopped)?;
+        self.object_starts.insert(self.counter, at);
         self.objs.insert(self.counter, class.clone());
         self.bump_counter()?;
         if let Some(want) = want {

@@ -3460,7 +3460,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, pattern_seeds) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3928,6 +3928,7 @@ fn build_geometry_ir(
     );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     sync_active_configuration_resolutions(&mut ir)?;
+    pattern_seeds.bind(&mut ir, &histories, lanes, &mut pmi_losses);
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     ir.model.pmi = crate::swift::annotations(
         ctx,
@@ -4752,7 +4753,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, pattern_seeds) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -5156,6 +5157,9 @@ fn build_metadata_ir(
         &mut pmi_losses,
     );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
+    bind_active_configuration_partition(&mut ir);
+    mark_active_configuration(&mut ir);
+    pattern_seeds.bind(&mut ir, &histories, lanes, &mut pmi_losses);
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(ctx, &mut ir)?;
     if transfer_display {
@@ -5215,8 +5219,6 @@ fn build_metadata_ir(
         "admit SLDPRT entities",
     )?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    bind_active_configuration_partition(&mut ir);
-    mark_active_configuration(&mut ir);
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;

@@ -6,6 +6,9 @@
 use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
 
+mod hole_data;
+mod pattern_seeds;
+
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
 
 /// The display-dimension classes.
@@ -147,6 +150,9 @@ pub(crate) fn named(r: &mut Reader<'_>) -> Res<V> {
         Ptr::Obj { value, .. } => value,
         other => V::from(other),
     };
+    if let Some(&(_, at)) = r.open.last() {
+        r.sources.insert(at, oid);
+    }
     if let (V::Str(text), Some(&(_, at))) = (&name, r.open.last()) {
         r.names.insert(at, text.clone());
     }
@@ -1587,7 +1593,11 @@ pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
     let hd = bodyhead(reader, class)?;
     units_after_head(reader, &hd)?;
     reader.ptr(Some(&["moPMarkRecord_c"]))?;
-    reader.ptr(Some(&["suObList"]))?;
+    if class == "moCirPattern_c" {
+        reader.ptr(Some(&["suObList"]))?;
+    } else {
+        pattern_seeds::read(reader, &count)?;
+    }
     reader.ptr(Some(&["suObList"]))?;
     if !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
         && !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0])
@@ -3379,9 +3389,7 @@ pub(crate) fn holewzd(reader: &mut Reader<'_>) -> Res<V> {
         u32s(reader, 4)?;
     }
     reader.ptr(Some(PMARK))?;
-    reader.expect_zeros(6, "hole 6 zero")?;
-    let d1 = reader.f64()?;
-    reader.expect_bytes(&[1, 0, 0, 0], "hole u32 1")?;
+    let data_header = hole_data::read_header(reader)?;
     reader.cstring()?;
     reader.cstring()?;
     reader.u32()?;
@@ -3413,9 +3421,7 @@ pub(crate) fn holewzd(reader: &mut Reader<'_>) -> Res<V> {
     reader.expect_zeros(52, "hole 52 zero")?;
     reader.cstring()?;
     reader.expect_zeros(12, "hole 12 zero")?;
-    let mut one_one = vec![1, 0, 0, 0, 1, 0, 0, 0];
-    one_one.extend_from_slice(&zff_zero(4, 8));
-    reader.expect_bytes(&one_one, "hole 1 1 -1")?;
+    let catalog_data = hole_data::read_catalog_tail(reader)?;
     reader.cstring()?;
     reader.cstring()?;
     reader.expect_zeros(4, "hole u32 0")?;
@@ -3430,21 +3436,16 @@ pub(crate) fn holewzd(reader: &mut Reader<'_>) -> Res<V> {
         reader.expect_zeros(12, "hole end 12 zero")?;
         reader.u32()?;
     }
-    let mut z = 0;
-    while reader.p + z < reader.len() && reader.byte(reader.p + z)? == 0 && z < 16 {
-        z += 1;
-    }
-    if !(reader.p + z >= reader.len() || objat(reader, reader.p + z)) {
-        return Err(bad(format!("hole end zeros {z}")));
-    }
-    reader.skip(z);
+    hole_data::finish(reader)?;
     Ok(V::map([
         ("n", count_),
         ("standard", V::from(std)),
         ("type", V::from(ftype)),
         ("size", V::from(size)),
         ("description", V::from(desc)),
-        ("diameter", V::from(d1)),
+        ("diameter", V::from(data_header.diameter)),
+        ("header_native", V::Bytes(data_header.native.to_vec())),
+        ("catalog_native", V::Bytes(catalog_data.to_vec())),
         ("instances", list(inst)),
     ]))
 }

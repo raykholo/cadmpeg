@@ -626,16 +626,6 @@ with a neutral sketch profile.
 
 **Note.** A unique unused earlier sketch does not establish a universal no-reuse rule. Profile ownership and configuration-scoped absence or conflict require independent source relations; an unsupported provisional choice must not block an earned relation.
 
-### DI-41. Pattern seed identity without a resolved seed relation
-
-**Question.** Which native relation binds the seed of a linear or mirror pattern
-when its component vectors and persistent generated-surface identities do not
-resolve a seed feature?
-
-**Known.** Complete component paths and generated-surface identities retain provenance, but do not certify a complete selected-feature roster. A two-seed mirror can store paths that mention only one seed. A derived cosmetic-thread output identifies a generated child, not its input seed. Feature order does not establish ownership. The reader withholds nearest-thread, preceding-object and mirror-provenance seed guesses while preserving explicit seed relations, dimensions, directions, mirror planes and Native records.
-
-**Need.** Decode the complete manager/instance-holder ownership and selected-list grammar, including configuration-scoped absence and conflicts. A bounded search witness or unique provenance candidate cannot establish complete selection cardinality. Circular and curve-driven seed families require their own independent selection proofs.
-
 ### DI-42. A configuration stream that holds the active configuration's values
 
 **Question.** Does a `Contents/Config-N` stream show that its equation-manager values are not its configuration's current values?
@@ -1171,6 +1161,18 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
 
 **Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+
+### DI-78. Native cells in Hole Wizard catalogue headers
+
+**Question.** Which fields occupy the native cells in the Hole Wizard data header and catalogue tail prefix?
+
+**Known.** The data header starts with six native bytes. The catalogue tail prefix carries eight native bytes after its `0xffffffff` sentinel. Each cell can start with byte `01` followed by zero bytes. The diameter slot can hold zero.
+
+**Need.** Establish the native fields' widths, types and effects, and the source of the diameter when its slot is zero.
+
+**Conflict.** None.
+
+**Note.** The complete cells stay in the native feature-input stream.
 
 ### DI-69. Extrusion Boolean carriers
 

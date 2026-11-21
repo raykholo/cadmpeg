@@ -183,6 +183,8 @@ pub(crate) enum SldprtLossCode {
     FeatureSweepPathHeaderAssumed,
     /// A generated solid sweep uses the Merge reading of its Boolean operation.
     FeatureSweepMergeAssumed,
+    /// Pattern seed selection retains its native archive list.
+    FeaturePatternSeedsUnresolved,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
@@ -470,6 +472,7 @@ impl SldprtLossCode {
         Self::FeatureSweepPathRosterAssumed,
         Self::FeatureSweepPathHeaderAssumed,
         Self::FeatureSweepMergeAssumed,
+        Self::FeaturePatternSeedsUnresolved,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeStartUnresolved,
@@ -628,6 +631,7 @@ impl SldprtLossCode {
             Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
             Self::FeatureSweepPathHeaderAssumed => "feature.sweep-path-header-assumed",
             Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
+            Self::FeaturePatternSeedsUnresolved => "feature.pattern-seeds-unresolved",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
@@ -820,6 +824,7 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeaturePatternSeedsUnresolved
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
             | Self::FeatureSweepPathRosterAssumed
@@ -1063,6 +1068,7 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeaturePatternSeedsUnresolved
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
             | Self::FeatureSweepPathRosterAssumed
@@ -1311,6 +1317,7 @@ mod tests {
                 "feature.sweep-path-roster-assumed",
                 "feature.sweep-path-header-assumed",
                 "feature.sweep-merge-assumed",
+                "feature.pattern-seeds-unresolved",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-start-unresolved",

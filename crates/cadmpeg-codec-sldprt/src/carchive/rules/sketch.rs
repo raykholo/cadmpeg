@@ -1653,9 +1653,9 @@ pub(crate) fn oblist(r: &mut Reader<'_>) -> Res<V> {
     if n == 0xffff {
         n = r.u32()?;
     }
-    let mut out = Vec::new();
-    for _ in 0..n {
-        out.push(V::from(r.ptr(None)?));
+    let mut out = r.object_list_storage(n)?;
+    for item in &mut out {
+        *item = V::from(r.ptr(None)?);
     }
     Ok(V::List(out))
 }
