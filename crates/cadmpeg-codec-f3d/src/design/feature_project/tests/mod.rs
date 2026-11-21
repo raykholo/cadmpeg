@@ -19,6 +19,7 @@ mod extrude;
 mod extrude_fallbacks;
 mod extrude_work_planes;
 mod fixed_extrude;
+mod geometric_relationship;
 mod hole;
 mod hole_sketch_profiles;
 mod loft;

@@ -20,6 +20,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1007. Geometric Relationship operands and relation type
+
+**Question.** Which Design record identifies a Geometric Relationship, and how does its payload select the relation type, related entities, occurrence paths and connector frames?
+
+**Known.** Issue #1794 names a Geometric Relationship timeline item. Generic scope and parameter-owner records retain the source kind, ordered references and parameter bindings. The decoder keeps scopes named `Geometric Relationship` and `GeometricRelationship` as native features and reports `feature.geometric-relationship-native`. Both names are synthetic test inputs.
+
+**Need.** Public designs that contain the feature. Bind the scope and its relation carrier through typed references. Vary the relation type, entity order, occurrence path and frame sense independently. Resolve the selected entities in the feature input state. Verify each connector origin, axes and direction against the stored final geometry before selecting a CADIR v11 joint or constraint record.
+
 ### DR-817. Silhouette Split direction selection
 
 **Question.** How does the direction selector bind to the datum or topology in the state before the split?

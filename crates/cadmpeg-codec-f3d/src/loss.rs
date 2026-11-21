@@ -521,6 +521,7 @@ pub(crate) enum F3dLossCode {
     SheetThicknessUnruled,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
+    FeatureGeometricRelationshipNative,
     /// A Move scope has no neutral `MoveBody` feature.
     MoveUnprojected,
     /// A Modify scope has no neutral `MoveBody` feature.
@@ -1598,6 +1599,7 @@ impl F3dLossCode {
         Self::FeatureBoxSupportFlagsAssumed,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
+        Self::FeatureGeometricRelationshipNative,
         Self::MoveUnprojected,
         Self::ModifyUnprojected,
         Self::HoleExtentUnproven,
@@ -2588,6 +2590,7 @@ impl F3dLossCode {
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
+            Self::FeatureGeometricRelationshipNative => "feature.geometric-relationship-native",
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ModifyUnprojected => "feature.modify-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
@@ -3557,6 +3560,7 @@ impl F3dLossCode {
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
+            | Self::FeatureGeometricRelationshipNative
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
@@ -4274,6 +4278,7 @@ impl F3dLossCode {
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
             | Self::FeatureScopeUnprojected
+            | Self::FeatureGeometricRelationshipNative
             | Self::EmbossControlsNative
             | Self::FeatureShellAuxiliaryReferencesNative
             | Self::EmbossPrefixUnparsed
@@ -5070,6 +5075,7 @@ mod tests {
                 "feature.box-support-flags-assumed",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
+                "feature.geometric-relationship-native",
                 "feature.move-unprojected",
                 "feature.modify-unprojected",
                 "feature.hole-extent-unproven",

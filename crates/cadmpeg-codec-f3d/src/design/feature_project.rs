@@ -1719,6 +1719,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             })
                         }
                     } else {
+                        if matches!(scope.kind_name(), "Geometric Relationship" | "GeometricRelationship") {
+                            projection_losses.push(crate::loss::F3dLossCode::FeatureGeometricRelationshipNative.note(format!(
+                                "Geometric Relationship scope {} retains its native scope references and parameters; relation type and connector frames remain unresolved.",
+                                scope.id
+                            )));
+                        }
                         native_scope_definition(scope, &parameters)?
                     }
                 }
