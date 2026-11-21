@@ -461,7 +461,7 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Need.** We must distinguish a face consumed by a later operation from a face whose owner or identity attribute was not decoded.
 
-### DI-21. Class-scoped inline solid operations
+### DI-21. Class-scoped inline extrusion operations
 
 **Question.** What Boolean operation does the inline family `0x0140` with operation byte `00` represent for `moCutThin_c`, which field sets the Boolean operation for a `moRevolution_c` with form word `0` and inline family/byte `0x0000`/`00`, and what operation does each other unsupported family-word and operation-byte combination represent?
 
@@ -1064,7 +1064,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** We must know their content to transfer it or to state that it is not model geometry. Without it, the document keeps the part losses that report an untransferred Parasolid model.
 
-### EV-25. Turn reversal in revolution reference forms
+### EV-25. Turn sense of a partial revolution
 
 **Question.** Which field reverses a partial revolution, and how do the other line-reference forms set its turn sense?
 
