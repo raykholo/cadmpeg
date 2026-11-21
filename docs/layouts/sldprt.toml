@@ -9,13 +9,86 @@ inventory (§4), the entity common header (§5), and the Parasolid geometry
 carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
 layouts in prose; the fixed-offset profile, sketch-input, reference-plane,
 temporary-axis, and
-cosmetic-thread carrier layouts are tabulated below, and the remaining layouts
+cosmetic-thread carrier layouts and Hole Wizard headers are tabulated below, and the remaining layouts
 are listed under "Not tabulated" with a coverage note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
 Parasolid payload words are big-endian. Where a §1 field states no endianness
 the table says `unstated` and says so in the field note.
 """
+
+[[record]]
+name = "hole_wizard_data_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/feature/hole_data.rs"
+kind = "byte"
+section = "Extrusion feature objects"
+anchor = "The 18-byte Hole Wizard data header writes"
+size = 18
+endianness = "little"
+
+[[record.field]]
+name = "native_cell"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "six native bytes"
+endianness = "n/a"
+
+[[record.field]]
+name = "diameter"
+offset = 6
+type = "f64"
+source = "spec"
+anchor = "a little-endian f64 diameter slot"
+
+[[record.field]]
+name = "one"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "and little-endian u32 `1`"
+value = 1
+
+[[record]]
+name = "hole_wizard_catalog_tail"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/feature/hole_data.rs"
+kind = "byte"
+section = "Extrusion feature objects"
+anchor = "The 20-byte Hole Wizard catalogue tail prefix writes"
+size = 20
+endianness = "little"
+
+[[record.field]]
+name = "first_one"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "little-endian u32 `1`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "second_one"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "little-endian u32 `1`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "sentinel"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 `0xffffffff`"
+value = 4294967295
+
+[[record.field]]
+name = "native_cell"
+offset = 12
+type = "bytes[8]"
+source = "spec"
+anchor = "eight native bytes"
+endianness = "n/a"
 
 [[record]]
 name = "feature_input_shifted_scalar_trailer"

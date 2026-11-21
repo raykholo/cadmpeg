@@ -12,7 +12,7 @@ inventory (§4), the entity common header (§5), and the Parasolid geometry
 carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
 layouts in prose; the fixed-offset profile, sketch-input, reference-plane,
 temporary-axis, and
-cosmetic-thread carrier layouts are tabulated below, and the remaining layouts
+cosmetic-thread carrier layouts and Hole Wizard headers are tabulated below, and the remaining layouts
 are listed under "Not tabulated" with a coverage note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
@@ -29,6 +29,33 @@ the table says `unstated` and says so in the field note.
 | `00 11` | oriented coedge | 21 B | bare body has no magic; deltas refs are nine [hi][lo][01] cells and the marker follows | §4 |
 | `00 12` | vertex-use | 26 B | sequence u32 BE at body +2; magic at body +16 | §4 |
 | `00 1d` | world point | 38 B | no magic; four references at body +6 and xyz as three f64 BE at body +14 | §4 |
+
+## `hole_wizard_data_header`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 18 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature/hole_data.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `native_cell` | `bytes[6]` | n/a | spec | six native bytes |
+| 6 | 8 | `diameter` | `f64` | little | spec | a little-endian f64 diameter slot |
+| 14 | 4 | `one` | `u32` | little | spec | and little-endian u32 `1` · value `1` |
+
+## `hole_wizard_catalog_tail`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature/hole_data.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `first_one` | `u32` | little | spec | little-endian u32 `1`, u32 `1` · value `1` |
+| 4 | 4 | `second_one` | `u32` | little | spec | little-endian u32 `1`, u32 `1` · value `1` |
+| 8 | 4 | `sentinel` | `u32` | little | spec | u32 `0xffffffff` · value `4294967295` |
+| 12 | 8 | `native_cell` | `bytes[8]` | n/a | spec | eight native bytes |
 
 ## `feature_input_shifted_scalar_trailer`
 

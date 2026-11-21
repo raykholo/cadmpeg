@@ -101,6 +101,8 @@ pub(crate) mod operations;
 
 pub(crate) mod parameters;
 
+pub(crate) mod pattern_seeds;
+
 pub(crate) mod profile_data;
 pub(crate) mod profiles;
 

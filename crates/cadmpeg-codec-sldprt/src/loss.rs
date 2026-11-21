@@ -150,6 +150,8 @@ pub(crate) enum SldprtLossCode {
     FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Pattern seed selection retains its native archive list.
+    FeaturePatternSeedsUnresolved,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
@@ -405,6 +407,7 @@ impl SldprtLossCode {
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeaturePatternSeedsUnresolved,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeStartUnresolved,
@@ -544,6 +547,7 @@ impl SldprtLossCode {
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeaturePatternSeedsUnresolved => "feature.pattern-seeds-unresolved",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
@@ -716,6 +720,7 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeaturePatternSeedsUnresolved
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
@@ -935,6 +940,7 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeaturePatternSeedsUnresolved
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
@@ -1166,6 +1172,7 @@ mod tests {
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
+                "feature.pattern-seeds-unresolved",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-start-unresolved",

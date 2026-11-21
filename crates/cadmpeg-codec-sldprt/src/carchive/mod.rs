@@ -42,9 +42,18 @@ pub(crate) struct Walk {
     /// The `moPMarkRecord_c` objects read, each with the named object that
     /// holds it.
     pub(crate) marks: Vec<reader::MarkOwner>,
+    pub(crate) pattern_seeds: Vec<PatternSeeds>,
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
+}
+
+/// A pattern's seed-list location and source identifiers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PatternSeeds {
+    pub(crate) owner: u32,
+    pub(crate) at: usize,
+    pub(crate) seeds: Option<Vec<Option<u32>>>,
 }
 
 /// A sketch's profile body and the stream extent of the profile-family object
@@ -112,6 +121,7 @@ pub(crate) fn walk<'b>(
         status,
         parameters: r.parameters,
         marks: r.marks,
+        pattern_seeds: r.pattern_seeds,
         #[cfg(test)]
         trace: r.trace,
         #[cfg(test)]
