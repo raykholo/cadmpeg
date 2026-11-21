@@ -73,9 +73,12 @@ def resolve(repository, ref):
 
 def plan():
     rows = list(inputs())
+    # Each large RailCore archive gets its own shard so its dumps fit the job.
+    groups = [[row] for row in rows if row.startswith('RailCore_')]
+    rest = [row for row in rows if not row.startswith('RailCore_')]
+    groups += [rest[index:index + CHUNK] for index in range(0, len(rest), CHUNK)]
     matrix = {'include': [
-        {'shard': f's{index // CHUNK:02d}', 'ids': ' '.join(rows[index:index + CHUNK])}
-        for index in range(0, len(rows), CHUNK)]}
+        {'shard': f's{index:02d}', 'ids': ' '.join(group)} for index, group in enumerate(groups)]}
     values = {'matrix': matrix, 'manifest_sha256': digest(MANIFEST)}
     for side, repository in [('base', 'cadmpeg/cadmpeg'), ('head', 'raykholo/cadmpeg')]:
         ref = os.environ[side.upper() + '_REF']
@@ -141,7 +144,7 @@ def fetch():
 QUERY_INPUT_LIMIT = 256 * 1024 * 1024
 
 
-def command(binary, args, prefix, seconds=900):
+def command(binary, args, prefix, seconds=2400):
     with prefix.with_suffix('.out').open('w') as out, prefix.with_suffix('.err').open('w') as err:
         return subprocess.run(['timeout', '--kill-after=30', str(seconds), str(binary), *map(str, args)],
                               stdout=out, stderr=err).returncode

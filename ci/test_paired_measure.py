@@ -53,7 +53,7 @@ class PairedMeasurementTests(unittest.TestCase):
             shards = plan['matrix']['include']
             names = [name for shard in shards for name in shard['ids'].split()]
             self.assertEqual(names, list(PAIRED.inputs()))
-            self.assertEqual(len(shards), 60)
+            self.assertEqual(len(shards), 4 + -(-(len(names) - 4) // 3))
             self.assertEqual(plan['base'], 'a' * 40)
             self.assertEqual(plan['head'], 'b' * 40)
             self.assertIn('matrix=', output.read_text())
@@ -214,7 +214,7 @@ class PairedMeasurementTests(unittest.TestCase):
                 run.return_value.returncode = 124
                 self.assertEqual(PAIRED.command(Path('cadmpeg'), ['dump', 'sample.f3d'], prefix), 124)
                 self.assertEqual(run.call_args.args[0],
-                                 ['timeout', '--kill-after=30', '900', 'cadmpeg', 'dump', 'sample.f3d'])
+                                 ['timeout', '--kill-after=30', '2400', 'cadmpeg', 'dump', 'sample.f3d'])
             self.assertTrue(prefix.with_suffix('.out').exists())
             self.assertTrue(prefix.with_suffix('.err').exists())
 
