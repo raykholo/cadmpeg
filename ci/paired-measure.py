@@ -161,7 +161,7 @@ def features(records):
     result = {}
     for record in records:
         definition = record.get('definition') or {}
-        if 'kind' in definition:
+        if definition.get('kind') in ('operation', 'post_process') and 'value' in definition:
             # Tagged form: {kind: operation|post_process, value: ...}; an
             # operation is {kind: <family>, value: {...}}.
             wrapped = definition.get('value') or {}
