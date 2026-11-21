@@ -84,7 +84,7 @@ def read_shas(path):
 def prepare(args):
     shas = read_shas(args.shas)
     args.out.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(MANIFEST, timeout=90) as response:
+    with urllib.request.urlopen(urllib.request.Request(MANIFEST, headers={"User-Agent": "cadmpeg-sm-faces"}), timeout=90) as response:
         data = response.read()
     (args.out / "public-files.json").write_bytes(data)
     selected = select_files(json.loads(data))
@@ -93,7 +93,7 @@ def prepare(args):
     files = args.out / "files"
     files.mkdir()
     for row in selected:
-        with urllib.request.urlopen(row["url"], timeout=90) as response:
+        with urllib.request.urlopen(urllib.request.Request(row["url"], headers={"User-Agent": "cadmpeg-sm-faces"}), timeout=90) as response:
             (files / row["file"]).write_bytes(response.read())
         verify_file(files / row["file"], row)
     missing = []
