@@ -24,6 +24,7 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
 pub(crate) fn lanes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    histories: &mut [crate::records::FeatureHistory],
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
 ) -> Result<
@@ -42,6 +43,7 @@ pub(crate) fn lanes(
     let mut result = Vec::new();
     let mut exact = super::profiles::ExactProfiles::default();
     let mut mark_owners = crate::rollback::MarkOwners::new();
+    let mut archive_names = HashMap::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
             continue;
@@ -55,22 +57,23 @@ pub(crate) fn lanes(
         }
         let mut lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
         if has_explicit_lanes {
-            let marks = type_scalars_from_archive(
-                ctx,
-                scan,
-                section,
-                source.payload(),
-                &mut lane,
-                &mut exact,
-                losses,
-            )?;
+            let archive =
+                type_scalars_from_archive(ctx, scan, section, &mut lane, &mut exact, losses)?;
+            archive_names.insert(lane.id.clone(), archive.names);
             if let Some(name) = configuration_name(section) {
-                mark_owners.insert(name.to_ascii_lowercase(), marks);
+                mark_owners.insert(name.to_ascii_lowercase(), archive.marks);
             }
         }
         result.push(lane);
     }
+    super::revolutions::enrich_archive_inputs(ctx, histories, &result, &archive_names)?;
     Ok((result, exact, mark_owners))
+}
+
+#[derive(Default)]
+struct ArchiveRead {
+    names: Vec<crate::carchive::NamedObject>,
+    marks: Vec<crate::carchive::reader::MarkOwner>,
 }
 
 /// Give each scalar of a `Config-N-ResolvedFeatures` lane the class of the
@@ -81,13 +84,12 @@ fn type_scalars_from_archive(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     section: &str,
-    resolved: &[u8],
     lane: &mut FeatureInputLane,
     exact: &mut super::profiles::ExactProfiles,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<crate::carchive::reader::MarkOwner>, cadmpeg_core::CodecError> {
+) -> Result<ArchiveRead, cadmpeg_core::CodecError> {
     let Some(config_name) = configuration_name(section) else {
-        return Ok(Vec::new());
+        return Ok(ArchiveRead::default());
     };
     let Some(config) = scan.sections().find_map(|other| {
         other
@@ -95,18 +97,22 @@ fn type_scalars_from_archive(
             .filter(|name| name.replace('\\', "/").eq_ignore_ascii_case(&config_name))
             .map(|_| other.payload())
     }) else {
-        return Ok(Vec::new());
+        return Ok(ArchiveRead::default());
     };
     let Some(version) =
         crate::carchive::walk_version(crate::container::declared_sw_version(scan), config)
     else {
-        return Ok(Vec::new());
+        return Ok(ArchiveRead::default());
     };
-    let Some(mut walk) = crate::carchive::walk_configuration(ctx, config, resolved, Some(version))?
+    let Some(mut walk) =
+        crate::carchive::walk_configuration(ctx, config, &lane.native_payload, Some(version))?
     else {
-        return Ok(Vec::new());
+        return Ok(ArchiveRead::default());
     };
-    let marks = std::mem::take(&mut walk.marks);
+    let archive = ArchiveRead {
+        names: std::mem::take(&mut walk.named_objects),
+        marks: std::mem::take(&mut walk.marks),
+    };
     if walk.status == crate::carchive::Status::End {
         exact.insert(&lane.id, std::mem::take(&mut walk.sketch_profiles));
     }
@@ -115,13 +121,13 @@ fn type_scalars_from_archive(
             "the archive walk of {config_name} stopped before the end of the stream, so its \
              scalars keep no parameter class"
         )));
-        return Ok(marks);
+        return Ok(archive);
     }
     let classes = scalar_archive_classes(&walk);
     for scalar in &mut lane.scalars {
         scalar.archive_class = classes.get(&scalar.offset).copied();
     }
-    Ok(marks)
+    Ok(archive)
 }
 
 /// The `Config-N` name a `Config-N-ResolvedFeatures` section belongs to.
@@ -299,8 +305,13 @@ pub(crate) fn source_image_profiles(
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
     let scan = crate::container::scan(&ctx, root)?;
-    let (source_lanes, mut exact, _) =
-        self::lanes(&ctx, &scan, &mut Annotations::default(), &mut Vec::new())?;
+    let (source_lanes, mut exact, _) = self::lanes(
+        &ctx,
+        &scan,
+        &mut [],
+        &mut Annotations::default(),
+        &mut Vec::new(),
+    )?;
     exact.retain(|id| {
         let payload = |of: &[FeatureInputLane]| {
             of.iter()

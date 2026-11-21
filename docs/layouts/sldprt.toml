@@ -14864,3 +14864,131 @@ offset = 8
 type = "u32"
 source = "spec"
 anchor = "the form word, a little-endian u32 at +8"
+
+[[record]]
+name = "revolution_datum_axis_tail"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/revolutions.rs"
+kind = "byte"
+section = "2"
+anchor = "Its final 135 bytes start with the datum axis source identifier"
+size = 135
+endianness = "little"
+
+[[record.field]]
+name = "source"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "stamp"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "zero_word"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "kind"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "zero_kind"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "handle_word"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "zero_handle_word"
+offset = 22
+type = "bytes[12]"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "handles"
+offset = 34
+type = "i32[3]"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "zero_handles"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "version"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "zero_version"
+offset = 54
+type = "bytes[12]"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "sentinel"
+offset = 66
+type = "i32"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "zero_geometry"
+offset = 70
+type = "bytes[8]"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "auxiliary"
+offset = 78
+type = "f64"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "origin"
+offset = 86
+type = "f64[3]"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "direction"
+offset = 110
+type = "f64[3]"
+source = "spec"
+anchor = "The fields are: u32 source at +0"
+
+[[record.field]]
+name = "zero_tail"
+offset = 134
+type = "u8"
+source = "spec"
+anchor = "The fields are: u32 source at +0"

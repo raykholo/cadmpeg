@@ -129,3 +129,48 @@ fn typed_native_operands_are_reported_as_design_losses() {
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
 }
+
+#[test]
+fn an_unresolved_revolution_keeps_its_angle_and_pins_the_operand_loss() {
+    let mut ir = CadIr::empty();
+    let feature: Feature = serde_json::from_value(serde_json::json!({
+        "id": "synthetic:test:id#revolution", "ordinal": 0,
+        "dependencies": [], "source_properties": {}, "source_content": [], "outputs": [],
+        "definition": {"kind": "operation", "value": {"kind": "revolve", "value": {
+            "construction": {"kind": "unresolved", "value": {"kind": "profile", "solid": true,
+                "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": 1.25}}}},
+            "op": "unresolved"
+        }}}
+    }))
+    .unwrap();
+    ir.model.features.push(feature);
+    let mut report = super::empty_report(true);
+    append_design_losses(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::SldprtLossCode::FeatureTypedOperandIncomplete.kind())
+    );
+    let json = serde_json::to_value(&ir.model.features[0]).unwrap();
+    assert_eq!(
+        json["definition"]["value"]["value"]["construction"]["value"]["extent"]["termination"]
+            ["angle"],
+        1.25
+    );
+    assert_eq!(
+        serde_json::to_value(
+            crate::loss::SldprtLossCode::FeatureTypedOperandIncomplete
+                .note("unreadable revolution")
+                .code
+        )
+        .unwrap()["value"]["code"],
+        "feature.typed-operand-incomplete"
+    );
+}

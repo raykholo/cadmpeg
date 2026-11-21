@@ -150,6 +150,9 @@ pub(crate) fn named(r: &mut Reader<'_>) -> Res<V> {
     if let (V::Str(text), Some(&(_, at))) = (&name, r.open.last()) {
         r.names.insert(at, text.clone());
     }
+    if let Some(&(_, at)) = r.open.last() {
+        r.source_ids.insert(at, oid);
+    }
     Ok(V::map([
         ("name", name),
         ("fam", V::from(fam)),

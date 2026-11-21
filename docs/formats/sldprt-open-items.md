@@ -461,13 +461,15 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Need.** We must distinguish a face consumed by a later operation from a face whose owner or identity attribute was not decoded.
 
-### DI-21. Class-scoped inline extrusion operations
+### DI-21. Class-scoped inline solid operations
 
-**Question.** What Boolean operation does the inline family `0x0140` with operation byte `00` represent for `moCutThin_c`, and what operation does each other unsupported family-word and operation-byte combination represent?
+**Question.** What Boolean operation does the inline family `0x0140` with operation byte `00` represent for `moCutThin_c`, which field sets the Boolean operation for a `moRevolution_c` with form word `0` and inline family/byte `0x0000`/`00`, and what operation does each other unsupported family-word and operation-byte combination represent?
 
-**Known.** `sldprt.md` §2 "Feature-tree" defines the supported ordinary extrusion combinations. The ordinary `0x0140`/`00` join mapping does not establish the operation of a `moCutThin_c` object. Family `0x01ca` with byte `00` or `02` establishes cut. A normalized Keywords `CutExtrudeThin` type also establishes cut independently. A complete configuration-local operation carrier is distinct from the base configuration's operation state.
+**Known.** `sldprt.md` §2 "Feature-tree" defines the supported ordinary extrusion combinations. The ordinary `0x0140`/`00` join mapping does not establish the operation of a `moCutThin_c` object. Family `0x01ca` with byte `00` or `02` establishes cut. A normalized Keywords `CutExtrudeThin` type also establishes cut independently. A complete configuration-local operation carrier is distinct from the base configuration's operation state. P02 has one solid-producing revolution and one result body. Its form word, inline family word, and inline operation byte are zero.
 
-**Need.** We must identify an independent, class-scoped Boolean discriminator for the `moCutThin_c` `0x0140`/`00` form and define the remaining family-word and operation-byte combinations.
+**Need.** We must identify an independent, class-scoped Boolean discriminator for the `moCutThin_c` `0x0140`/`00` form and for the zero-form revolution, and define the remaining family-word and operation-byte combinations. Controlled revolutions must vary the merge state and existing target bodies.
+
+**Note.** The decoder reads a resolved zero-form revolution as `NewBody` when it is the sole solid-producing feature and owns the sole solid body. It retains the native carrier and charges `feature.revolution-initial-body-assumed`.
 
 ### DI-22. Other sparse extrusion form codes
 
@@ -1022,11 +1024,11 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### EV-23. Sheet-metal bends and single-design forms
 
-**Question.** What is the layout of a sheet-metal bend (`moOneBend_c`, the children of a `moEdgeFlange_c`), and of the forms seen in one design each: a polygon relation entry whose head differs from the documented one; a contour chooser whose tail selects sketch entities (a count, handles and identifiers `100000` + *k*); a spline tangent-magnitude dimension whose operands are data; the six f64 and u32 `0` that end one circular pattern at its stream's end; the 168 bytes that end a `moFlatPattern_c`; and the rest of a mirrored part (`moMirrorStock_c`: a `moBodyRef_w` whose `moCompBody_c` holds a context unit component, fields, a mirror frame and the mirrored body's compressed data, then further references and the mirror plane) and of an add-in's custom feature (`moMacroFeature_c`); the geometry of a `moCompRefAxis_c` (105 bytes, framed); the object index that 15 McMaster-Carr bolts count after the first `moSweepSideSurfIdRep_c` hop (a reader's count falls one short there, and nothing in the bytes shows the extra object); and a sketch's `sgBlock` (its layout is stated in §2.3; open is one block of 720 triples whose sequence after the triples differs)?
+**Question.** What is the layout of a sheet-metal bend (`moOneBend_c`, the children of a `moEdgeFlange_c`), and of the forms seen in one design each: a polygon relation entry whose head differs from the documented one; a contour chooser whose tail selects sketch entities (a count, handles and identifiers `100000` + *k*); a spline tangent-magnitude dimension whose operands are data; the six f64 and u32 `0` that end one circular pattern at its stream's end; the 168 bytes that end a `moFlatPattern_c`; and the rest of a mirrored part (`moMirrorStock_c`: a `moBodyRef_w` whose `moCompBody_c` holds a context unit component, fields, a mirror frame and the mirrored body's compressed data, then further references and the mirror plane) and of an add-in's custom feature (`moMacroFeature_c`); the auxiliary scalar and opaque handle word of the revolution datum-axis tail and the 105-byte geometry form of a `moCompRefAxis_c`; the object index that 15 McMaster-Carr bolts count after the first `moSweepSideSurfIdRep_c` hop (a reader's count falls one short there, and nothing in the bytes shows the extra object); and a sketch's `sgBlock` (its layout is stated in §2.3; open is one block of 720 triples whose sequence after the triples differs)?
 
 **Known.** A bend is a named feature, then 122 bytes, its radius display, a `moCompFeature_c`, 33 bytes, its `moCompEdge_c` and its display objects, then a block. One block form is 215 bytes in six of the seven streams and 287 in the seventh. It opens with u32 `0` (the last display's flag word), u32 `8`, u32 `0x01000000`, u32 `0`, u16 `0x0100`, eight bytes that repeat in its middle (`20 5d 67 ce ce 72 ef bc` in the samples) and a frame of 3, 6 or 12 f64; its last 67 bytes are identical in all seven: f64 `1`, u8 `0`, eight `ff` bytes, u32 `1`, u32 `1`, thirty zero bytes and twelve `ff` bytes. Six streams write 34 further bytes before those: f64 `1`, three f64 `0` and u16 `0`. A reader frames that form by the next named object: a class tag, the name object's class tag and a Unicode `CString`. The other form opens `00 00 80 00 08 00 00 00`; it is 608 bytes and ends at the next object (a `moScalerDim_c` in the samples). A sheet-metal edge flange (`moEdgeFlange_c`) writes its counted children, then a display object, then a block that a reader frames by the next named object (a bend in the samples). A display dimension parsed at top level writes a view block after its favourite handle, opening u32 `0`, u32 `8`, u32 `0x01000000`, u32 `0`, u16 `0x0100` and the repeated eight-byte identifier; it ends at the next display object (472 bytes in the sample). The same block after a display inside a feature belongs to that feature. A top-level display dimension without that view block writes placement data before the next object: an empty Unicode `CString`, u32 values and zero bytes, all within 64 bytes of its end; without a `CString`, f64 and u32 values end at the next display object within 128 bytes.
 
-**Need.** A writer that creates sheet-metal flanges has to write bends; a reader that keeps them has to read them.
+**Need.** A writer that creates sheet-metal flanges has to write bends; a reader that keeps them has to read them. The axis component's auxiliary scalar and remaining geometry forms require field semantics.
 
 ## 7. Assembly documents
 
@@ -1062,17 +1064,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** We must know their content to transfer it or to state that it is not model geometry. Without it, the document keeps the part losses that report an untransferred Parasolid model.
 
-### EV-25. Turn sense of a partial revolution
+### EV-25. Turn reversal in revolution reference forms
 
-**Question.** Which way does the travel of a partial `moRevolution_c` or `moRevCut_c` turn about the stored axis direction, and which stored field reverses it?
+**Question.** Which field reverses a partial revolution, and how do the other line-reference forms set its turn sense?
 
-**Known.** `sldprt.md` §2 "The revolution object interval may contain a declared or repeated" stores a point on the axis and a unit axis direction. `sldprt.md` §2 "An `moRevolution_c` or `moRevCut_c` history record" stores positive angles. Neither paragraph gives the turn sense.
+**Known.** Section 2.3 defines the right-handed positive-angle reading for the `moCompRefAxis_c` datum-axis tail. P02b's 270-degree revolution about -Z spans the measured cylinder interval from π/2 to 2π about +Z. The other line-reference forms retain their stored direction and positive history angle.
 
-**Need.** A partial revolution with a stored solid whose end faces show the side of the travel, compared with the stored axis direction.
-
-**Conflict.** CADIR states a right-handed turn about `RevolutionAxis.direction`, and this codec writes the stored direction to that field unchanged. No partial revolution has shown that the two agree.
-
-**Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
+**Need.** A partial solid for each other reference form, with both turn settings and measured end faces, must identify its direction and reversal field.
 
 ### EV-27. Sketch curve records with selector bit 0 set
 

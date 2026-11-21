@@ -356,7 +356,9 @@ fn a_restored_snapshot_rolls_back_the_map_counter_and_records() {
         stream: 4,
         owner: 0,
     });
+    reader.source_ids.insert(0, 23);
     reader.restore(snapshot);
+    assert!(reader.source_ids.is_empty());
     assert!(reader.open.is_empty());
     assert!(reader.ends.is_empty());
     assert!(reader.profile_bodies.is_empty());
@@ -817,4 +819,30 @@ fn a_mark_record_is_noted_with_the_feature_that_holds_it() {
             owner: Some("Base-Extrude1".to_owned()),
         }]
     );
+}
+
+#[test]
+fn a_complete_named_header_keeps_its_object_index_when_its_body_stops() {
+    let mut object = 0x8007u16.to_le_bytes().to_vec();
+    object.extend_from_slice(&0x8001u16.to_le_bytes());
+    object.extend(name_body());
+    object.extend_from_slice(&[0, 0, 0, 0, 0x40, 1, 0, 0x40]);
+    object.extend_from_slice(&23u32.to_le_bytes());
+    object.extend_from_slice(&[0; 4]);
+    object.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
+    let known = BTreeMap::from([(1, NODE_NAME.into()), (7, "moProfileFeature_c".into())]);
+    let walk = walk_with_known(&stream(10, &object), &known);
+    assert!(matches!(walk.status, Status::Stop(_)));
+    assert_eq!(
+        walk.named_objects,
+        vec![super::NamedObject {
+            index: 10,
+            class: "moProfileFeature_c".into(),
+            source: 23,
+        }]
+    );
+    object.pop();
+    assert!(walk_with_known(&stream(10, &object), &known)
+        .named_objects
+        .is_empty());
 }

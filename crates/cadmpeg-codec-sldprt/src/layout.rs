@@ -3497,3 +3497,43 @@ pub(crate) mod pmark_record_head {
     /// Offset of `form_word` (`u32`, little-endian). Spec §3.4.
     pub(crate) const FORM_WORD: usize = 8;
 }
+
+/// Byte offsets for the `revolution_datum_axis_tail` record.
+///
+/// Spec §2. Record length 135 B.
+pub(crate) mod revolution_datum_axis_tail {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 135;
+    /// Offset of `source` (`u32`, little-endian). Spec §2.
+    pub(crate) const SOURCE: usize = 0;
+    /// Offset of `zero_word` (`u16`, little-endian). Spec §2.
+    pub(crate) const ZERO_WORD: usize = 8;
+    /// Offset of `kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const KIND: usize = 10;
+    /// Offset of `zero_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_KIND: usize = 14;
+    /// Offset of `handle_word` (`u32`, little-endian). Spec §2.
+    pub(crate) const HANDLE_WORD: usize = 18;
+    /// Offset of `zero_handle_word` (`bytes[12]`). Spec §2.
+    pub(crate) const ZERO_HANDLE_WORD: usize = 22;
+    /// Offset of `handles` (`i32[3]`, little-endian). Spec §2.
+    pub(crate) const HANDLES: usize = 34;
+    /// Offset of `zero_handles` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_HANDLES: usize = 46;
+    /// Offset of `version` (`u32`, little-endian). Spec §2.
+    pub(crate) const VERSION: usize = 50;
+    /// Offset of `zero_version` (`bytes[12]`). Spec §2.
+    pub(crate) const ZERO_VERSION: usize = 54;
+    /// Offset of `sentinel` (`i32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 66;
+    /// Offset of `zero_geometry` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_GEOMETRY: usize = 70;
+    /// Offset of `auxiliary` (`f64`, little-endian). Spec §2.
+    pub(crate) const AUXILIARY: usize = 78;
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const ORIGIN: usize = 86;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const DIRECTION: usize = 110;
+    /// Offset of `zero_tail` (`u8`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 134;
+}

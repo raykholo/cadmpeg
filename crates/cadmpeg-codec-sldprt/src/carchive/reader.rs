@@ -261,6 +261,7 @@ impl<T: Into<V>> From<Option<T>> for V {
 /// its tag or declaration starts (`r.trace`).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Trace {
+    pub(crate) index: u32,
     pub(crate) class: Arc<str>,
     pub(crate) body: usize,
     pub(crate) at: usize,
@@ -332,6 +333,7 @@ pub(crate) struct Reader<'b> {
     pub(crate) profile_bodies: Vec<ProfileBody>,
     /// The name each named object's header gave, by the object's tag position.
     pub(crate) names: HashMap<usize, String>,
+    pub(crate) source_ids: HashMap<usize, u32>,
     /// The `moPMarkRecord_c` objects read, in stream order.
     pub(crate) marks: Vec<MarkOwner>,
 }
@@ -361,6 +363,7 @@ pub(crate) struct Snapshot {
     ends: HashMap<usize, usize>,
     profile_bodies: Vec<ProfileBody>,
     names: HashMap<usize, String>,
+    source_ids: HashMap<usize, u32>,
     marks: Vec<MarkOwner>,
 }
 
@@ -392,6 +395,7 @@ impl<'b> Reader<'b> {
             ends: HashMap::new(),
             profile_bodies: Vec::new(),
             names: HashMap::new(),
+            source_ids: HashMap::new(),
             marks: Vec::new(),
         }
     }
@@ -413,6 +417,7 @@ impl<'b> Reader<'b> {
             ends: self.ends.clone(),
             profile_bodies: self.profile_bodies.clone(),
             names: self.names.clone(),
+            source_ids: self.source_ids.clone(),
             marks: self.marks.clone(),
         }
     }
@@ -433,6 +438,7 @@ impl<'b> Reader<'b> {
         self.ends = snapshot.ends;
         self.profile_bodies = snapshot.profile_bodies;
         self.names = snapshot.names;
+        self.source_ids = snapshot.source_ids;
         self.marks = snapshot.marks;
     }
 
@@ -623,7 +629,8 @@ impl<'b> Reader<'b> {
                 "retain SLDPRT archive class name",
             )
             .map_err(stopped)?;
-        self.objs.insert(self.counter, class.clone());
+        let index = self.counter;
+        self.objs.insert(index, class.clone());
         self.bump_counter()?;
         if let Some(want) = want {
             if !want.contains(&&*class) {
@@ -634,6 +641,7 @@ impl<'b> Reader<'b> {
             return Err(Stop::Unknown(class));
         };
         self.trace.push(Trace {
+            index,
             class: class.clone(),
             body: self.p,
             at,

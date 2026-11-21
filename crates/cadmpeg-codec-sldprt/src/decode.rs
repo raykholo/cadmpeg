@@ -3450,8 +3450,13 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
-        crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let (mut lanes, exact_profiles, mark_owners) = crate::resolved_features::assembly::lanes(
+        ctx,
+        scan,
+        &mut histories,
+        &mut annotations,
+        &mut pmi_losses,
+    )?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
         .transpose()?;
@@ -3746,6 +3751,14 @@ fn build_geometry_ir(
         &ir.geometry.shells,
         &ir.geometry.regions,
     )?;
+    let initial_revolution_assumed = crate::resolved_features::revolutions::bind_initial_operation(
+        &mut ir.model.features,
+        &histories,
+        &all_lanes,
+        &ir.geometry.bodies,
+        form_padding,
+        &mut pmi_losses,
+    );
     let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
         bodies: &ir.geometry.bodies,
         faces: &ir.geometry.faces,
@@ -3890,6 +3903,9 @@ fn build_geometry_ir(
         &ir.geometry.surfaces,
     );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
+    if initial_revolution_assumed {
+        crate::resolved_features::revolutions::sync_initial_operation(&mut ir);
+    }
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     ir.model.pmi = crate::swift::annotations(
@@ -4711,8 +4727,13 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
-        crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let (mut lanes, exact_profiles, mark_owners) = crate::resolved_features::assembly::lanes(
+        ctx,
+        scan,
+        &mut histories,
+        &mut annotations,
+        &mut pmi_losses,
+    )?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
         .transpose()?;

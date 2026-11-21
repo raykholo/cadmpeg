@@ -31,6 +31,7 @@ pub(crate) enum Status {
 #[derive(Debug, Clone)]
 pub(crate) struct Walk {
     pub(crate) status: Status,
+    pub(crate) named_objects: Vec<NamedObject>,
     /// Every object opened, in order.
     #[cfg(test)]
     pub(crate) trace: Vec<reader::Trace>,
@@ -45,6 +46,14 @@ pub(crate) struct Walk {
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
+}
+
+/// An archive object whose named header was read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NamedObject {
+    pub(crate) index: u32,
+    pub(crate) class: Arc<str>,
+    pub(crate) source: u32,
 }
 
 /// A sketch's profile body and the stream extent of the profile-family object
@@ -108,6 +117,17 @@ pub(crate) fn walk<'b>(
         }
     };
     Some(Walk {
+        named_objects: r
+            .trace
+            .iter()
+            .filter_map(|object| {
+                Some(NamedObject {
+                    index: object.index,
+                    class: object.class.clone(),
+                    source: *r.source_ids.get(&object.at)?,
+                })
+            })
+            .collect(),
         sketch_profiles: sketch_profiles(&r.profile_bodies, &r.ends),
         status,
         parameters: r.parameters,

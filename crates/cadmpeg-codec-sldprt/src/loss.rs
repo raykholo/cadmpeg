@@ -150,6 +150,8 @@ pub(crate) enum SldprtLossCode {
     FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// An initial revolution's zero operation form is read as a new body.
+    FeatureRevolutionInitialBodyAssumed,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
@@ -405,6 +407,7 @@ impl SldprtLossCode {
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureRevolutionInitialBodyAssumed,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeStartUnresolved,
@@ -544,6 +547,7 @@ impl SldprtLossCode {
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureRevolutionInitialBodyAssumed => "feature.revolution-initial-body-assumed",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
@@ -717,6 +721,7 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureRevolutionInitialBodyAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
@@ -898,7 +903,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
-            | Self::HistoryRollbackMarkClassInferred => LossTaxonomy::DecodeDiagnostic,
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::FeatureRevolutionInitialBodyAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1166,6 +1172,7 @@ mod tests {
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
+                "feature.revolution-initial-body-assumed",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-start-unresolved",

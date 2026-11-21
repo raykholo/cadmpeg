@@ -122,6 +122,15 @@ fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     }
 }
 
+pub(super) fn has_zero_revolution_form(
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+    form_padding: Option<usize>,
+) -> bool {
+    feature_operation_code(lane, name, Some("moRevolution_c"), form_padding) == Some(0)
+        && feature_inline_operation_fields(lane, name) == Some((0, 0))
+}
+
 fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
         (Some("moExtrusion_c"), 1 | 4 | 82) | (Some("moICE_c"), 6 | 21 | 0x3ee4_f8b5) | (_, 3) => {

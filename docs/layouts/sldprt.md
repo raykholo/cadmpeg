@@ -4003,6 +4003,33 @@ Parsed by:
 | 4 | 4 | `form` | `u32` | little | spec | the form, a little-endian u32 at +4 |
 | 8 | 4 | `form_word` | `u32` | little | spec | the form word, a little-endian u32 at +8 |
 
+## `revolution_datum_axis_tail`
+
+Spec §2 · layout: byte offsets · size: 135 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/revolutions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `source` | `u32` | little | spec | The fields are: u32 source at +0 |
+| 4 | 4 | `stamp` | `u32` | little | spec | The fields are: u32 source at +0 |
+| 8 | 2 | `zero_word` | `u16` | little | spec | The fields are: u32 source at +0 |
+| 10 | 4 | `kind` | `u32` | little | spec | The fields are: u32 source at +0 |
+| 14 | 4 | `zero_kind` | `u32` | little | spec | The fields are: u32 source at +0 |
+| 18 | 4 | `handle_word` | `u32` | little | spec | The fields are: u32 source at +0 |
+| 22 | 12 | `zero_handle_word` | `bytes[12]` | little | spec | The fields are: u32 source at +0 |
+| 34 | 12 | `handles` | `i32[3]` | little | spec | The fields are: u32 source at +0 |
+| 46 | 4 | `zero_handles` | `u32` | little | spec | The fields are: u32 source at +0 |
+| 50 | 4 | `version` | `u32` | little | spec | The fields are: u32 source at +0 |
+| 54 | 12 | `zero_version` | `bytes[12]` | little | spec | The fields are: u32 source at +0 |
+| 66 | 4 | `sentinel` | `i32` | little | spec | The fields are: u32 source at +0 |
+| 70 | 8 | `zero_geometry` | `bytes[8]` | little | spec | The fields are: u32 source at +0 |
+| 78 | 8 | `auxiliary` | `f64` | little | spec | The fields are: u32 source at +0 |
+| 86 | 24 | `origin` | `f64[3]` | little | spec | The fields are: u32 source at +0 |
+| 110 | 24 | `direction` | `f64[3]` | little | spec | The fields are: u32 source at +0 |
+| 134 | 1 | `zero_tail` | `u8` | little | spec | The fields are: u32 source at +0 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
