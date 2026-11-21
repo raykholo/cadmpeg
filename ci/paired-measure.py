@@ -161,12 +161,21 @@ def features(records):
     result = {}
     for record in records:
         definition = record.get('definition') or {}
-        operation = definition.get('operation', {}) if definition.get('definition') == 'post_process' else definition
-        family = operation.get('definition')
+        if 'kind' in definition:
+            # Tagged form: {kind: operation|post_process, value: ...}; an
+            # operation is {kind: <family>, value: {...}}.
+            wrapped = definition.get('value') or {}
+            operation = wrapped.get('operation', {}) if definition.get('kind') == 'post_process' else wrapped
+            family = operation.get('kind')
+            body = operation.get('value') or {}
+        else:
+            operation = definition.get('operation', {}) if definition.get('definition') == 'post_process' else definition
+            family = operation.get('definition')
+            body = operation
         profile = None
         if family == 'extrude':
-            profile = (operation.get('profile') or {}).get('kind', 'missing')
-        elif family in ('native', 'unresolved') and str(operation.get('kind', operation.get('family', ''))).lower() == 'extrude':
+            profile = (body.get('profile') or {}).get('kind', 'missing')
+        elif family in ('native', 'unresolved') and str(body.get('kind', body.get('family', ''))).lower() == 'extrude':
             profile = family
         key = record['id']
         if key in result:
