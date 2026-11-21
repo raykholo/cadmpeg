@@ -157,6 +157,23 @@ def query(binary, view, artifact, prefix, *args):
     return envelope['payload']
 
 
+def profile_kind(profile):
+    """The chain of nested `kind` tags of an Extrude profile, such as
+    `planar/sketch_regions`; the old flat form gives one tag."""
+    if not isinstance(profile, dict):
+        return 'missing'
+    kinds = []
+    node = profile
+    while isinstance(node, dict) and 'kind' in node and len(kinds) < 4:
+        kinds.append(str(node['kind']))
+        value = node.get('value')
+        if isinstance(value, dict) and 'kind' not in value:
+            value = next((child for child in value.values()
+                          if isinstance(child, dict) and 'kind' in child), None)
+        node = value
+    return '/'.join(kinds) or 'missing'
+
+
 def features(records):
     result = {}
     for record in records:
@@ -174,7 +191,7 @@ def features(records):
             body = operation
         profile = None
         if family == 'extrude':
-            profile = (body.get('profile') or {}).get('kind', 'missing')
+            profile = profile_kind(body.get('profile'))
         elif family in ('native', 'unresolved') and str(body.get('kind', body.get('family', ''))).lower() == 'extrude':
             profile = family
         key = record['id']
