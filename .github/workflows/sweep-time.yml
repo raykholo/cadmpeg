@@ -1,0 +1,25 @@
+name: sweep-time
+on:
+  push:
+    branches: ['bisect/sweeptime*']
+jobs:
+  time:
+    if: github.repository == 'raykholo/cadmpeg'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: 3d4592bd1ffbbe1be142202a18ee006d06e9a74a, path: base }
+      - uses: actions/checkout@v4
+        with: { ref: d59f6399edc91b51cb07005d84ab2ccc16d8f510, path: new }
+      - run: rustup toolchain install 1.97.0 --profile minimal && rustup default 1.97.0
+      - run: cd base && cargo build --release --locked -q -p cadmpeg --no-default-features --features f3d
+      - run: cd new && cargo build --release --locked -q -p cadmpeg --no-default-features --features f3d
+      - name: Time
+        run: |
+          curl -sfL -o v.f3z 'https://raw.githubusercontent.com/VoronDesign/Voron-1/1467af422f94ff1cb0bc13bc10f2ff64c94056b7/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z'
+          echo "50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2  v.f3z" | sha256sum -c
+          for i in 1 2 3; do for b in base new; do
+            s=$(date +%s.%N); $b/target/release/cadmpeg dump v.f3z -o $b.json > /dev/null 2>&1; e=$(date +%s.%N)
+            echo "$b run$i $(echo "$e - $s" | bc) s sha $(python3 -c "import json,hashlib;d=json.load(open('$b.json'));print(hashlib.sha1(json.dumps(d.get('model'),sort_keys=True).encode()).hexdigest()[:10])")"
+          done; done | tee times.txt
