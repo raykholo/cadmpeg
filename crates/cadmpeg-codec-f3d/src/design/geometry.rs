@@ -3768,9 +3768,20 @@ impl CertifiedPiece {
     }
 }
 
+/// Piece-pair count at or below which `certified_pieces_separated` tests
+/// every pair directly instead of sweeping.
+const CERTIFIED_SWEEP_MIN_PAIRS: usize = 256;
+
 /// Tests only the piece pairs whose widened bounds overlap, by a sweep
 /// along `u`.
 fn certified_pieces_separated(left: &[CertifiedPiece], right: &[CertifiedPiece]) -> bool {
+    // Below this many pairs the direct test, which stops at the first
+    // touching pair, costs less than the bounds and the sort of the sweep.
+    if left.len().saturating_mul(right.len()) <= CERTIFIED_SWEEP_MIN_PAIRS {
+        return left
+            .iter()
+            .all(|left| right.iter().all(|right| left.separated_from(right)));
+    }
     let mut events = Vec::with_capacity(left.len() + right.len());
     for (side, pieces) in [(0_usize, left), (1, right)] {
         for piece in pieces {
