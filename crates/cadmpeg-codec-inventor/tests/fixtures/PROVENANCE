@@ -1,0 +1,5 @@
+Purpose-made (not derived from any volunteer or third-party file). Built 2026-11-22 through the Inventor COM API
+(build-recipe.ps1 in this folder), Inventor Professional 2016 build 200138000, author/company fields "Fixture
+Builder". CC0 1.0. Identity strip: olestrip.ps1 (0 terms replaced: the builder name fields were already neutral; the
+file was compacted). Reopen check in Inventor 2016: volume, 3 user parameters, 7 model parameters unchanged.
+STEP: Inventor's STEP AP214 export, file-name path reduced to the bare name.
