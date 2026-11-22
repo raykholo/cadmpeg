@@ -6,6 +6,8 @@
 //! <!-- /generated: capability solidedge -->
 
 mod assembly;
+mod brep;
+mod chart;
 mod container;
 mod decode;
 mod dialect;
@@ -14,8 +16,12 @@ mod dressup;
 mod edge;
 mod extents;
 mod features;
+mod geometry;
+mod intersection;
+mod isocurve;
 mod layout;
 mod loss;
+mod partition;
 mod patterns;
 mod psm;
 mod settings;

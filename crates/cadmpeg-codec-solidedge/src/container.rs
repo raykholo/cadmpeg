@@ -65,3 +65,22 @@ pub(crate) fn summary(
         Vec::new(),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::evidence;
+
+    #[test]
+    fn identity_requires_both_root_paths() {
+        assert!(evidence(["PSMroots", "JSitesList"]));
+        assert!(evidence(["psmroots", "jsiteslist"]));
+        for paths in [
+            ["PSMroots", "Payload"],
+            ["Payload", "JSitesList"],
+            ["Nested/PSMroots", "JSitesList"],
+            ["PSMroots", "Nested/JSitesList"],
+        ] {
+            assert!(!evidence(paths));
+        }
+    }
+}
