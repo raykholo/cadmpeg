@@ -1,0 +1,22 @@
+[
+ {
+  "name": "00215-V6_0.4mm_Nozzle__No_Threads_.f3d",
+  "url": "https://raw.githubusercontent.com/PrintersForAnts/Voron-Construct/59394cdd6d1f16b9dc8d0300020bb13fb5c481d3/Hotends/Nozzles/V6%200.4mm%20Nozzle%20%28No%20Threads%29.f3d",
+  "sha256": "011d1c8f5c3485777a84a1c97d5603d7f85b517e6d931e83e25c34bb6d9a9619"
+ },
+ {
+  "name": "00323-b_tail_mount.f3d",
+  "url": "https://raw.githubusercontent.com/PrintersForAnts/Micron/1bfffd8193544d564dff9afdcc2073fcede038e4/Mods/CoookieTM/b%20motor%20tail%20mount/b_tail_mount.f3d",
+  "sha256": "0a1cd8b9529a3e44113cce31307b308013d3144f1c3ae764d33b1cfe97c02502"
+ },
+ {
+  "name": "00622-Voron_V1.8_Master_Model_v148.f3z",
+  "url": "https://raw.githubusercontent.com/VoronDesign/Voron-1/1467af422f94ff1cb0bc13bc10f2ff64c94056b7/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z",
+  "sha256": "50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2"
+ },
+ {
+  "name": "railcore-300ZL.f3z",
+  "url": "https://raw.githubusercontent.com/railcore/parts/66c525dc18d2b4cd8b46aac2c500beffcea8bd1b/F3Z/RailCore%20II%20300ZL%20-%20Nov%202019.f3z",
+  "sha256": "eb4afd93e0a5bba9159090909532a91862385f8fcf17ee74c4b687fa45b434fe"
+ }
+]
