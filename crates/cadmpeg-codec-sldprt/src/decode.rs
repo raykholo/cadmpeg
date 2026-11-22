@@ -3696,6 +3696,8 @@ fn build_geometry_ir(
         &ir.model.sketch_entities,
         &histories,
         &all_lanes,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,
@@ -4839,6 +4841,8 @@ fn build_metadata_ir(
         &ir.model.sketch_entities,
         &histories,
         lanes,
+        &ir.geometry.faces,
+        &ir.geometry.surfaces,
     )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         &mut ir.model.features,

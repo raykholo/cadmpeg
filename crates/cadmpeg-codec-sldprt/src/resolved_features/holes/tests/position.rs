@@ -866,6 +866,30 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         .unwrap(),
     )
     .with_native_ref(Some("authored-point".into()))];
+    let entry_plane = Surface {
+        id: SurfaceId::mint("test:model:entity#entry-plane").expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 30.0),
+                Vector3::new(0.0, 0.0, -1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+        native_ref: None,
+    };
+    let entry_face = cadmpeg_ir::topology::Face {
+        id: cadmpeg_ir::ids::FaceId::mint("test:model:entity#entry-face").expect("identity grammar"),
+        shell: cadmpeg_ir::ids::ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        surface: entry_plane.id.clone(),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    };
     let mut features = vec![hole, sketch_feature];
     let mut paired_lane = lane.clone();
     paired_lane.sketch_entities.truncate(4);
@@ -882,8 +906,21 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &entities,
         std::slice::from_ref(&history),
         &[lane, alternate_configuration],
+        std::slice::from_ref(&entry_face),
+        std::slice::from_ref(&entry_plane),
     )
     .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Hole { face, .. }) =
+        features[0].evaluation.definition()
+    else {
+        panic!("expected hole");
+    };
+    assert_eq!(
+        face,
+        &Some(cadmpeg_ir::features::FaceSelection::Faces(vec![
+            entry_face.id.clone()
+        ]))
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -919,6 +956,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&paired_lane),
+        &[],
+        &[],
     )
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -983,6 +1022,8 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&incomplete_lane),
+        &[],
+        &[],
     )
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -1078,6 +1119,8 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
+        &[],
+        &[],
     )
     .unwrap();
 
@@ -1111,6 +1154,8 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
+        &[],
+        &[],
     )
     .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =

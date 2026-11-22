@@ -21,6 +21,7 @@ use crate::records::{
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1445,9 +1446,15 @@ pub(crate) fn project_hole_position_sketches(
     sketch_entities: &[SketchEntity],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    faces: &[Face],
+    surfaces: &[Surface],
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
+    let surfaces_by_id = surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<HashMap<_, _>>();
     let native_features = crate::records::HistoryFeatures::new(histories);
     let marker_transforms = sketches
         .iter()
@@ -1675,15 +1682,33 @@ pub(crate) fn project_hole_position_sketches(
                 resolved.push(HolePlacement::Axis { origin, axis });
             }
             if resolved.len() == authored_markers.len() {
-                projection = Some((resolved, position_dependency));
+                projection = Some((resolved, position_dependency, origin, normal.get()));
             }
         }
-        if let Some((resolved, dependency)) = projection {
+        if let Some((resolved, dependency, plane_origin, plane_normal)) = projection {
             feature.evaluation.edit(|definition, _| {
-                if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
-                    definition
+                if let FeatureDefinition::Operation(FeatureOperation::Hole {
+                    placements,
+                    face,
+                    ..
+                }) = definition
                 {
                     *placements = Some(resolved);
+                    // A position sketch lies on the entry face, so its plane
+                    // names that face when exactly one planar face lies on it.
+                    if face.is_none() {
+                        let mut entry = FaceSelection::Unresolved;
+                        crate::history::selections::resolve_planar_face_selection(
+                            &mut entry,
+                            plane_origin.get(),
+                            plane_normal,
+                            faces,
+                            &surfaces_by_id,
+                        );
+                        if !matches!(entry, FaceSelection::Unresolved) {
+                            *face = Some(entry);
+                        }
+                    }
                 }
             });
             feature.dependencies.insert(dependency.clone());

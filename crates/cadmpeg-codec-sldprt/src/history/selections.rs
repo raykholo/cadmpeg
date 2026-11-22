@@ -532,7 +532,7 @@ pub(crate) fn bind_topology_selections(
     Ok(())
 }
 
-fn resolve_planar_face_selection(
+pub(crate) fn resolve_planar_face_selection(
     selection: &mut FaceSelection,
     origin: Point3,
     normal: Vector3,
