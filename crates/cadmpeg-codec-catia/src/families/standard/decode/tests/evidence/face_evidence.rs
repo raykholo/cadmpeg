@@ -671,6 +671,7 @@ fn native_edge_faces_take_the_surface_owning_the_support_tag() {
             pos: 0,
             target,
             kind: AnalyticSurfaceKind::Cylinder,
+            extension: 0,
         })
     });
     let owners = HashMap::from([(700, HashSet::from([20]))]);

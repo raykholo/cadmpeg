@@ -981,6 +981,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
             pos: 0,
             target,
             kind: AnalyticSurfaceKind::Plane,
+            extension: 0,
         })
     };
     let records = vec![plane(10), plane(20), plane(30)];
@@ -1706,6 +1707,7 @@ fn plane_normal_comes_from_its_face_frame() {
         pos: 0,
         target: 10,
         kind: AnalyticSurfaceKind::Plane,
+        extension: 0,
     })];
     let frames = [Some(crate::test_support::test_b5::finite_vector([
         0.0, 0.0, 1.0,

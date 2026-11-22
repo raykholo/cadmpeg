@@ -1,5 +1,6 @@
 use crate::families::standard::fbb::fbb_population_layouts;
 use crate::families::standard::fbb::parse_edge_tables_at;
+use crate::families::standard::fbb::parse_standard_edge_tables_scoped;
 use crate::families::standard::fbb::parse_trim_chain;
 use crate::families::standard::fbb::parse_trim_record;
 use crate::families::standard::fbb::parse_trim_record_layout;
@@ -241,6 +242,28 @@ fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
         .iter()
         .all(|row| row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun));
     assert_eq!(vertex_header, bytes.len() - 3);
+}
+
+#[test]
+fn compact_rows_accept_the_family_one_delimiter() {
+    let mut bytes = vec![
+        0x01, 0x01, 0x02, // two kind-1 rows
+        0x02, 0x03, 0x02, 0x01, 0x00, // edge 2 -> 1 -> 0
+        0x02, 0x02, 0x00, 0x03, // edge 0 -> 3
+    ];
+    bytes.extend_from_slice(&[0x10, 0x14, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
+    bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
+
+    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("family-one delimiter");
+    assert_eq!(rows[0].handles(), [2, 1, 0]);
+    assert_eq!(rows[1].handles(), [0, 3]);
+    assert_eq!(vertex_header, bytes.len() - 3);
+
+    // The wide grammar keeps its own family rule.
+    let mut wide = vec![0x01, 0x01, 0x01, 0x02, 0x02, 0x00, 0x02, 0x00, 0x03];
+    wide.extend_from_slice(&[0x10, 0x14, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
+    wide.extend_from_slice(&[0x01, 0x06, 0x00]);
+    assert!(parse_standard_edge_tables_scoped(&wide, 0).is_none());
 }
 
 #[test]

@@ -31,6 +31,7 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
             pos: 0,
             target: 0,
             kind: AnalyticSurfaceKind::Torus,
+            extension: 0,
         },
     )
     .expect("signed torus carrier");
@@ -58,6 +59,7 @@ fn standard_analytic_scalar_refusals_preserve_source_bounds() {
                 pos: 0,
                 target: 0,
                 kind,
+                extension: 0,
             },
         )
     };
@@ -114,6 +116,7 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
                 target: 0,
                 kind: AnalyticSurfaceKind::from_marker(kind)
                     .expect("fixture uses an analytic surface marker"),
+                extension: 0,
             },
         )
         .expect("large analytic carrier");
@@ -142,8 +145,7 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
         &crate::families::standard::records::SurfacePrefix {
             pos: 0,
             target: 0,
-            kind: AnalyticSurfaceKind::Torus,
-        },
+            kind: AnalyticSurfaceKind::Torus, extension: 0 },
     ), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
             if {
                 (torus_surface.major_radius().get() == 2_000_000.0)
@@ -165,6 +167,7 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
             pos: 0,
             target: 0,
             kind: AnalyticSurfaceKind::Cylinder,
+            extension: 0,
         },
     )
     .expect("near-unit cylinder carrier");
@@ -1070,6 +1073,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
                     pos: seed + offset,
                     target: u32::try_from(seed + offset).expect("small test target"),
                     kind: AnalyticSurfaceKind::Cylinder,
+                    extension: 0,
                 })
             })
             .collect(),
@@ -1376,6 +1380,7 @@ fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() 
                 target: 1,
                 kind: AnalyticSurfaceKind::from_marker(kind)
                     .expect("fixture uses an analytic surface marker"),
+                extension: 0,
             });
         assert_eq!(
             crate::families::standard::records::standard_face_bounds(&bytes, &record),
@@ -1406,6 +1411,7 @@ fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() 
                 pos: 5,
                 target: 1,
                 kind: AnalyticSurfaceKind::Cone,
+                extension: 0
             },),
         ),
         None
@@ -1752,6 +1758,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
                 pos: 0,
                 target,
                 kind: AnalyticSurfaceKind::Cylinder,
+                extension: 0,
             })
         })
         .collect::<Vec<_>>();
@@ -1770,6 +1777,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             pos: 0,
             target: 20,
             kind: AnalyticSurfaceKind::Cylinder,
+            extension: 0,
         },
     ));
     crate::families::standard::decode::apply_standard_native_edge_faces(
@@ -1801,6 +1809,7 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
                 pos: 0,
                 target,
                 kind: AnalyticSurfaceKind::Cylinder,
+                extension: 0,
             })
         })
         .collect::<Vec<_>>();
@@ -1841,6 +1850,7 @@ fn two_matching_populations_pair_into_first_and_one_rest() {
             pos: 10,
             target: 1,
             kind: AnalyticSurfaceKind::Cylinder,
+            extension: 0,
         })],
         supports: vec![StandardCurveSupport {
             pos: 20,

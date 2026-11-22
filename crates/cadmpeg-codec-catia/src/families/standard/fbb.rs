@@ -25,6 +25,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub(super) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+/// The delimiter that closes a one-byte or three-byte handle table in the
+/// V5R36 compact spine; its family nibble is one where the wide grammar's is two.
+const COMPACT_EDGE_DELIMITER_FAMILY_ONE: [u8; 8] = [0x10, 0x14, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
@@ -1175,7 +1178,12 @@ fn parse_edge_tables_scoped_width(
             scopes.push(scope);
         }
         let mut saw_delimiter = false;
-        while bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
+        while let Some(delimiter) = bytes.get(position..position + EDGE_DELIMITER.len()) {
+            let accepted = delimiter == EDGE_DELIMITER
+                || (handle_width != 2 && delimiter == COMPACT_EDGE_DELIMITER_FAMILY_ONE);
+            if !accepted {
+                break;
+            }
             saw_delimiter = true;
             position += EDGE_DELIMITER.len();
         }

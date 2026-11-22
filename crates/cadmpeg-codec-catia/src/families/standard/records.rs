@@ -128,6 +128,10 @@ pub(crate) struct SurfacePrefix {
     pub(super) target: u32,
     /// The kind byte (`0x32`..=`0x38`).
     pub(super) kind: AnalyticSurfaceKind,
+    /// Bytes the parameter block holds beyond the `00 33` form's. The
+    /// `00 34` form stores its parameters as big-endian binary64, so the
+    /// block is wider and every later field of the record moves by this much.
+    pub(super) extension: usize,
 }
 
 /// One face-local record in the standard `SurfacicReps` surface roster.
@@ -216,7 +220,7 @@ pub(super) fn standard_face_bounds(
     match record {
         StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
         StandardSurfaceRecord::Analytic(prefix) => {
-            let relative = prefix.kind.bounds_offset();
+            let relative = prefix.kind.bounds_offset() + prefix.extension;
             face_bounds_at(brep, prefix.pos + relative)
                 .filter(|bounds| bounds.sphere_radius.get() > 0.0)
         }
@@ -233,7 +237,7 @@ impl StandardSurfaceRecord {
 
     fn end(&self) -> usize {
         match self {
-            Self::Analytic(prefix) => self.pos() + prefix.kind.record_len(),
+            Self::Analytic(prefix) => self.pos() + prefix.kind.record_len() + prefix.extension,
             Self::Freeform { pos, .. } => pos + freeform_core::LEN,
         }
     }
@@ -248,13 +252,26 @@ fn analytic_record_fields_are_valid(brep: &[u8], prefix: &SurfacePrefix) -> bool
     (|| -> Option<()> {
         let marker_length = analytic_plane::KIND + 1 - analytic_plane::MARKER;
         let parameter_start = prefix.pos.checked_add(marker_length)?;
-        let bounds_start = prefix.pos.checked_add(prefix.kind.bounds_offset())?;
+        let bounds_start = prefix
+            .pos
+            .checked_add(prefix.kind.bounds_offset() + prefix.extension)?;
         let parameter_bytes = bounds_start.checked_sub(parameter_start)?;
         let mut view = View::over_retained(brep);
         view.seek(parameter_start)?;
-        for _ in 0..parameter_bytes / std::mem::size_of::<f32>() {
-            if !view.f32_be()?.is_finite() {
+        if prefix.extension == 0 {
+            for _ in 0..parameter_bytes / std::mem::size_of::<f32>() {
+                if !view.f32_be()?.is_finite() {
+                    return None;
+                }
+            }
+        } else {
+            if parameter_bytes % std::mem::size_of::<f64>() != 0 {
                 return None;
+            }
+            for _ in 0..parameter_bytes / std::mem::size_of::<f64>() {
+                if !view.f64_be()?.is_finite() {
+                    return None;
+                }
             }
         }
         face_bounds_at(brep, bounds_start)?;
@@ -540,7 +557,7 @@ pub(super) fn standard_surface_records(
 /// Read the trailing per-face orientation byte from a complete analytic
 /// `SurfacicReps` record. `true` means the face follows the carrier normal.
 pub(super) fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
-    let sign = prefix.kind.sign_offset();
+    let sign = prefix.kind.sign_offset() + prefix.extension;
     match *brep.get(
         prefix
             .pos
@@ -599,6 +616,30 @@ pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Opti
         .map(|[identities]| identities)
 }
 
+/// The version byte of the record form whose parameters are binary64.
+const WIDE_PARAMETER_VERSION: u8 = 0x34;
+
+/// Bytes by which the parameter block of the record whose `00 <version> <kind>`
+/// signature starts at `marker` exceeds the narrow form's, or `None` when the
+/// length word does not describe that kind. The word before the signature is
+/// the big-endian parameter length: the narrow form's `prebyte`, and in the
+/// binary64 form that plus the extra width of the wider parameters.
+fn parameter_extension(brep: &[u8], marker: usize, kind: AnalyticSurfaceKind) -> Option<usize> {
+    let length = usize::from(View::u16_be_at(brep, marker.checked_sub(2)?)?);
+    match *brep.get(marker + 1)? {
+        0x33 => (length == usize::from(kind.prebyte())).then_some(0),
+        WIDE_PARAMETER_VERSION => {
+            let extension = length.checked_sub(usize::from(kind.prebyte()))?;
+            (extension != 0 && extension <= MAX_PARAMETER_EXTENSION && extension % 8 == 0)
+                .then_some(extension)
+        }
+        _ => None,
+    }
+}
+
+/// Widest admitted binary64 parameter block beyond the narrow form's.
+const MAX_PARAMETER_EXTENSION: usize = 64;
+
 /// Locate complete analytic surface records by the strict 5-byte template
 /// `[target_u24 le][00][prebyte] 00 33 <kind>` ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). The strict template
 /// rejects collisional `00 33` matches inside other binary data. FV-08 fixes
@@ -609,20 +650,21 @@ pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
         return out;
     }
     for i in analytic_plane::MARKER..brep.len() - 3 {
-        if brep[i] != 0x00 || brep[i + 1] != 0x33 {
+        if brep[i] != 0x00 || !matches!(brep[i + 1], 0x33 | WIDE_PARAMETER_VERSION) {
             continue;
         }
         let kind = brep[i + 2];
         let Some(kind) = AnalyticSurfaceKind::from_marker(kind) else {
             continue;
         };
-        if brep[i - 2] != 0x00 || brep[i - 1] != kind.prebyte() {
+        let Some(extension) = parameter_extension(brep, i, kind) else {
             continue;
-        }
+        };
         let prefix = SurfacePrefix {
             pos: i,
             target: u24_le(brep, i - analytic_plane::MARKER),
             kind,
+            extension,
         };
         if face_sense(brep, &prefix).is_none() {
             continue;
@@ -809,6 +851,20 @@ fn standard_curve_support_row_at(
 
     let tag = View::u24_le_at(brep, position + 1)?;
     let header = brep.get(position + 4..position + 9);
+    if let Some(wide) = wide_curve_support_geometry(brep, position) {
+        let (geometry, refs) = wide;
+        let (face0, next) = face_ref(brep, refs)?;
+        let (face1, end) = face_ref(brep, next)?;
+        return (face0 < face_count && face1 < face_count).then_some((
+            StandardCurveSupport {
+                pos: position,
+                tag,
+                faces: [face0, face1],
+                geometry,
+            },
+            end,
+        ));
+    }
     let (geometry, refs) = if header == Some(&LINE) {
         (StandardCurveGeometry::Line, position + 9)
     } else if header == Some(&CIRCLE) {
@@ -840,8 +896,39 @@ fn standard_curve_support_row_at(
     ))
 }
 
+/// The geometry and the offset of the first face reference of a `0x60` row in
+/// the binary64 form: `60 <tag:u24le> <length:u16be> 00 34 <kind> <parameters>`.
+/// A line stores its two end points; a circle stores its centre, two axis
+/// components, one further value and the radius.
+fn wide_curve_support_geometry(
+    brep: &[u8],
+    position: usize,
+) -> Option<(StandardCurveGeometry, usize)> {
+    let length = usize::from(View::u16_be_at(brep, position + 4)?);
+    if brep.get(position + 6..position + 8) != Some(&[0x00, WIDE_PARAMETER_VERSION][..]) {
+        return None;
+    }
+    let kind = *brep.get(position + 8)?;
+    let payload = length.checked_sub(2)?;
+    let start = position + 9;
+    let refs = start.checked_add(payload)?;
+    brep.get(start..refs)?;
+    let double = |index: usize| -> Option<f64> {
+        View::f64_be_at(brep, start + 8 * index).filter(|value| value.is_finite())
+    };
+    match kind {
+        0x36 if payload == 48 => Some((StandardCurveGeometry::Line, refs)),
+        0x37 if payload == 56 => {
+            let center = FinitePoint3::new(Point3::new(double(0)?, double(1)?, double(2)?))?;
+            let radius = PositiveLength::new(double(6)?)?;
+            Some((StandardCurveGeometry::Circle { center, radius }, refs))
+        }
+        _ => None,
+    }
+}
+
 fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start: usize) -> bool {
-    const MAX_ROW_BYTES: usize = 35;
+    const MAX_ROW_BYTES: usize = 80;
     let mut candidates = match start.checked_sub(MAX_ROW_BYTES) {
         Some(first) => first..start,
         None => 0..start,
@@ -859,6 +946,9 @@ fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start:
 /// parameters are in a separate bridged record) and for any non-finite or
 /// invalid payload.
 pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {
+    if prefix.extension != 0 {
+        return decode_wide_curved(brep, prefix);
+    }
     let mut view = View::over_retained(brep);
     view.seek(prefix.pos + 3)?; // skip `00 33 <kind>`
     match prefix.kind {
@@ -975,19 +1065,53 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
     }
 }
 
+/// Decode a curved carrier of the binary64 (`00 34`) form. Only the cylinder
+/// is read: its parameters are `[px py pz ax ay extent radius]`, the axis
+/// components `ax` and `ay` with a non-negative `az`.
+fn decode_wide_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {
+    if prefix.kind != AnalyticSurfaceKind::Cylinder || prefix.extension != 32 {
+        return None;
+    }
+    let mut values = [0.0f64; 7];
+    for (index, value) in values.iter_mut().enumerate() {
+        *value = View::f64_be_at(brep, prefix.pos + 3 + 8 * index).filter(|v| v.is_finite())?;
+    }
+    let [px, py, pz, ax, ay, _extent, radius] = values;
+    let origin = FinitePoint3::new(Point3::new(px, py, pz))?;
+    let radius = PositiveLength::new(radius)?;
+    let planar = ax * ax + ay * ay;
+    if planar > 1.0 + 1e-9 {
+        return None;
+    }
+    let axis = unit_vector(Vector3::new(ax, ay, (1.0 - planar).max(0.0).sqrt()))?;
+    let frame = OrthonormalFrame3::new(
+        *axis.as_raw(),
+        cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
+    )?;
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::new(origin, frame, radius),
+    )))
+}
+
 /// Read the face-side witness point following a standard cylinder or torus
 /// carrier's big-endian parameter block.
 #[must_use]
 pub(super) fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<FinitePoint3> {
-    if brep.get(marker_pos..marker_pos + 2) != Some(&[0x00, 0x33]) {
+    let version = *brep.get(marker_pos + 1)?;
+    if *brep.get(marker_pos)? != 0x00 || !matches!(version, 0x33 | WIDE_PARAMETER_VERSION) {
         return None;
     }
     let kind = *brep.get(marker_pos + 2)?;
+    let extension = if version == 0x33 {
+        0
+    } else {
+        parameter_extension(brep, marker_pos, AnalyticSurfaceKind::from_marker(kind)?)?
+    };
     let offset = match kind {
         0x33 => 27,
         0x38 => 31,
         _ => return None,
-    };
+    } + extension;
     let values = [
         f32_le(brep, marker_pos + offset)?,
         f32_le(brep, marker_pos + offset + 4)?,
@@ -1133,6 +1257,71 @@ mod tests {
             assert_eq!(rows[0].tag, 2);
             assert_eq!(rows[0].faces, [0, 1]);
         }
+    }
+
+    #[test]
+    fn binary64_plane_record_moves_its_bounds_and_sign_by_the_wider_parameters() {
+        // `tag:u24le <length:u16be> 00 34 32`, six big-endian binary64
+        // parameters, ten little-endian binary32 bounds and the sense byte.
+        let mut bytes = vec![7, 0, 0, 0x00, 0x32, 0x00, 0x34, 0x32];
+        for value in [0.0f64, 15.0, 0.0, 0.0, 1.0, 0.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        for value in [0.0f32, 15.0, 5.0, 10.0, 0.0, 5.0, 0.0, 15.0, 5.0, 11.5] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0xff);
+        let prefixes =
+            crate::test_support::with_service_context(|_ctx| super::surface_prefixes(&bytes));
+        let [prefix] = prefixes.as_slice() else {
+            panic!("one binary64 plane record");
+        };
+        assert_eq!(prefix.target, 7);
+        assert_eq!(prefix.extension, 48);
+        assert_eq!(super::face_sense(&bytes, prefix), Some(false));
+        let record = super::StandardSurfaceRecord::Analytic(*prefix);
+        assert_eq!(record.end(), bytes.len());
+        let bounds = super::standard_face_bounds(&bytes, &record).expect("face bounds");
+        assert_eq!(bounds.sphere_center[1].get(), 15.0);
+        assert_eq!(bounds.sphere_radius.get(), 11.5);
+
+        // A length word that does not describe a whole number of binary64
+        // parameters is not a record.
+        bytes[4] = 0x33;
+        assert!(
+            crate::test_support::with_service_context(|_ctx| super::surface_prefixes(&bytes))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn binary64_support_rows_read_their_wider_parameters() {
+        let mut bytes = vec![0x60, 1, 0, 0, 0x00, 0x32, 0x00, 0x34, 0x36];
+        for value in [10.0f64, 15.0, 0.0, 10.0, 15.0, 10.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[3, 0]);
+        bytes.extend_from_slice(&[0x60, 2, 0, 0, 0x00, 0x3a, 0x00, 0x34, 0x37]);
+        for value in [0.0f64, 0.0, 40.0, 0.0, 0.0, 636.0, 30.0] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend_from_slice(&[4, 1]);
+        let rows = crate::test_support::with_service_context(|ctx| {
+            super::standard_curve_supports(ctx, &bytes, 5, Some(2))
+        })
+        .expect("read the support rows");
+        assert_eq!(rows.len(), 2);
+        assert!(matches!(
+            rows[0].geometry,
+            super::StandardCurveGeometry::Line
+        ));
+        assert_eq!(rows[0].faces, [3, 0]);
+        let super::StandardCurveGeometry::Circle { center, radius } = rows[1].geometry else {
+            panic!("circle row");
+        };
+        assert_eq!(center.get().z, 40.0);
+        assert_eq!(radius.get(), 30.0);
+        assert_eq!(rows[1].faces, [4, 1]);
     }
 
     #[test]
