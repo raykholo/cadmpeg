@@ -45,7 +45,7 @@ env:
 jobs:
   changes:
     name: Select affected crates
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 5
     permissions:
       contents: read
@@ -122,7 +122,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.static == 'true') }}
     name: static checks
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 15
     steps:
       - name: Require valid gate selection
@@ -209,7 +209,7 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
       CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 30
     steps:
       - name: Require valid gate selection
@@ -256,7 +256,7 @@ jobs:
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 90
     steps:
       - name: Require valid gate selection
@@ -340,7 +340,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.schema == 'true' || needs.changes.outputs.sldprt_cli == 'true' || needs.changes.outputs.step_cli == 'true' || needs.changes.outputs.layout == 'true') && github.event.pull_request.draft != true)) }}
     name: schema / feature gates (stable)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 40
     steps:
       - name: Require valid gate selection
@@ -406,7 +406,7 @@ jobs:
     name: fuzz crate (stable)
     env:
       CI_FUZZ_CODECS: ${{ needs.changes.outputs.codec_scope }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 30
     steps:
       - name: Require valid gate selection
@@ -446,7 +446,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || ((needs.changes.outputs.full == 'true' || needs.changes.outputs.audit == 'true') && github.event.pull_request.draft != true)) }}
     name: MSRV check (1.88)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 20
     env:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
@@ -542,7 +542,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.audit == 'true') }}
     name: cargo audit
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 10
     steps:
       - name: Require valid gate selection
@@ -565,7 +565,7 @@ jobs:
     needs: [changes, static, lint, test, features, fuzz, msrv, cross-platform, audit]
     if: ${{ always() && github.event_name == 'schedule' }}
     name: report scheduled result
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, flyer]
     timeout-minutes: 5
     permissions:
       contents: read
