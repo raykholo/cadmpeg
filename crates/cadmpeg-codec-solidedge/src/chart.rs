@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::geometry::LegacyCache;
+use cadmpeg_ir::geometry::legacy_cache::LegacyCache;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_parasolid::records::primary::Node;
 
