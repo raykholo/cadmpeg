@@ -13,12 +13,12 @@ use crate::loss::SolidEdgeLossCode;
 
 fn evidence<'a>(paths: impl IntoIterator<Item = &'a str>) -> bool {
     let mut sites = false;
-    let mut global = false;
+    let mut roots = false;
     for path in paths {
         sites |= path.eq_ignore_ascii_case("JSitesList");
-        global |= path.eq_ignore_ascii_case("JGlobal");
+        roots |= path.eq_ignore_ascii_case("PSMroots");
     }
-    sites && global
+    sites && roots
 }
 
 pub(crate) fn detect(ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError> {
