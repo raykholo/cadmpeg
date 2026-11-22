@@ -568,6 +568,7 @@ pub(crate) fn project<'a>(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::new(),
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
