@@ -213,7 +213,7 @@ image in field data can therefore be classified as a new stream.
 
 **Question.** Which carrier controls membership when Keywords `id` differs from manifest `swID`, or a native explicit `SourceIndex` conflicts with the complete manifest join?
 
-**Known.** `sldprt.md` §2 defines the complete manifest-row, referenced-model, and decimal `swID` join for saved inactive and active configurations. A readable Keywords name must agree with that join. A missing or unreadable Keywords definition does not erase a complete saved identity. Missing partitions leave membership unresolved; decoded empty partitions establish empty membership. An update-required row can have a decoded partition: `140489.sldprt` has `NeedsUpdate="YES"` and a complete active partition-0 identity. The reader retains that saved identity without asserting regeneration freshness. Keywords `id` and `swID` coincide in the available paired witnesses, so their covariance does not establish interchangeable authority. Conflicting explicit `SourceIndex` values remain unresolved.
+**Known.** `sldprt.md` §2 defines the complete manifest-row, referenced-model, and decimal `swID` join for saved inactive and active configurations. A readable Keywords name must agree with that join. A missing or unreadable Keywords definition does not erase a complete saved identity. Missing partitions leave membership unresolved; decoded empty partitions establish empty membership. An update-required row can have a decoded partition: a row with `NeedsUpdate="YES"` can have a complete active partition-0 identity. The reader retains that saved identity without asserting regeneration freshness. Keywords `id` and `swID` coincide in the available paired witnesses, so their covariance does not establish interchangeable authority. Every stored Keywords `id` names a stored `Config-N` stream index, and the partition of a lone Keywords configuration has its `id` as `N`, so `sldprt.md` §2 binds a configuration without `SourceIndex` through its `id`. Conflicting explicit `SourceIndex` values remain unresolved.
 
 **Need.** A producer save or export must distinguish unequal Keywords `id` and manifest `swID`. A native dual-carrier witness must test explicit `SourceIndex` disagreement with the full manifest join.
 
@@ -228,6 +228,22 @@ image in field data can therefore be classified as a new stream.
 **Need.** Observed values from native files settle whether the word is fixed.
 
 **Conflict.** The specification records a fixed value; the decoder admits every value.
+
+### CM-17. Keywords lead byte
+
+**Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
+
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`.
+
+**Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
+
+### CM-18. Keywords `Application` element
+
+**Question.** What do the `Application` element of a Keywords root and its `Keyword` children record?
+
+**Known.** The `Application` element is the first child element of the `Keywords` root. Its one attribute is `Name`, with the value `Simulation`. Its children are `Keyword` elements, each with a `Name` attribute and a text value, such as `Analysis type` with `Static` and `Mesh type` with `Solid Mesh`; the names and values are in the language of the document. Neither element has an `id` or a `Type` attribute. The element occurs after either lead byte of CM-17. The decoder keeps each `Application` element with its subtree as an item of the native history content, in source order, and the writer writes it back when it regenerates the Keywords text. Neither element is a feature, and `history.application-not-transferred` names each `Application` element and its children. The native history keeps 16 element levels of an `Application` element, the element itself being level 1; `history.application-nesting-cut` counts the elements below them and names the first. Corpus elements nest 2 levels.
+
+**Need.** The program state the keywords describe, and whether a target format has a record for it, before the decoder maps them to one.
 
 ## 4. Auxiliary lanes
 
@@ -515,13 +531,15 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 ### DI-28. Sweep reference child versions
 
-**Question.** Which placement grammar selects a component source record that follows a u32 version word, and which source-less forms establish an operand owner?
+**Question.** Which carrier selects a component-source placement after a u32 header word, and which source-less forms establish an operand owner?
 
-**Known.** `sldprt.md` §2 defines the ten-byte child prefix, the source-record placements at prefix +45, +69, and +81, and the two-handle and three-handle source records. A general-curve reference identifies the sweep cross-section. A component-reference curve identifies its path. An unresolved reference does not establish a sketch or a final B-rep curve. In a further form, prefix +45 through +60 is `ff` and prefix +81 stores a u32 equal to the version word of a complete three-handle record at prefix +85. A component profile of this form names a planar sketch, and a component-reference curve of this form names a composite curve.
+**Known.** `sldprt.md` §2 defines the ten-byte child prefix, the source-record placements at prefix +45, +69, and +81, and the two-handle and three-handle source records. The pre-contact and post-contact general-curve references identify the cross-section and path respectively. A component-reference curve is a path child. An unresolved reference does not establish a sketch or a final B-rep curve. In a further form, prefix +45 through +60 is `ff` and prefix +81 stores a u32 equal to the version word of a complete three-handle record at prefix +85. A component profile of this form names a planar sketch, and a component-reference curve of this form names a composite curve.
 
-**Need.** We must identify each version before reading its source field and prove the reference namespace before selecting geometry.
+**Need.** Identify the placement selector and the reference namespace of the remaining source-less forms.
 
 **Conflict.** In the version-word form, the named sketch has no decoded profile, and its decoded plane differs from the plane of the three-edge compressed-body profile in the same feature-input lane that otherwise binds as the cross-section. A neighboring sketch does not replace an explicit reference whose child form is unsupported.
+
+**Note.** A complete post-contact path source after a u32 header word supplies the path sketch with `feature.sweep-path-header-assumed`.
 
 ### DI-29. Composite sweep path identity
 
@@ -538,6 +556,8 @@ Two omitted owner-qualified construction circles have separate current/extended 
 **Known.** The Merge property is Boolean. An unrecognized compact word does not establish NewBody, Cut, or Intersect. A missing carrier does not establish Merge false. An owned unknown, malformed, or ambiguous operation cannot corroborate another lane.
 
 **Need.** Bind the complete Merge carrier to its owning feature with independent true and false controls. Retain unresolved operations when the carrier is unavailable.
+
+**Note.** A generated circular section supplies the solid construction and section diameter independently of Merge. The decoder applies the Merge reading to this construction and charges `feature.sweep-merge-assumed` whether or not a compact word resolved the shape.
 
 **Conflict.** For an unresolved solid sweep, the compact binder still projects Join when every owned lane supplies word `15`. An owned unknown, malformed or ambiguous lane prevents that consensus, but agreement on word `15` does not supply the independent Merge Boolean carrier required here.
 
@@ -636,6 +656,14 @@ resolve a seed feature?
 
 **Note.** DI-02 holds the relation-list grammar that locates `H`.
 
+### DI-78. Equation-manager stored values in a part whose relations sit in several streams
+
+**Question.** In a part whose equation-manager relations sit in several `Contents/Config-N` streams, are the values a stream stores beside a line's names the values of that stream's configuration, so that they test the active configuration's lines as they do in a part whose relations sit in one stream?
+
+**Known.** `sldprt.md` §2 "A relation whose byte 1 after its text is `02` or `03` stores its sides as tokens" places the f64 stored beside each dimension reference. The decoder tests a line's tree against the values its relation stores beside the names it reads, and types a dimension of unread kind as a length from the value stored beside it (`sldprt.md` §2 "The active configuration's equation-manager lines are parameter expressions" and "A dimension with no `PMISemanticDataDB` record"). It reads the active configuration's stream, and refuses a line that another stream does not hold with the same right-hand side. The value stored on the assigned side can be another configuration's value, and a whole stream can hold another configuration's values (`sldprt.md` §2 "The name in a token is the name the manager resolved"). Where the stream read holds another configuration's value of a dimension a line reads and that value differs from the decoded one, the line stays source text. The decoder types a dimension as a length from the value the manager stores beside it where its display in the part's length unit equals that value, or where each value stored beside a name the line that drives it reads equals that name's decoded value, the line evaluated over those values gives the stored value, and the display is the stored value rounded to the document's length precision.
+
+**Need.** A part whose relations sit in several streams, with each configuration's decoded dimension values (its Keywords snapshot or its `PMISemanticDataDB` records) to compare with the values its stream stores beside the same names, and each stream's lines evaluated over that stream's values. Where every stream stores its own configuration's values, the active stream's values test the active configuration's lines as in a part with one stream. Without it, a line of such a part that reads a value its stream stores for another configuration stays SolidWorks source text.
+
 ### DI-44. Sign of an integer scalar value
 
 **Question.** Is the four-byte value of an `moIntegerParameter_c` named scalar signed or unsigned?
@@ -664,7 +692,7 @@ resolve a seed feature?
 
 **Question.** Which sketch records carry the geometry of a line-or-circle or arc handle that no marker layout in `sldprt.md` resolves?
 
-**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. A handle whose record is a curve record of a framed `sgSketch` object with selector bit 0 clear takes its geometry from the point records its indices select (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). When that record is a line with an identifier trailer (open item EV-29), or when the handle's two read endpoints coincide, the entity takes that geometry and the decoder charges `sketch.handle-reading-assumed`. Three kinds of handle remain. In a record of the compact `ff ff 07 00 01` generation with no f32 `-1` at +13, the same endpoint, sense and centre cell stands 14 bytes earlier: endpoint indices at +42 and +44, f64 `-1` at +50, the sense at +58 and the centre index at +62; the 14-byte header and point-record bounds of its `sgSketch` object are not framed. A handle whose selector has bit 0 set is open item EV-27. A handle whose `sgSketch` header is not framed has no point-record list. After its last sketch-geometry pass, the decoder gives each remaining entity native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, keeps its identity and relations, and charges `sketch.handle-unresolved`. An arc handle whose inline center and endpoints define no minor arc joins its sketch after that pass, with native kind `sldprt:arc-handle`, its identity and relations, and the same loss. A line handle whose two read endpoints coincide, one of them read from a legacy 140-byte single-incidence profile-point record (`sldprt.md` §2), keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate` when its curve record gives no geometry. A handle whose read values define no valid line, circle, or ellipse emits no entity, and neither does a kept handle that stores its own coordinates without the geometry locus `05 00 01 00` at marker +23.
+**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. A handle whose record is a curve record of a framed `sgSketch` object with selector bit 0 clear takes its geometry from the point records its indices select (`sldprt.md` §2, "A marker whose record is a point record or a curve record"). Three kinds of handle remain. In a record of the compact `ff ff 07 00 01` generation with no f32 `-1` at +13, the same endpoint, sense and centre cell stands 14 bytes earlier: endpoint indices at +42 and +44, f64 `-1` at +50, the sense at +58 and the centre index at +62; the 14-byte header and point-record bounds of its `sgSketch` object are not framed. A handle whose selector has bit 0 set is open item EV-27. A handle whose `sgSketch` header is not framed has no point-record list. After its last sketch-geometry pass, the decoder gives each remaining entity native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, keeps its identity and relations, and charges `sketch.handle-unresolved`. An arc handle whose inline center and endpoints define no minor arc joins its sketch after that pass, with native kind `sldprt:arc-handle`, its identity and relations, and the same loss. A line handle whose two read endpoints coincide, one of them read from a legacy 140-byte single-incidence profile-point record (`sldprt.md` §2), keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate` when its curve record gives no geometry. The decoder places the point records of a marker sketch on a plane oblique to the model axes with a transform that is not rigid, so an arc record whose endpoints lie at one distance from its centre in the file can end off its placed endpoint point records by more than the linear resolution, `1e-8` m. The decoder then reads no geometry from that record. A handle that a marker layout of `sldprt.md` §2 reads and that no other rule draws takes that arc after the last sketch-geometry pass, about the placed centre from the placed start point record to the direction of the placed end point record in the record's sense, and charges `sketch.arc-record-off-chord`. A marker that another rule of §2 draws as a line keeps that line and charges `sketch.arc-record-conflict`. A marker that no layout reads gives no entity. A handle whose read values define no valid line, circle, or ellipse emits no entity, and neither does a kept handle that stores its own coordinates without the geometry locus `05 00 01 00` at marker +23.
 
 **Need.** We must read these handles to complete the sketch geometry and its profiles.
 
@@ -966,7 +994,7 @@ resolve a seed feature?
 
 **Question.** What do the unnamed fields of the sketch record head, point and curve records, the `sgSketch` settings block and its 61 trailing bytes mean, what are the eight relation groups, and how are the compact `ff ff 07 00 01` records laid out?
 
-**Known.** In some sketches (about 17 streams; `Intake Final Drive Hex`, `105t HTD Belt…`) the dimension and relation groups hold one u16 count fewer than the usual three plus eight, with the same entries otherwise: a polygon that is the last group's entry elsewhere appears one group earlier. The header fields do not tell the two apart, but no group count has bit 15 set, so a reader detects the shorter form by the class tag that stands where the eighth count would be; which group is dropped is not known. The relation groups observed hold one-operand relations (types `4`, `5`, `17`) in the first group and two-operand relations (types `9`, `12`) in later groups. Some sketches write four zero bytes after the eight groups before the first `suObList` pointer. The zero bytes between the last curve record and the dimension count number 36 when the last curve list holds lines (106 of 115 sketches examined) and 22 when it holds arcs (187 of 220); 34 and 24 occur in the rest. The compact generation occurs in files whose sketches open their records with `ff ff 07 00 01`.
+**Known.** In some sketches (about 17 streams) the dimension and relation groups hold one u16 count fewer than the usual three plus eight, with the same entries otherwise: a polygon that is the last group's entry elsewhere appears one group earlier. The header fields do not tell the two apart, but no group count has bit 15 set, so a reader detects the shorter form by the class tag that stands where the eighth count would be; which group is dropped is not known. The relation groups observed hold one-operand relations (types `4`, `5`, `17`) in the first group and two-operand relations (types `9`, `12`) in later groups. Some sketches write four zero bytes after the eight groups before the first `suObList` pointer. The zero bytes between the last curve record and the dimension count number 36 when the last curve list holds lines (106 of 115 sketches examined) and 22 when it holds arcs (187 of 220); 34 and 24 occur in the rest. The compact generation occurs in files whose sketches open their records with `ff ff 07 00 01`.
 
 **Need.** A reader that recovers sketch geometry and constraints, and a writer that creates a sketch, have to read and write these fields.
 
@@ -990,9 +1018,9 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### EV-19. Configuration object stream
 
-**Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how are `moRelation_c` objects and their equation sides read inside `Config-N`, and what are the `Config-N` layouts of files below `swVersion` 14000?
+**Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how does a relation whose six bytes after its text are all zero store its equation sides, and what are the `Config-N` layouts of files below `swVersion` 14000?
 
-**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
+**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions. A relation whose six bytes after its text are all zero opens its first side with the same side class or token as the other relations and stores fewer tokens; a global-variable token's character range differs in length from its text. Its dimension reference is the relation-dimension class tag, six zero bytes, and the counted name, with no wrapper and no value.
 
 **Need.** A writer that creates a part has to write the configuration stream, and a reader that keeps detailing settings, threads and equations has to read it.
 
@@ -1074,31 +1102,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
 
-### EV-27. Sketch curve records with selector bit 0 set
+### EV-27. Sketch curve records with selector bit 0 set or on the geometry locus
 
-**Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
+**Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set, and when bit 0 is clear and its locus (+23) is `05 00 01 00`?
 
-**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 clear and locus `05 00 01 00`, the current-prefix 92-byte selector-4 line that `sldprt.md` §2 reads takes each endpoint value plus one as the object index of a point marker. The decoder reads the indices of the other such records as point-record positions and charges `sketch.point-record-index-basis-assumed`. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
-
-### EV-28. Sensed curve records whose endpoints differ from their marker endpoints
-
-**Question.** Which endpoints does a sketch curve record with sense `1` or `-1` join when its point-record positions and the `sldprt.md` §2 marker rules select different points?
-
-**Known.** A curve marker that the §2 rules read as a straight line is an arc when its framed `sgSketch` curve record has selector bit 0 clear, sense `1` or `-1`, and point records at the marker's two endpoints (`sldprt.md` §2 "A curve marker that these rules read as a straight line"). In other sensed records the endpoint indices select point records at other positions, or equal indices select a full circle, or the selected endpoints lie at different distances from the selected centre. In others the endpoint point records stand at the marker endpoints, and the arc about the centre point record, placed in the sketch, ends off one marker endpoint by more than the linear resolution. Placed through the point records, the arc of such a record can coincide with a circular B-rep edge of its feature that has the record's radius and sweep. The line that the §2 rules give meets the sketch's other curves at both ends more often than that arc. The decoder keeps the line and charges `sketch.arc-record-conflict` with the reason.
-
-**Need.** The field or index domain that relates these records' point-record positions to the §2 marker roster, checked against the edges and side faces their features produce.
-
-### EV-29. Endpoints of sketch curve lines with an identifier trailer
-
-**Question.** What do the endpoint values of an `sgSketch` curve-record line with an identifier trailer select?
-
-**Known.** The line has the eight zero bytes at +56 and selector (+37) bit 0 clear, and stores u32 `1` at +84, or u32 `0` at +84 and an identity other than `0` and `ff ff ff ff` at +88. `sldprt.md` §2 reads the trailer-`1` form as direct point-object identifiers ("A current-prefix 92-byte direct profile line") and the trailer-`0` form as one-based ordinals in the feature's coordinate-bearing marker roster ("The current, compact legacy, and extended marker prefixes have a solved curve"). Other curve records with selector bit 0 clear index the point records of their `sgSketch` object by zero-based position (§2.3). Read that way, trailer-`0` endpoints match the endpoints of a B-rep line edge more often than the one-based ordinals do. The decoder applies the §2 reading. A handle that reading leaves unread takes the line between the point records at its positions, and the decoder charges `sketch.handle-reading-assumed`.
-
-**Need.** For both trailer forms, the point pairs that each reading selects, compared with the B-rep line edges of the feature that consumes the sketch.
-
-**Conflict.** For one record, the §2 reading and the point-record positions can select different point pairs.
 
 ### EV-30. Sketch curve records of curve type 2
 
@@ -1179,7 +1189,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold? Which construction state does selector `12` declare for a full circle with role u16 `1` at +27?
 
-**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line. Type `1` followed by u16 `0`, or type `0xffff` followed by u16 `0xffff`, is an arc or circle when four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. It reports every overridden constraint-owning relation code on a framed list curve with `sketch.listed-curve-relation-dropped`, naming the curve form and +17 code. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-77. These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves. Selector bit 3 marks construction geometry. The decoder reads a full circle with role u16 `1` at +27 as profile geometry on every projection path; no selector-12 list curve is such a circle. The decoder marks selector-12 role-1 list lines as construction from bit 3 and reports `sketch.listed-line-construction-assumed`. Of 86 current-layout selector-12 list lines with role `1`, 29 have resolved geometry to compare with the edges of the final solid.
+**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line. Type `1` followed by u16 `0`, or type `0xffff` followed by u16 `0xffff`, is an arc or circle when four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. It reports every overridden constraint-owning relation code on a framed list curve with `sketch.listed-curve-relation-dropped`, naming the curve form and +17 code. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-77; their geometry comes from the record by point-record position whatever +17 holds (`sldprt.md` §2, "A marker whose record is a point record or a curve record"). These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves. Selector bit 3 marks construction geometry. The decoder reads a full circle with role u16 `1` at +27 as profile geometry on every projection path; no selector-12 list curve is such a circle. The decoder marks selector-12 role-1 list lines as construction from bit 3 and reports `sketch.listed-line-construction-assumed`. Of 86 current-layout selector-12 list lines with role `1`, 29 have resolved geometry to compare with the edges of the final solid.
 
 **Need.** The value compared with the relation and dimension groups of the same `sgSketch` object and with the record's handles. For the construction state, selector-12 role-1 circles and lines with a known construction state and profile-to-face binding.
 
