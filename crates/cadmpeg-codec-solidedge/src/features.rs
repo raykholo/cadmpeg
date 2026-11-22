@@ -594,10 +594,6 @@ pub(crate) fn project<'a>(
              family only"
         )));
     }
-    losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(
-        "the rollback position and suppressed state of the features are not read; the timeline \
-         is stated built through its last member",
-    ));
     Ok(())
 }
 

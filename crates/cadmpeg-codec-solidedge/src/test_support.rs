@@ -126,7 +126,7 @@ pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
         stream: None,
         parent: 0,
     }];
-    for name in ["JGlobal", "JSitesList"] {
+    for name in ["PSMroots", "JSitesList"] {
         nodes.push(Node {
             name: name.into(),
             stream: Some(Vec::new()),

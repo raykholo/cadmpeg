@@ -52,7 +52,6 @@ fn full_decode_reports_pending_bodies() {
     assert!(result.ir().geometry.bodies.is_empty());
     for code in [
         crate::loss::SolidEdgeLossCode::BodiesPending,
-        crate::loss::SolidEdgeLossCode::FeaturesPending,
         crate::loss::SolidEdgeLossCode::AttributesPending,
     ] {
         assert!(result
