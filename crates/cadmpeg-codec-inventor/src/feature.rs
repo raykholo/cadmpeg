@@ -16,9 +16,9 @@ use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec},
         holes::HoleKind,
-        DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection, ExtrudeSide,
-        ExtrusionDirectionSource, Feature, FeatureContent, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
+        DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
+        ExtrudeSide, ExtrusionDirectionSource, Feature, FeatureContent, FeatureDefinition,
+        FeatureId, FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -3220,6 +3220,11 @@ impl<'a> BoundaryProfile<'a> {
     }
 }
 
+/// Source property of an extrusion naming the parameter that sets its first blind distance.
+pub(crate) const EXTENT_DISTANCE_PARAMETER: &str = "extent_distance_parameter";
+/// Source property of a two-sided extrusion naming the parameter that sets its second blind distance.
+pub(crate) const EXTENT_SECOND_DISTANCE_PARAMETER: &str = "extent_second_distance_parameter";
+
 fn project_extrusion(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
@@ -3245,7 +3250,15 @@ fn project_extrusion(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    let source_properties = boolean_properties(source, &[20, 22], index);
+    let mut source_properties = boolean_properties(source, &[20, 22], index);
+    for (key, slot) in extent_distance_bindings(&extent) {
+        if let Some(parameter) = parameter_at(source, slot, index) {
+            source_properties.insert(
+                cadmpeg_core::text::NonBlankString::new(key.to_owned())?,
+                parameter.as_str().to_owned(),
+            );
+        }
+    }
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
         return Some(Err(error));
     }
@@ -4476,6 +4489,56 @@ fn resolve_direction<'a>(
         ))
         .and_then(Option::as_ref)
         .copied()
+}
+
+/// The source-property key and property slot of each blind distance an extrusion
+/// reads from a parameter. A symmetric extent is left out: its stored distance
+/// is not known to be the parameter's total.
+fn extent_distance_bindings(extent: &ExtrudeExtent) -> Vec<(&'static str, usize)> {
+    let blind = |side: &ExtrudeSide| matches!(side.termination, LinearTermination::Blind { .. });
+    match extent {
+        ExtrudeExtent::OneSided { side } if blind(side) => {
+            vec![(EXTENT_DISTANCE_PARAMETER, ExtrusionSideSlots::FIRST.length)]
+        }
+        ExtrudeExtent::TwoSided { first, second } => {
+            let mut bindings = Vec::new();
+            if blind(first) {
+                bindings.push((EXTENT_DISTANCE_PARAMETER, ExtrusionSideSlots::FIRST.length));
+            }
+            if blind(second) {
+                bindings.push((
+                    EXTENT_SECOND_DISTANCE_PARAMETER,
+                    ExtrusionSideSlots::SECOND.length,
+                ));
+            }
+            bindings
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The CADIR id of the design parameter a feature property slot references.
+fn parameter_at(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+) -> Option<cadmpeg_ir::features::ParameterId> {
+    let reference = source.properties.references().get(slot)?;
+    let parameter = index
+        .parameters
+        .get(&(
+            source.identity.segment_token.as_str(),
+            reference.index().checked_sub(1)?,
+        ))
+        .and_then(Option::as_ref)?;
+    Some(
+        index
+            .parameter_values
+            .get(parameter.id().as_str())?
+            .as_ref()?
+            .id
+            .clone(),
+    )
 }
 
 fn length_parameter(

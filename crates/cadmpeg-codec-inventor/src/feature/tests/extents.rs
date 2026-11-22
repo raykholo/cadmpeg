@@ -1952,3 +1952,5 @@ fn work_point_extent_and_validator_refuse_an_indeterminate_travel_distance() {
 }
 
 mod plane_controls;
+
+mod parameter_bindings;
