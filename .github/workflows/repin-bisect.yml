@@ -1,0 +1,61 @@
+name: repin-bisect
+# Fork-only: decode four public files at each listed cadmpeg commit and upload compact extracts.
+on:
+  push:
+    branches: ['bisect/repin*']
+jobs:
+  point:
+    if: github.repository == 'raykholo/cadmpeg'
+    name: point ${{ matrix.sha }}
+    runs-on: ${{ vars.FLYER == 'on' && 'flyer' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        sha: ["160c82bd8ceb34b3b566e2d82705a4888cf761a7","20b0f8e4c8e38be2ceefaa9a82307c6ca8d3116d","568466c2eaf456f101ebe88791c3a163cec6d631","d4d7e4e7c52a2bc7762abd3992a550d234aa8f5d","2dcec0a94242b7180aa7ee8ba3b48e222299bc12","9ad4b38404c761ed10d8b7036be8d769ebe192b4"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
+          path: src
+      - name: Toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal && rustup default 1.97.0
+      - name: Build
+        working-directory: src
+        run: cargo build --release --locked -p cadmpeg --no-default-features --features f3d
+      - name: Files
+        run: |
+          mkdir -p files
+          python3 - <<'PY'
+          import json, hashlib, urllib.request
+          for f in json.load(open("harness/.github/bisect/files.json")):
+              import time
+              for attempt in range(6):
+                  try:
+                      b = urllib.request.urlopen(f["url"], timeout=120).read()
+                  except Exception as e:
+                      print("retry", f["name"], e); time.sleep(30 * (attempt + 1)); continue
+                  if hashlib.sha256(b).hexdigest() == f["sha256"]: break
+                  print("hash mismatch", f["name"], len(b)); time.sleep(30 * (attempt + 1))
+              else:
+                  raise SystemExit("download failed: " + f["name"])
+              open("files/" + f["name"], "wb").write(b)
+          PY
+      - name: Decode
+        run: |
+          set +e; S=${{ matrix.sha }}; mkdir -p out
+          for f in files/*; do n=$(basename "$f")
+            timeout 1800 src/target/release/cadmpeg dump "$f" -o d.json > "out/$n.dump.txt" 2>&1; echo "rc=$?" >> "out/$n.dump.txt"
+            [ -s d.json ] && python3 harness/.github/bisect/extract.py d.json "$n" "out/$n.json" > "out/$n.extract.txt" 2>&1; rm -f d.json
+            timeout 1800 src/target/release/cadmpeg check "$f" > "out/$n.check.txt" 2>&1; echo "rc=$?" >> "out/$n.check.txt"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: point-${{ matrix.sha }}
+          path: out
+          retention-days: 7
