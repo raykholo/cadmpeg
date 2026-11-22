@@ -50,6 +50,8 @@ pub(crate) enum SolidEdgeLossCode {
     IntersectionPlanarSupportAssumed,
     IntersectionNurbsBoundaryAssumed,
     IntersectionNurbsIsolineAssumed,
+    FeatureFolderNameUnread,
+    FeatureSuppressionUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -105,6 +107,14 @@ impl SolidEdgeLossCode {
             Self::SheetMetalBaseTabUnread => {
                 ("sheet-metal.base-tab-unread", LossTaxonomy::RecordNotTyped)
             }
+            Self::FeatureFolderNameUnread => (
+                "feature.folder-name-unread",
+                LossTaxonomy::MetadataNotTransferred,
+            ),
+            Self::FeatureSuppressionUnread => (
+                "feature.suppression-unread",
+                LossTaxonomy::FeatureHistoryRetained,
+            ),
             Self::FeatureRollbackUnread => (
                 "feature.rollback-unread",
                 LossTaxonomy::FeatureHistoryRetained,

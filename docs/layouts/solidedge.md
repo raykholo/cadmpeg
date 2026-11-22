@@ -494,3 +494,33 @@ Parsed by:
 | 12 | 2 | `unit` | `u16` | little | spec | \| 12 \| `u16` unit type: `1` length in metres, `16` density, `58` unitless \| |
 | 14 | 2 | `reserved` | `u16` | little | spec | \| 14 \| `u16` zero \| · value `0` |
 | 16 | 8 | `value` | `f64` | little | spec | \| 16 \| `f64` value, equal to the value of the referenced object \| |
+
+## `part_feature_object`
+
+Spec §4.3 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/features.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `state` | `u32` | little | spec | The `u32` at object offset 8 of a `CLSID_JMPart` object is its state word. |
+
+Unstated regions:
+
+- `0..8` (8 B): The object frame (§3.1).
+
+## `folder_object`
+
+Spec §4.3 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/features.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `member_count` | `u32` | little | spec | The `u32` at object offset 8 is the member count `c`. |
+
+Unstated regions:
+
+- `0..8` (8 B): The object frame (§3.1).

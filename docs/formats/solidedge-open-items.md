@@ -32,14 +32,6 @@
 
 **Need.** A part with a known edge length saved under each option, with the displayed value of that length.
 
-### DR-1015. Feature suppression, rollback and folders
-
-**Question.** Which fields store a feature's suppressed state, the feature-tree rollback position, and the features a folder holds?
-
-**Known.** The feature navigator object lists the features in order (§4.1). A folder is a `CLSID_JMFeatureGroup` entry of the navigator list. In documents without suppressed features and without a rollback, the navigator flag word is `0x08000003` or `0x08800013`.
-
-**Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
-
 ### DR-1016. Feature navigator final word
 
 **Question.** What does the final word of the feature navigator object count?
@@ -119,3 +111,11 @@
 **Known.** An intersection record references two support surfaces and a chart, and carries a sense byte. A chart carries base-parameter, scale, and point fields. The reader uses chart order for a resolved direction and ordered oriented support normals for a resolved analytic section otherwise.
 
 **Need.** Establish chart-null semantics, the effects of support order and support sense, and the native parameter gauge.
+
+### DR-1019. Group feature suppression and folder names
+
+**Question.** Which field stores the suppressed state of a `CLSID_JMGroup` feature, and where is the name of a feature-tree folder stored?
+
+**Known.** A `CLSID_JMPart` feature stores its suppressed state in bit `0x10` of its state word (§4.3). The `u32` at object offset 8 of a `CLSID_JMGroup` object is `1` in documents without suppressed features. A `CLSID_JMFeatureGroup` object lists the folder members (§4.3).
+
+**Need.** A document with one suppressed mirror copy or pattern and its resave without suppression; a document with one renamed folder and its resave with the default name.

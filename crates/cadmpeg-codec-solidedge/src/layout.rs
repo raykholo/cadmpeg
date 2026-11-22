@@ -396,3 +396,19 @@ pub(crate) mod variable_record {
     /// Offset of `value` (`f64`, little-endian). Spec §10.1.
     pub(crate) const VALUE: usize = 16;
 }
+
+/// Byte offsets for the `part_feature_object` record.
+///
+/// Spec §4.3. Record length 12 B.
+pub(crate) mod part_feature_object {
+    /// Offset of `state` (`u32`, little-endian). Spec §4.3.
+    pub(crate) const STATE: usize = 8;
+}
+
+/// Byte offsets for the `folder_object` record.
+///
+/// Spec §4.3. Record length 12 B.
+pub(crate) mod folder_object {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §4.3.
+    pub(crate) const MEMBER_COUNT: usize = 8;
+}

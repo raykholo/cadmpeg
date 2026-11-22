@@ -86,7 +86,7 @@ fn word(object: &Object<'_>, at: usize, what: &str) -> Result<u32, String> {
 fn seed_of(listed: &[Listed], id: u32) -> Result<u32, String> {
     if listed
         .iter()
-        .any(|entry| entry.object == id && entry.kind != Kind::Folder)
+        .any(|entry| entry.object == id && !matches!(entry.kind, Kind::Folder(_)))
     {
         Ok(id)
     } else {
