@@ -77,6 +77,34 @@ pub(crate) struct Inputs<'a> {
     provenance: std::cell::RefCell<Provenance<'a>>,
     pub(super) regions: std::cell::RefCell<super::regions::Recovery>,
     pub(super) sampling_report: std::cell::RefCell<super::Report>,
+    sketches: StoredSketches<'a>,
+}
+
+type StoredSketches<'a> = Mapping<Option<BTreeMap<&'a str, Mapping<&'a Value>>>>;
+
+/// Index `sketches.json` by feature id. An absent member gives `None`. A
+/// repeated id marks that id invalid. A row without an id carries no frame.
+fn sketch_information<'a>(bundle: &'a Bundle<'a>, prefix: &str) -> StoredSketches<'a> {
+    let path = format!("{prefix}/sketches.json");
+    if !bundle.contains(&path) {
+        return Ok(None);
+    }
+    let response = bundle
+        .json(&path)
+        .map_err(|_| "sketches.json is unreadable")?;
+    let mut sketches = BTreeMap::new();
+    for sketch in super::rows(response, "sketches")? {
+        let Some(native) = sketch.get("featureId").and_then(Value::as_str) else {
+            continue;
+        };
+        if sketches.insert(native, Ok(sketch)).is_some() {
+            sketches.insert(
+                native,
+                Err("the stored sketch attachment information repeats a feature id".into()),
+            );
+        }
+    }
+    Ok(Some(sketches))
 }
 
 fn rollback_indices(bundle: &Bundle<'_>, prefix: &str) -> Mapping<BTreeSet<usize>> {
@@ -146,7 +174,20 @@ impl<'a> Inputs<'a> {
             provenance: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
             sampling_report: std::cell::RefCell::default(),
+            sketches: sketch_information(bundle, prefix),
         }
+    }
+
+    /// The stored sketch-information row of a sketch feature. `None` means the
+    /// bundle carries no `sketches.json` or the member has no row for the feature.
+    pub(crate) fn sketch_information(&self, native: &str) -> Mapping<Option<&Value>> {
+        let Some(sketches) = self.sketches.as_ref().map_err(Clone::clone)? else {
+            return Ok(None);
+        };
+        sketches
+            .get(native)
+            .map(|row| row.as_ref().copied().map_err(Clone::clone))
+            .transpose()
     }
 
     pub(crate) fn sketch_entities(&self, sketch: &str) -> Mapping<&[Value]> {

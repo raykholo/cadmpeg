@@ -440,7 +440,7 @@ fn zlib_cap_queries_refuse_unresolved_attachment_frames() {
 
 // A sketch on a side face: the zlib query names the face by its deterministic id
 // in the rollback state before the sketch, which supplies the face's plane.
-fn face_sketch_bundle(normal: [f64; 3], orientation: bool) -> Vec<u8> {
+pub(super) fn face_sketch_bundle(normal: [f64; 3], orientation: bool) -> Vec<u8> {
     use base64::Engine;
     let bytes = changed(|response| {
         let mut face_sketch = response["features"][0].clone();

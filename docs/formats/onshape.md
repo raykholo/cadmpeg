@@ -31,13 +31,14 @@ the member prefix `partstudios/<id>`.
 | `partstudios/<id>/features.json` | Ordered Part Studio feature response |
 | `partstudios/<id>/bodydetails/index.json` | Rollback ordinals with body responses |
 | `partstudios/<id>/bodydetails/<ordinal>.json` | Input topology at that rollback |
+| `partstudios/<id>/sketches.json` | Sketch information response with stored attachment matrices |
 | `partstudios/<id>/export.step` | Final geometry in STEP Part 21 UTF-8 text |
 | `partstudios/<id>/configuration.json` | Configuration response |
 | `partstudios/<id>/variables.json` | Variable response |
 
 The STEP member can be absent for a nonempty feature list composed of
 sketches, variable assignments and suppressed features. Other feature lists
-require the STEP member. Configuration and variable response members are
+require the STEP member. Configuration, variable and sketch information response members are
 optional. Additional members carry opaque data.
 
 The manifest can carry document identity, names, fetch time, API version,
@@ -95,6 +96,20 @@ Region selections can restrict the parameter interval of an exact curve.
 Loop closure follows stored curve endpoints and parameter intervals. Analytic
 intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
+
+The sketch information response is a JSON object with a `sketches` array and
+can carry `sourceMicroversion`. Each row has a `featureId` that names a
+sketch feature and a `sketchMatrix`. A row without `featureId` binds no
+sketch. A repeated `featureId` is invalid. `sketchMatrix` is an array of sixteen
+finite numbers: a row-major homogeneous sketch-to-world transform. Row `r`,
+column `c` is element `4r + c`. Columns zero, one and two are the stored x axis,
+y axis and normal of the sketch plane. Column three holds the sketch origin in
+metres. The last row is `0, 0, 0, 1`. The three axes are unit length and
+mutually orthogonal, and `y = normal × x` (right-handed). The matrix is the
+attachment frame of a sketch placed on a model face: it replaces the `plane`
+object below. A sketch on a built-in plane keeps its conventional frame. A face
+sketch whose row is absent or whose bundle has no sketch information member uses
+the `plane` object when present.
 
 A sketch's optional `plane` object stores its attachment frame. `origin` uses
 metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.

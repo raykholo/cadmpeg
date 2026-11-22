@@ -219,6 +219,20 @@ impl<'a> Bundle<'a> {
         let mut count = 0usize;
         let mut omitted = Vec::new();
         for (path, response) in &self.json {
+            if path.ends_with("/sketches.json") {
+                let rows = response
+                    .get("sketches")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len);
+                if rows > super::reader::ROWS {
+                    omitted.push(path.clone());
+                } else {
+                    count = count
+                        .checked_add(rows)
+                        .ok_or_else(|| failure("sketch information count overflow"))?;
+                }
+                continue;
+            }
             if !path.contains("/bodydetails/") {
                 continue;
             }
@@ -268,6 +282,14 @@ impl<'a> Bundle<'a> {
         }
         for path in omitted {
             self.json.remove(&path);
+            if path.ends_with("/sketches.json") {
+                self.members.remove(&path);
+                self.losses
+                    .push(OnshapeLossCode::MemberTooLarge.note(format!(
+                        "{path}: sketch information exceeds the row limit; omitted the member"
+                    )));
+                continue;
+            }
             self.losses
                 .push(OnshapeLossCode::TopologyTooLarge.note(format!(
                     "{path}: topology exceeds the row limit; omitted the topology table"
@@ -362,7 +384,11 @@ fn schema_response(name: &str, prefix: &str) -> bool {
     };
     if matches!(
         member,
-        "features.json" | "configuration.json" | "variables.json" | "bodydetails/index.json"
+        "features.json"
+            | "sketches.json"
+            | "configuration.json"
+            | "variables.json"
+            | "bodydetails/index.json"
     ) {
         return true;
     }

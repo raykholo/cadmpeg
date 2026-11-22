@@ -20,6 +20,7 @@ pub(super) enum OnshapeLossCode {
     EdgeGeometryUnsampled,
     StepUnreadable,
     RollbackUnread,
+    SketchFrameInvalid,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -40,6 +41,7 @@ impl OnshapeLossCode {
             Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
             Self::RollbackUnread => "history.rollback-unread",
+            Self::SketchFrameInvalid => "sketch.frame-invalid",
         }
     }
     pub(super) fn matches(self, note: &LossNote) -> bool {

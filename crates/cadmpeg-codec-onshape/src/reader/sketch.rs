@@ -2,6 +2,11 @@
 const SPLINE_DOMAIN_TOLERANCE: f64 = 1e-9;
 const POINT_U_TOLERANCE: f64 = 1e-6;
 const POINT_V_TOLERANCE: f64 = 1e-6;
+/// Acceptance gate for a stored `sketchMatrix`: axis length, axis orthogonality
+/// and handedness differ from the ideal by at most this much.
+const EPS_MATRIX_ORTHONORMAL: f64 = 64.0 * f64::EPSILON;
+/// Start of every error that names an invalid stored sketch matrix.
+const MATRIX_INVALID: &str = "the stored sketch attachment matrix";
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::Model;
@@ -14,7 +19,11 @@ use super::{
     id, number, optional_rows, push, query as compressed, rows, text, topology, Mapping,
 };
 const ORIGIN_ID: &str = "IB";
-fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Value> {
+fn frame(
+    feature: &Value,
+    face: &dyn Fn(&str) -> Mapping<Value>,
+    stored: &Mapping<Option<&Value>>,
+) -> Mapping<Value> {
     let [query] = queries(feature, "sketchPlane")? else {
         return Err("multiple sketch planes are not supported yet".into());
     };
@@ -34,7 +43,7 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
             return Err("a sketch on more than one face is not supported yet".into());
         };
         let support = face(native.as_str().ok_or("a sketch face id is not a string")?)?;
-        attachment_frame(feature, &support)
+        attachment_frame(feature, &support, *stored.as_ref().map_err(Clone::clone)?)
     };
     let plane = if query
         .get("queryString")
@@ -104,7 +113,7 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
     };
     let support = json!({"origin": topology::point([0.0; 3]), "normal": topology::point(normal), "u_axis": topology::point(u_axis)});
     if feature.get("plane").is_some() {
-        attachment_frame(feature, &support)
+        attachment_frame(feature, &support, None)
     } else {
         Ok(support)
     }
@@ -123,13 +132,57 @@ pub(super) fn built_in_frame(feature: &Value) -> bool {
     {
         return false;
     }
-    frame(feature, &|_| Err("historical face".into())).is_ok()
+    frame(feature, &|_| Err("historical face".into()), &Ok(None)).is_ok()
+}
+
+/// Read a row-major sketch-to-world `sketchMatrix` (translation in metres;
+/// columns are the stored x, y and normal axes) as a plane object.
+fn information_plane(sketch: &Value) -> Mapping<Value> {
+    let matrix = rows(sketch, "sketchMatrix")
+        .map_err(|_| format!("{MATRIX_INVALID} is missing or is not an array"))?;
+    let values = matrix
+        .iter()
+        .map(|v| {
+            v.as_f64()
+                .filter(|v| v.is_finite())
+                .ok_or_else(|| format!("{MATRIX_INVALID} has a non-finite value"))
+        })
+        .collect::<Result<Vec<f64>, String>>()?;
+    let values: [f64; 16] = values
+        .try_into()
+        .map_err(|_| format!("{MATRIX_INVALID} must contain sixteen values"))?;
+    let [r0, r1, r2, r3] = values.as_chunks::<4>().0 else {
+        return Err(format!("{MATRIX_INVALID} must contain sixteen values"));
+    };
+    // A finite value is present at every column of the four rows above.
+    let column = |c: usize| [r0, r1, r2].map(|row| row.get(c).copied().unwrap_or(f64::NAN));
+    if *r3 != [0.0, 0.0, 0.0, 1.0] {
+        return Err(format!("{MATRIX_INVALID} is not affine"));
+    }
+    let (x, y, normal, origin) = (column(0), column(1), column(2), column(3));
+    let expected_y = topology::cross(normal, x);
+    let length_error = |axis: [f64; 3]| (axis.into_iter().map(|v| v * v).sum::<f64>() - 1.0).abs();
+    if [x, y, normal]
+        .into_iter()
+        .any(|axis| length_error(axis) > EPS_MATRIX_ORTHONORMAL)
+        || y.into_iter()
+            .zip(expected_y)
+            .any(|(a, b)| (a - b).abs() > EPS_MATRIX_ORTHONORMAL)
+    {
+        return Err(format!(
+            "{MATRIX_INVALID} axes are not orthonormal and right-handed"
+        ));
+    }
+    Ok(
+        json!({"origin": topology::point(origin), "normal": topology::point(normal), "x": topology::point(x)}),
+    )
 }
 
 fn stored_frame(feature: &Value) -> Mapping<Value> {
-    let plane = feature
-        .get("plane")
-        .ok_or("the stored plane and x axis leave the sketch attachment translation and rotation unresolved")?;
+    frame_from_plane(feature.get("plane").ok_or("the stored plane and x axis leave the sketch attachment translation and rotation unresolved")?)
+}
+
+fn frame_from_plane(plane: &Value) -> Mapping<Value> {
     let origin = topology::vector(
         plane
             .get("origin")
@@ -157,8 +210,12 @@ fn stored_frame(feature: &Value) -> Mapping<Value> {
     )
 }
 
-fn attachment_frame(feature: &Value, support: &Value) -> Mapping<Value> {
-    let frame = stored_frame(feature)?;
+/// A stored `sketchMatrix` takes precedence over the feature's own `plane`.
+fn attachment_frame(feature: &Value, support: &Value, stored: Option<&Value>) -> Mapping<Value> {
+    let frame = match stored {
+        Some(row) => frame_from_plane(&information_plane(row)?)?,
+        None => stored_frame(feature)?,
+    };
     let read = |row: &Value, key| {
         topology::vector(row.get(key).ok_or("attachment datum is missing")?, 1.0)
     };
@@ -332,8 +389,19 @@ pub(super) fn map(
     }
     let native = text(feature, "featureId")?;
     let sketch_id = id("sketch", native);
-    let plane = frame(feature, &|face| {
-        inputs.load(ordinal, feature)?.face_frame(face)
+    let plane = frame(
+        feature,
+        &|face| inputs.load(ordinal, feature)?.face_frame(face),
+        &inputs.sketch_information(native),
+    )
+    .inspect_err(|reason| {
+        if reason.starts_with(MATRIX_INVALID) {
+            report.push_coded(
+                native,
+                crate::loss::OnshapeLossCode::SketchFrameInvalid,
+                format!("{reason}; refused the sketch frame"),
+            );
+        }
     })?;
     let mut loci = BTreeMap::new();
     for entity in rows(feature, "entities")? {
