@@ -1,0 +1,24 @@
+name: sweep-time
+on:
+  push:
+    branches: ['bisect/sweeptime*']
+jobs:
+  time:
+    if: github.repository == 'raykholo/cadmpeg'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: f1338aa25aecb8bdc68aa3e95a8b3c512c6a524a, path: base }
+      - uses: actions/checkout@v4
+        with: { ref: 7073dfd9e5f562d6c4c9893d97d0c072204329ea, path: new }
+      - run: rustup toolchain install 1.97.0 --profile minimal && rustup default 1.97.0
+      - run: cd base && cargo build --release --locked -q -p cadmpeg --no-default-features --features f3d
+      - run: cd new && cargo build --release --locked -q -p cadmpeg --no-default-features --features f3d
+      - name: Time
+        run: |
+          set +e
+          curl -sfL -o v.f3z 'https://raw.githubusercontent.com/VoronDesign/Voron-1/1467af422f94ff1cb0bc13bc10f2ff64c94056b7/CAD/Voron%20V1.8%20Master%20Model%20v148.f3z'
+          echo "50ebd4de6f544c3e1d35bc056f795e82650ae46a0f6b7dbdfbe05a70499db2f2  v.f3z" | sha256sum -c
+          run() { s=$(date +%s.%N); $1/target/release/cadmpeg dump v.f3z -o $1.json > /dev/null 2>&1; rc=$?; e=$(date +%s.%N); h=$(sha1sum < $1.json | cut -c1-10); echo "$1 $2 rc=$rc $(echo "$e - $s" | bc) s out=$h"; rm -f $1.json; }
+          run base 1; run new 1; run new 2; run base 2; run base 3; run new 3
