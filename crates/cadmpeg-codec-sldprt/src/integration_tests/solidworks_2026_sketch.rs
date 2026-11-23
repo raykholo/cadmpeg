@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The SolidWorks 2026 P01a part: a 20 x 30 mm rectangle sketch, extruded.
+//! The `SolidWorks` 2026 P01a part: a 20 x 30 mm rectangle sketch, extruded.
 //!
-//! A SolidWorks 2026 `sgSketch` lists point records that no curve names
+//! A `SolidWorks` 2026 `sgSketch` lists point records that no curve names
 //! (their object index is null), so its curve records index the list by
 //! position and not by object index.
 
@@ -48,7 +48,7 @@ fn the_sketch_of_p01a_resolves_to_four_lines() {
         [corner(1.0, -1.0), corner(1.0, 1.0)],
     ];
     let key = |line: &[(f64, f64); 2]| {
-        [line[0].0, line[0].1, line[1].0, line[1].1].map(|value| (value * 1.0e6).round() as i64)
+        [line[0].0, line[0].1, line[1].0, line[1].1].map(|value| format!("{:.6}", value + 0.0))
     };
     lines.sort_by_key(key);
     expected.sort_by_key(key);
