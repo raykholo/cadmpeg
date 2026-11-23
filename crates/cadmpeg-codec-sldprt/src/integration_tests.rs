@@ -679,6 +679,7 @@ mod partial_decode;
 
 mod partition_sketches;
 
+mod solidworks_2026_sketch;
 mod configuration_states;
 
 fn face_table_bytes() -> Vec<u8> {
