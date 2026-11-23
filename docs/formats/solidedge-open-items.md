@@ -111,3 +111,13 @@
 **Known.** The entry word is `0x40000000` in every entry. The trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list, and a record can list objects its storage does not hold.
 
 **Need.** A family whose members differ in an occurrence property, with the stored members table before and after the change.
+||||||| parent of e0789514a6 (solidedge: read a swept surface only with a null scale; DR-1053 for a stated scale)
+
+
+### DR-1053. Swept surface with a stated scale
+
+**Question.** What does a stated `scale` of a swept surface (type 67) do to the sweep parameter?
+
+**Known.** A swept surface stores a `section` curve, a unit `sweep` direction, and `scale`. With a null `scale` the sweep parameter is the distance along the direction. The reader keeps a swept surface with a stated `scale` as an unsupported carrier.
+
+**Need.** A part whose swept face stores a non-null `scale`, with its edge or pcurve parameters along the sweep.
