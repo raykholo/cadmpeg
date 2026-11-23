@@ -27,6 +27,7 @@ mod psm;
 mod settings;
 mod sheet_metal;
 mod sketches;
+mod sp_curve;
 mod sweeps;
 
 use cadmpeg_core::decode::{DecodeContext, View};
