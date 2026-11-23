@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_container::compound::CompoundSnapshot;
+use crate::container::DocStreams;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -482,7 +482,7 @@ fn rollback(
 /// assembly, adds nothing. Features state their family and no operands.
 pub(crate) fn project<'a>(
     ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &DocStreams<'_, 'a>,
     cluster: View<'a>,
     definition: &ProductDefinitionId,
     ir: &mut CadIr,

@@ -126,15 +126,24 @@ fn chunks(len: usize, size: usize) -> usize {
 /// in a storage). A stream under 4096 bytes lives in the mini stream, so its
 /// length is exact.
 pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    document_with_root(
+        &[("PSMroots", Vec::new()), ("JSitesList", Vec::new())],
+        streams,
+    )
+}
+
+/// As [`document`], with the root streams `root` in place of the two that
+/// identify an ordinary document.
+pub(crate) fn document_with_root(root: &[(&str, Vec<u8>)], streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut nodes = vec![Node {
         name: "Root Entry".into(),
         stream: None,
         parent: 0,
     }];
-    for name in ["PSMroots", "JSitesList"] {
+    for (name, data) in root {
         nodes.push(Node {
-            name: name.into(),
-            stream: Some(Vec::new()),
+            name: (*name).into(),
+            stream: Some(data.clone()),
             parent: 0,
         });
     }
@@ -1136,7 +1145,8 @@ pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, Pattern
 
 mod assembly;
 pub(crate) use assembly::{
-    assembly_document, assembly_document_with_structure, structure_stream, OccurrenceSpec, SiteSpec,
+    assembly_document, assembly_document_with_structure, family_document, family_info,
+    member_table, structure_stream, MemberSpec, OccurrenceSpec, SiteSpec,
 };
 
 pub(crate) fn with_partitions(streams: &[Vec<u8>]) -> Vec<u8> {

@@ -103,3 +103,11 @@
 **Known.** A `CLSID_JMPart` feature stores its suppressed state in bit `0x10` of its state word (§4.3). The `u32` at object offset 8 of a `CLSID_JMGroup` object is `1` in documents without suppressed features. A `CLSID_JMFeatureGroup` object lists the folder members (§4.3).
 
 **Need.** A document with one suppressed mirror copy or pattern and its resave without suppression; a document with one renamed folder and its resave with the default name.
+
+### DR-1043. Member record entries and member storage content
+
+**Question.** What do the `u64` word of a member record entry and the trailer word of a member record state, and how does a member storage relate to its record when the storage holds an occurrence the record does not list?
+
+**Known.** The entry word is `0x40000000` in every entry. The trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list, and a record can list objects its storage does not hold.
+
+**Need.** A family whose members differ in an occurrence property, with the stored members table before and after the change.

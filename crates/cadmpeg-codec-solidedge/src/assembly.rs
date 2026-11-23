@@ -24,7 +24,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -34,6 +33,7 @@ use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Stor
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
+use crate::container::DocStreams;
 use crate::extents::MM_PER_M;
 use crate::layout::{
     assembly_reference, file_moniker, occurrence_structure_entry, occurrence_structure_header,
@@ -282,7 +282,7 @@ fn site_stream(site: u32) -> String {
 /// State the occurrences of an assembly on the root definition.
 pub(crate) fn project<'a>(
     ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &DocStreams<'_, 'a>,
     cluster: View<'a>,
     root: &ProductDefinitionId,
     ir: &mut CadIr,
@@ -320,7 +320,7 @@ pub(crate) fn project<'a>(
     let mut placed = BTreeSet::new();
     let mut new_definitions = Vec::new();
     let mut occurrences = Vec::new();
-    for id in listing.ids {
+    for id in listing.ids.into_iter().filter(|id| snapshot.lists(*id)) {
         if !placed.insert(id) {
             losses.push(SolidEdgeLossCode::AssemblyOccurrenceUnread.note(format!(
                 "occurrence object {id:#x} is listed twice; the second entry is not transferred"

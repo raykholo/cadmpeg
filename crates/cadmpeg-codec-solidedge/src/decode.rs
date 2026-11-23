@@ -15,7 +15,6 @@ use crate::{
     assembly, brep, container, dialect, features, loss::SolidEdgeLossCode, partition, settings,
     sheet_metal,
 };
-use cadmpeg_container::compound::CompoundEntry;
 use cadmpeg_parasolid::records::PrimaryRecords;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -32,10 +31,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }),
     );
     if !ctx.container_only() {
+        let member = container::DocStreams::select(ctx, &snapshot, &mut body.losses)?;
         let definition = root_definition();
         let mut product = ProductDefinition::root(definition.clone(), ExternalDocument::default());
-        let cluster = match snapshot.stream(settings::CLUSTER_STREAM) {
-            Some(entry) => Some(snapshot.open(ctx, entry)?),
+        let cluster = match member.stream(settings::CLUSTER_STREAM) {
+            Some(entry) => Some(member.open(ctx, entry)?),
             None => None,
         };
         product.units = match cluster {
@@ -55,12 +55,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ir.model.product_definitions.push(product);
         let design = ctx.depth() >= DecodeDepth::Design;
         if design {
-            sheet_metal::project_rule(ctx, &snapshot, &definition, &mut ir, &mut body.losses)?;
+            sheet_metal::project_rule(ctx, &member, &definition, &mut ir, &mut body.losses)?;
         }
         if let Some(cluster) = cluster {
             assembly::project(
                 ctx,
-                &snapshot,
+                &member,
                 cluster,
                 &definition,
                 &mut ir,
@@ -69,7 +69,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             if design {
                 features::project(
                     ctx,
-                    &snapshot,
+                    &member,
                     cluster,
                     &definition,
                     &mut ir,
@@ -79,11 +79,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }
         let mut found = false;
         let mut kernels = Vec::new();
-        for (ordinal, entry) in snapshot.entries().iter().enumerate() {
-            let CompoundEntry::Stream(entry) = entry else {
-                continue;
-            };
-            if !partition::is_primary(entry.path()) {
+        for (ordinal, entry, relative) in member.streams() {
+            if !partition::is_primary(relative) {
                 continue;
             }
             found = true;
@@ -92,7 +89,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 "primary partition supplies the saved body state; delta selection is unresolved",
             ));
             let result = (|| {
-                let source = snapshot.open(ctx, entry)?;
+                let source = member.open(ctx, entry)?;
                 let payload = partition::payload(source).map_err(CodecError::from)?;
                 let records = PrimaryRecords::read(payload.window())?.ok_or_else(|| {
                     CodecError::Malformed("unsupported Parasolid partition header".into())
