@@ -31,6 +31,7 @@ mod sheet_metal;
 mod sketches;
 mod sp_curve;
 mod sweeps;
+mod trace;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;

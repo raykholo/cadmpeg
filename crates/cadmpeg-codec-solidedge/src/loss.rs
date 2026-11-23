@@ -57,6 +57,7 @@ pub(crate) enum SolidEdgeLossCode {
     SheetMetalHemFieldUnread,
     SheetMetalContourFlangeUnread,
     SheetMetalBendOperandUnread,
+    EdgeToleranceWidened,
 }
 
 impl SolidEdgeLossCode {
@@ -185,6 +186,10 @@ impl SolidEdgeLossCode {
             Self::IntersectionFrameFromSupportsAssumed => (
                 "curve.intersection-frame-from-supports-assumed",
                 LossTaxonomy::CarrierAxisInferred,
+            ),
+            Self::EdgeToleranceWidened => (
+                "edge.tolerance-widened",
+                LossTaxonomy::GeometryAgreementSampled,
             ),
             Self::EdgeCarrierSampled => (
                 "curve.edge-carrier-sampled",
