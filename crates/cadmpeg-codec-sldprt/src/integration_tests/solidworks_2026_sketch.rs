@@ -8,8 +8,8 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 use crate::loss::SldprtLossCode;
 use crate::SldprtCodec;
