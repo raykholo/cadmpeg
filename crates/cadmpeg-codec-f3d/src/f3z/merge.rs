@@ -224,65 +224,57 @@ impl MergeSession<'_, '_> {
             references: qualified,
             ..Default::default()
         };
-        let mut left_identity = place_contained_poses_in_members(
+        let mut left_identity = place_contained_poses_with_protected(
             self.ctx,
             parent_ir,
             &legacy_table,
             &mut parent_report.losses,
             &mut self.operation_protected,
-            PoseScope {
-                pass: ContainedPass::Ordered,
-                boundary: None,
-                instance_scopes: &*self.instance_scopes,
-            },
+            ContainedPass::Ordered,
+            None,
         )?;
-        crate::xref::operation_pose::project_in_members(
+        crate::xref::operation_pose::project(
             self.ctx,
             parent_ir,
             &self.operation_poses,
             &self.operation_protected,
             &mut parent_report.losses,
-            self.instance_scopes,
         )?;
-        left_identity += place_member_boundary_poses(
-            self.ctx,
-            parent_ir,
-            &self.component_path_tables,
-            &mut parent_report.losses,
-            &mut self.operation_protected,
-            self.instance_scopes,
-        )?;
-        left_identity += place_contained_poses_in_members(
+        for (boundary, member_table) in &self.component_path_tables {
+            left_identity += place_contained_poses_with_protected(
+                self.ctx,
+                parent_ir,
+                member_table,
+                &mut parent_report.losses,
+                &mut self.operation_protected,
+                ContainedPass::Ordered,
+                Some(boundary),
+            )?;
+        }
+        left_identity += place_contained_poses_with_protected(
             self.ctx,
             parent_ir,
             &qualified_table,
             &mut parent_report.losses,
             &mut self.operation_protected,
-            PoseScope {
-                pass: ContainedPass::Ordered,
-                boundary: None,
-                instance_scopes: &*self.instance_scopes,
-            },
+            ContainedPass::Ordered,
+            None,
         )?;
-        crate::xref::operation_pose::project_in_members(
+        crate::xref::operation_pose::project(
             self.ctx,
             parent_ir,
             &self.operation_poses,
             &self.operation_protected,
             &mut parent_report.losses,
-            self.instance_scopes,
         )?;
-        left_identity += place_contained_poses_in_members(
+        left_identity += place_contained_poses_with_protected(
             self.ctx,
             parent_ir,
             table,
             &mut parent_report.losses,
             &mut std::collections::BTreeSet::new(),
-            PoseScope {
-                pass: ContainedPass::Nested,
-                boundary: None,
-                instance_scopes: &*self.instance_scopes,
-            },
+            ContainedPass::Nested,
+            None,
         )?;
         crate::design::assembly::release_joint_placed(&mut parent_report.losses, left_identity);
         // A document that a member definition now stands for at every
@@ -1360,7 +1352,6 @@ fn contained_frames_agree(
         })
 }
 
-#[cfg(test)]
 fn place_contained_poses_with_protected(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -1370,83 +1361,9 @@ fn place_contained_poses_with_protected(
     pass: ContainedPass,
     boundary: Option<&cadmpeg_ir::ids::OccurrenceId>,
 ) -> Result<usize, CodecError> {
-    place_contained_poses_in_members(
-        ctx,
-        ir,
-        table,
-        losses,
-        protected,
-        PoseScope {
-            pass,
-            boundary,
-            instance_scopes: &InstanceScopes::new(),
-        },
-    )
-}
-
-/// Places the occurrences inside each archive member placement by the
-/// component-path carriers of the member's own design (`tables`, each with
-/// the occurrence that places the member). A carrier states its pose in the
-/// frame of that placement. The occurrences of a nested member that several
-/// occurrences place sit in the placement whose instance scope
-/// (`instance_scopes`) they are in.
-fn place_member_boundary_poses(
-    ctx: &DecodeContext<'_>,
-    ir: &mut cadmpeg_ir::CadIr,
-    tables: &[(cadmpeg_ir::ids::OccurrenceId, XrefTable)],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
-    instance_scopes: &InstanceScopes,
-) -> Result<usize, CodecError> {
-    let mut left_identity = 0usize;
-    for (boundary, table) in tables {
-        left_identity += place_contained_poses_in_members(
-            ctx,
-            ir,
-            table,
-            losses,
-            protected,
-            PoseScope {
-                pass: ContainedPass::Ordered,
-                boundary: Some(boundary),
-                instance_scopes,
-            },
-        )?;
-    }
-    Ok(left_identity)
-}
-
-/// Which carriers one placement pass reads and how it resolves the placement
-/// of an occurrence.
-#[derive(Clone, Copy)]
-struct PoseScope<'a> {
-    pass: ContainedPass,
-    /// The occurrence whose member's own placements the pass reads.
-    boundary: Option<&'a cadmpeg_ir::ids::OccurrenceId>,
-    /// The member instance scope each placing occurrence names.
-    instance_scopes: &'a InstanceScopes,
-}
-
-/// [`place_contained_poses_with_protected`] for a model that places archive
-/// member instances, whose `instance_scopes` name the placement each member
-/// occurrence sits in.
-fn place_contained_poses_in_members(
-    ctx: &DecodeContext<'_>,
-    ir: &mut cadmpeg_ir::CadIr,
-    table: &XrefTable,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
-    scope: PoseScope<'_>,
-) -> Result<usize, CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::transform::Transform;
     use std::collections::{BTreeMap, BTreeSet};
-
-    let PoseScope {
-        pass,
-        boundary,
-        instance_scopes,
-    } = scope;
 
     if !table
         .references
@@ -1478,11 +1395,7 @@ fn place_contained_poses_in_members(
         .enumerate()
         .map(|(position, occurrence)| (occurrence.id.clone(), position))
         .collect::<BTreeMap<_, _>>();
-    let parents = crate::tree::parent_ids_in_members(
-        &ir.model.product_definitions,
-        &ir.model.occurrences,
-        instance_scopes,
-    );
+    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
     let parent_positions = ir
         .model
         .occurrences
