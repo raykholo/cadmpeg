@@ -104,13 +104,13 @@
 
 **Need.** A document with one suppressed mirror copy or pattern and its resave without suppression; a document with one renamed folder and its resave with the default name.
 
-### DR-1043. Member record entries and member storage content
+### DR-1043. Member record lists and member storage content
 
-**Question.** What do the `u64` word of a member record entry and the trailer word of a member record state, and how does a member storage relate to its record when the storage holds an occurrence the record does not list?
+**Question.** What do the first list of a member record (§9.4), the 12 bytes after it, the class identifiers of the two blocks, the bytes after the second list, and the last 3 bytes of a second-list entry state, and how does a member storage relate to its record when the storage holds an occurrence the record does not list?
 
-**Known.** The entry word is `0x40000000` in every entry. The trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list, and a record can list objects its storage does not hold.
+**Known.** The first list is empty in the master member and holds one object identifier in another member. Each block starts with `u32` `1` and ends with `u32` `0`. A second-list entry holds the occurrence object identifier and the 13 `f64` words of its placement. The record trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list.
 
-**Need.** A family whose members differ in an occurrence property, with the stored members table before and after the change.
+**Need.** Families whose members differ in suppressed, replaced, and moved components, with the stored members table of each.
 
 ### DR-1053. Swept surface with a stated scale
 
