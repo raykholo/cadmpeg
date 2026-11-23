@@ -125,7 +125,11 @@ impl SketchRecordList {
         };
         // Only a list with a null object index (SolidWorks 2026) is indexed
         // by position; the others keep the object-index reading.
-        if !self.points.iter().any(|&point| object_at(point) == Some(u32::MAX)) {
+        if !self
+            .points
+            .iter()
+            .any(|&point| object_at(point) == Some(u32::MAX))
+        {
             return true;
         }
         indices.into_iter().all(|index| {
@@ -738,7 +742,8 @@ fn read_listed_entity(
             index_basis_loss: point_record_index_basis_loss(payload, offset, Some(sketch)),
         }))
     };
-    let (start, end, center, counterclockwise) = match curve_form_in(payload, offset, Some(sketch)) {
+    let (start, end, center, counterclockwise) = match curve_form_in(payload, offset, Some(sketch))
+    {
         None => return unread_form_conflict(payload, offset).map(Err),
         Some(CurveForm::Line { start, end }) => {
             let start = sketch.point(start).filter(|&at| owns(at))?;
