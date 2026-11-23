@@ -41,7 +41,7 @@ fn the_sketch_of_p01a_resolves_to_four_lines() {
         }
     }
     let corner = |u: f64, v: f64| (u * 10.0, v * 15.0);
-    let mut expected = vec![
+    let mut expected = [
         [corner(-1.0, -1.0), corner(1.0, -1.0)],
         [corner(-1.0, -1.0), corner(-1.0, 1.0)],
         [corner(-1.0, 1.0), corner(1.0, 1.0)],
