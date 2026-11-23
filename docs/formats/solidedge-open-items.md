@@ -160,3 +160,10 @@
 
 **Need.** Close corners with each closure type, with each relief form and with a corner between flanges of an angle other than a right angle.
 
+### DR-1054. Helical protrusion constants, taper and start
+
+**Question.** Which options set the helical protrusion slots at 352, 408, 436, 464, 492 and 520 (§6.5), and where does a helical protrusion store a taper, a start angle and a start away from the profile?
+
+**Known.** The slots at 352, 408, 436, 464 and 492 hold `0` and the slot at 520 holds `1` in every stored helical protrusion. Every stored helical protrusion has a finite extent and a circular section.
+
+**Need.** Helical protrusions with a taper angle, with a taper ratio, with a start angle, with a start plane away from the profile, with the profile on each side of the axis, and a copy of each with one option cleared.

@@ -18,6 +18,7 @@ mod extents;
 mod family;
 mod features;
 mod geometry;
+mod helix;
 mod intersection;
 mod isocurve;
 mod layout;
