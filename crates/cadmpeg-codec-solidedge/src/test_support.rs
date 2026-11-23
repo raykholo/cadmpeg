@@ -1639,3 +1639,6 @@ pub(crate) fn trimmed_chart_partition() -> Vec<u8> {
     bytes.extend_from_slice(&[0, 1, 0, 1]);
     bytes
 }
+
+mod flange;
+pub(crate) use flange::{flange_document, FlangeSpec};

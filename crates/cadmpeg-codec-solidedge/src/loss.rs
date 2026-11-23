@@ -53,6 +53,7 @@ pub(crate) enum SolidEdgeLossCode {
     IntersectionNurbsIsolineAssumed,
     FeatureFolderNameUnread,
     FeatureSuppressionUnread,
+    SheetMetalFlangeFieldUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -116,6 +117,10 @@ impl SolidEdgeLossCode {
             Self::FeatureSuppressionUnread => (
                 "feature.suppression-unread",
                 LossTaxonomy::FeatureHistoryRetained,
+            ),
+            Self::SheetMetalFlangeFieldUnread => (
+                "sheet-metal.flange-field-unread",
+                LossTaxonomy::RecordNotTyped,
             ),
             Self::FeatureRollbackUnread => (
                 "feature.rollback-unread",
