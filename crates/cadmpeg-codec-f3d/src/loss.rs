@@ -1200,6 +1200,9 @@ pub(crate) enum F3dLossCode {
     XrefLineageDisagrees,
     XrefIdentityBlank,
     XrefArchiveIdentityDisagrees,
+    /// A reference resolved to its archive member by lineage and version
+    /// URNs because the document has no redirection table.
+    XrefRedirectionFromLineage,
 
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
@@ -2178,6 +2181,7 @@ impl F3dLossCode {
         Self::XrefLineageDisagrees,
         Self::XrefIdentityBlank,
         Self::XrefArchiveIdentityDisagrees,
+        Self::XrefRedirectionFromLineage,
         Self::XrefPlacementUndecoded,
         Self::XrefOccurrenceUnplaced,
         Self::XrefPlacementIdentityAssumed,
@@ -3403,6 +3407,7 @@ impl F3dLossCode {
             Self::XrefLineageDisagrees => "xref.lineage-disagrees",
             Self::XrefIdentityBlank => "xref.identity-blank",
             Self::XrefArchiveIdentityDisagrees => "xref.archive-identity-disagrees",
+            Self::XrefRedirectionFromLineage => "xref.redirection-from-lineage",
 
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
@@ -3587,6 +3592,7 @@ impl F3dLossCode {
             | Self::RefoldGroupSourceAssumed
             | Self::RefoldSourceUnresolved => Severity::Warning,
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
+            Self::XrefRedirectionFromLineage => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::TargetRequestDisplaced => Severity::Warning,
@@ -4539,6 +4545,7 @@ impl F3dLossCode {
             | Self::XrefLineageDisagrees
             | Self::XrefIdentityBlank
             | Self::XrefArchiveIdentityDisagrees
+            | Self::XrefRedirectionFromLineage
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -6063,6 +6070,7 @@ mod tests {
                 "xref.lineage-disagrees",
                 "xref.identity-blank",
                 "xref.archive-identity-disagrees",
+                "xref.redirection-from-lineage",
                 "xref.placement-undecoded",
                 "xref.occurrence-unplaced",
                 "xref.placement-identity-assumed",
