@@ -2023,6 +2023,7 @@ license = "CC0-1.0"
 sha256 = "2f015770b5626c14f4ef2ed4662f49af66218d35c9af849e9d72314445bea344"
 notes = "STEP AP214 ground-truth export of sldprt/Pair5/revolve_90_flipped.SLDPRT. 10 x 10 mm rectangle revolved 90 degrees with Reverse Direction about Y axis (EV-25)."
 
+[[file]]
 filename = "sldprt/solidworks-2026_P01a.sldprt"
 format = "sldprt"
 dialect = "sldprt:sw-version-12000-plus"
