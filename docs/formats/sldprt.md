@@ -351,6 +351,27 @@ consistent scaling equations, and exact EOF closure. Opaque prefix, residual, an
 zero or `ff` bytes are valid opaque values. Their values do not select
 directory membership.
 
+### 1.5 Parts
+
+Each part below has its own framing, and its end follows from that framing.
+The part kind names the part in a `record.unreadable` loss.
+
+| Part kind | Unit | Framing |
+| --- | --- | --- |
+| `compound-stream` | One compound-document stream | Its directory entry: stream size and the sector chain from its first sector (§1) |
+| `native-block` | One native block | The block frame: header, preamble of `pre_sz` bytes, DEFLATE member of `comp_sz` bytes (§1.1) |
+| `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) |
+| `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) |
+| `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) |
+
+A compound stream's bytes are the sectors its chain reaches through the
+sectors its size requires. Two streams whose chains reach one sector are
+both given up, and so is a stream whose chain reaches a sector of the
+compound structure; every other stream is read. A given-up stream keeps the
+bytes of the sectors its chain reached before it stopped. A native block
+that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
+given up; the directory and its other members are read.
+
 ---
 
 ## 2. Block payload families
@@ -756,7 +777,7 @@ An `moTempAxisRef_w` declaration stores two `c7 cf ff ff` handle words at declar
 
 The Hole Wizard `moTempAxisRef_w` form stores the handle pair at declaration offsets `+267` and `+271`, a zero u32 at `+275`, and a nonzero stream address at `+279`. Seven little-endian f64 values begin at `+299`: the first is the hole depth in metres, the next xyz triple is an axis point in metres, and the final xyz triple is the unit operation direction. The scalar record ends at `+355`; at most 24 zero bytes separate it from the next class declaration or typed high-bit token.
 
-An `moRevolution_c` object's Boolean form is the little-endian u32 followed by four zero bytes immediately before its declared class marker or compact object-name token. Forms `5`, `6`, `11`, `60`, `20322`, and `22016` create a new body. Form `8` joins existing bodies. Other forms have unresolved Boolean semantics.
+An `moRevolution_c` object's Boolean form is the little-endian u32 followed by four zero bytes immediately before its declared class marker or compact object-name token. Form `8` joins existing bodies. Form `6` occurs on a revolution that makes the first body of the part and on a revolution whose material joins an earlier body, so it does not determine the Boolean operation (open item DI-92). Other forms have unresolved Boolean semantics.
 
 An `moRevolution_c` or `moRevCut_c` object consumes the immediately preceding profile feature-input object as its profile. When profile objects and revolution objects form separate ordered groups, the line-reference source identifies the consumed profile object. A profile history record without an XML source ID uses its unique feature-input object ID. A non-unique display name does not establish object identity.
 
@@ -2738,15 +2759,15 @@ Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` tr
 
 The post-magic cell order has no discriminator byte. A valid `00 10` interpretation has a zero or a curve-carrier attribute in `refs[3]`; a valid `00 11` interpretation has a loop attribute in `refs[1]`, a same-loop coedge in `refs[3]`, a vertex-use attribute in `refs[4]`, and an edge-use attribute in `refs[6]`. The frame is the unique interpretation that satisfies these reference invariants. If more than one interpretation satisfies them, the record has no selected topology interpretation.
 
-A deltas stream groups its records into change sets. Each change set carries a **change roster**:
+A deltas stream is a Parasolid Deltas transmit (`siemens_nx.md` §4.2) that holds the main-line history of the partition in its site. It holds the current mark's delta, then a PMARK section and a map section for each earlier main-line mark down to the mark after the initial mark, and ends at EOF with the initial mark's PMARK section (`siemens_nx.md` §4.2 "**Delta assignment.**"). The sections of marks off the main line can occur between those of main-line marks. Each delta is a change set. Its **change roster** is a section terminator followed by the delta's map prefix:
 
 ```
-00 01 00 01  ( attr u16 BE  class u16 BE )*  00 01
+00 01 00 01  ( attr u16 BE  class u16 BE )*  00 01  terminal:4
 ```
 
-Roster entries name same-site nodes by attribute and node class, mixing topology, geometry-carrier, and entity classes. Roster membership records that a node belongs to the change set; it does not determine whether the node persists in the final state — a roster names retained, rewritten, and superseded nodes alike. A rostered node with no stored record in any same-site stream has no payload; references to it resolve to nothing.
+Roster entries name, by attribute and node class, the nodes that the change into the delta's mark creates. Every entry names a node of the state at that mark. The state at the current mark is the partition, and the replay of `siemens_nx.md` §4.2 "Main-line replay" gives the state at each earlier mark.
 
-A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition does not replace the partition topology, point coordinate, or carrier record. A deltas record with an absent identity fills that missing subordinate record. A deltas stream can hold several saved versions of one identity: versions with equal data fill the record once, and versions with differing data leave the identity unresolved. The change roster carries no relation to a superseded partition face.
+A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition does not replace the partition topology, point coordinate, or carrier record. A deltas record with an absent identity fills that missing subordinate record. A deltas stream can hold several saved versions of one identity: versions with equal data fill the record once, and versions with differing data leave the identity unresolved.
 
 Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
 and FACE nodes are combined before body membership is validated. A deltas

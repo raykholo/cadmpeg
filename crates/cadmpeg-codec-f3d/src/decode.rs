@@ -4321,11 +4321,13 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             let root_identity = crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
             decoded.body.losses.extend(root_identity);
-            crate::design_v11::project(
+            let depth = decoded.body.transfer.depth();
+            cadmpeg_ir::design::projection::project_layer(
                 ctx,
+                "f3d",
                 &mut decoded.ir,
-                decoded.body.transfer.depth(),
                 &mut decoded.body.losses,
+                |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
             )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
@@ -6021,11 +6023,10 @@ fn trailing_offset(id: &str) -> u64 {
 }
 
 fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
-    Ok(scan
-        .entries
-        .iter()
-        .any(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-        || source_has_history_records(scan)?)
+    Ok(scan.entries.iter().any(|entry| {
+        scan.is_design_stream(entry, ContainerRole::Bulkstream)
+            || scan.is_design_asset_entry(entry, ContainerRole::DesignConfig)
+    }) || source_has_history_records(scan)?)
 }
 
 /// A bare EOF delta-state identifier is an empty partition boundary, not a

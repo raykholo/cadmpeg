@@ -140,9 +140,12 @@ pub(crate) fn project(
     let mut definitions = BTreeMap::new();
     for (prefix, projected) in hosted {
         let enclosing = host(&scopes, &prefix);
-        let (definition, into) = scopes
-            .entry(enclosing)
-            .or_insert_with(|| (crate::tree::file_root_id(), timeline::Projected::default()));
+        let (definition, into) = scopes.entry(enclosing).or_insert_with(|| {
+            (
+                root_definition(&ir.model.product_definitions),
+                timeline::Projected::default(),
+            )
+        });
         definitions.insert(prefix, definition.clone());
         into.containers.extend(projected.containers);
         into.features.extend(projected.features);
@@ -205,7 +208,7 @@ pub(crate) fn project(
         else {
             continue;
         };
-        let at = rollback_position(id, members, rollback);
+        let at = rollback_position(id, members, rollback.as_ref());
         let current = (!bodies.is_empty())
             .then(|| CurrentState {
                 at,
@@ -248,11 +251,17 @@ pub(crate) fn project(
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last
-/// built member, or at its start when it builds none.
-fn rollback_position(id: &ContainerId, members: &[Member], rollback: &Rollback) -> Position {
+/// built member, or at its start when it builds none; `After(Container(id))`
+/// where the rollback is unstated.
+fn rollback_position(
+    id: &ContainerId,
+    members: &[Member],
+    rollback: Option<&Rollback>,
+) -> Position {
     let built = match rollback {
-        Rollback::End => members.len(),
-        Rollback::Before(marker) => members
+        None => return Position::After(Member::Container(id.clone())),
+        Some(Rollback::End) => members.len(),
+        Some(Rollback::Before(marker)) => members
             .iter()
             .position(|member| member == marker)
             .unwrap_or(members.len()),
@@ -284,7 +293,7 @@ fn scope_definition(
     prefix: &str,
 ) -> Option<ProductDefinitionId> {
     if prefix.is_empty() {
-        return Some(crate::tree::file_root_id());
+        return Some(root_definition(definitions));
     }
     let member = crate::ids::archive_product_definition_id();
     let id = format!("f3d:{prefix}{}", member.as_str().strip_prefix("f3d:")?);
@@ -292,6 +301,17 @@ fn scope_definition(
         .iter()
         .find(|definition| definition.id.as_str() == id)
         .map(|definition| definition.id.clone())
+}
+
+/// The file's root definition: the root component where its record stands for
+/// the root, else the definition the decoder states in its stead.
+fn root_definition(definitions: &[ProductDefinition]) -> ProductDefinitionId {
+    definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .map_or_else(crate::tree::file_root_id, |definition| {
+            definition.id.clone()
+        })
 }
 
 /// The definitions a scope spans and the bodies of its current state.

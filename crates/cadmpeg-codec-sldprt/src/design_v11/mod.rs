@@ -20,8 +20,10 @@ mod operation;
 mod order;
 mod parameters;
 mod profile_check;
+mod revolve;
 mod sketch;
 pub(crate) mod states;
+mod swept;
 #[cfg(test)]
 mod tests;
 mod tree;
@@ -81,6 +83,8 @@ pub(crate) struct Part<'a> {
     /// The sketch entities read from a curve record of state `0`: curves
     /// outside their sketch's profile.
     pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
+    /// The native ids of the configurations whose partition was given up.
+    pub(crate) given_up_configurations: &'a BTreeSet<String>,
 }
 
 /// What [`project`] stated.
@@ -99,9 +103,9 @@ pub(crate) struct Projection {
 /// records, and state the part's root definition. Each configuration that is
 /// not active has its stored state as an evaluation of its own. A rollback
 /// reading that does not fix the position, a configuration whose state cannot
-/// be stated, a sketch or extrude that cannot be typed, a parameter whose
-/// literal is a rounded display, and a dimension whose bare-number text has
-/// no value add their reasons to `losses`. A part whose timeline is empty
+/// be stated, a sketch, extrude or revolve that cannot be typed, a parameter
+/// whose literal is a rounded display, and a dimension whose bare-number text
+/// has no value add their reasons to `losses`. A part whose timeline is empty
 /// states no design, and its equation-manager lines go to `losses`.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
@@ -120,6 +124,7 @@ pub(crate) fn project(
         length_places,
         rollback,
         outside_profile,
+        given_up_configurations,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -149,6 +154,11 @@ pub(crate) fn project(
     losses.extend(typed.profile_differs);
     losses.extend(typed.sketch_empty);
     losses.extend(typed.profile_unchecked);
+    losses.extend(typed.revolve_axis_lines);
+    losses.extend(typed.revolve_axis_derived);
+    losses.extend(typed.revolve_boolean_unstated);
+    losses.extend(typed.revolve_profile_differs);
+    losses.extend(typed.revolve_profile_unchecked);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
@@ -195,20 +205,19 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let (built, unread) =
-        stated(&timeline.features, rollback).unwrap_or_else(|unread| (members.len(), Some(unread)));
-    if let Some(unread) = unread {
-        let through = if built == members.len() {
-            "its last member".to_owned()
-        } else {
-            format!("its first {built} members")
-        };
-        losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
-            "The rollback position of the feature tree is not read ({unread}); the timeline is \
-             stated built through {through}."
-        )));
-    }
-    let (rollback, at) = built_through(&id, &members, built);
+    let (rollback, at) = match stated(&timeline.features, rollback) {
+        Ok((built, None)) => {
+            let (rollback, at) = built_through(&id, &members, built);
+            (Some(rollback), at)
+        }
+        Ok((_, Some(unread))) | Err(unread) => {
+            losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
+                "The rollback position of the feature tree is not read ({unread}); the \
+                 timeline's rollback is not stated."
+            )));
+            (None, Position::After(Member::Container(id.clone())))
+        }
+    };
     let current = (!bodies.is_empty())
         .then(|| current_state(at, bodies.clone()))
         .into_iter()
@@ -235,6 +244,7 @@ pub(crate) fn project(
             configurations: &configurations.records,
             active: configurations.active.as_ref(),
             current: &bodies,
+            given_up: given_up_configurations,
         },
         &names,
         losses,
@@ -296,7 +306,8 @@ pub(crate) fn project(
 /// through the feature at the current mark where a later feature is unbuilt
 /// and unsuppressed, else all of them. A feature between the feature at the
 /// current mark and the first such feature that holds no mark record leaves
-/// the position unread: the count stands, with that reason.
+/// the position unread: the count is then a lower bound, returned with that
+/// reason, and the timeline states no rollback.
 fn stated(features: &[Feature], reading: Reading) -> Result<(usize, Option<Unread>), Unread> {
     let (holder, later, recorded) = match reading {
         Reading::End { last, recorded } => (last, Vec::new(), recorded),

@@ -251,6 +251,7 @@ impl InputCatalog {
                         #[cfg(any(
                             feature = "fcstd",
                             feature = "f3d",
+                            feature = "solidedge",
                             feature = "inventor",
                             feature = "sldprt",
                             feature = "catia",
@@ -275,6 +276,8 @@ impl InputCatalog {
         }
     }
 
+    /// Every codec's judgement, strongest first. A codec whose judgement
+    /// fails other than on I/O or a resource ceiling does not apply.
     fn ranked(
         &self,
         judge: impl Fn(&dyn Codec) -> Result<Confidence, CodecError>,
@@ -284,7 +287,13 @@ impl InputCatalog {
             let Some(codec) = descriptor.codec() else {
                 continue;
             };
-            let confidence = judge(codec)?;
+            let confidence = match judge(codec) {
+                Ok(confidence) => confidence,
+                Err(error @ (CodecError::Io(_) | CodecError::ResourceLimit(_))) => {
+                    return Err(error)
+                }
+                Err(_) => Confidence::No,
+            };
             if confidence > Confidence::No {
                 matches.push((codec, confidence));
             }
@@ -549,6 +558,57 @@ mod tests {
         );
     }
 
+    #[cfg(all(feature = "fcstd", feature = "f3d"))]
+    #[test]
+    fn one_codecs_detection_error_leaves_the_other_codecs_judging() {
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::codec::{Confidence, FormatId};
+
+        let catalog = InputCatalog::with_builtins();
+        let ranked = catalog
+            .ranked(|codec| match codec.id().as_str() {
+                "fcstd" => Err(CodecError::malformed("truncated archive directory")),
+                "f3d" => Ok(Confidence::High),
+                _ => Ok(Confidence::No),
+            })
+            .expect("a malformed judgement is no match");
+        assert_eq!(
+            ranked
+                .iter()
+                .map(|(codec, confidence)| (codec.id(), *confidence))
+                .collect::<Vec<_>>(),
+            [(FormatId::new("f3d"), Confidence::High)]
+        );
+    }
+
+    #[cfg(feature = "fcstd")]
+    #[test]
+    fn an_io_or_resource_error_in_detection_ends_detection() {
+        use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
+        use cadmpeg_core::CodecError;
+
+        let catalog = InputCatalog::with_builtins();
+        let error = catalog
+            .ranked(|_| Err(CodecError::Io(std::io::Error::other("source closed"))))
+            .err()
+            .expect("I/O ends detection");
+        assert!(matches!(error, CodecError::Io(_)));
+        let limit = ResourceLimit {
+            scope: LimitScope::Session,
+            dimension: ResourceDimension::InputBytes,
+            reason: ResourceFailure::BudgetExceeded,
+            limit: 4,
+            used: 4,
+            additional: 1,
+            operation: "detect",
+        };
+        let error = catalog
+            .ranked(|_| Err(CodecError::ResourceLimit(limit)))
+            .err()
+            .expect("a resource ceiling ends detection");
+        assert!(matches!(error, CodecError::ResourceLimit(found) if found == limit));
+    }
+
     #[cfg(feature = "step")]
     #[test]
     fn step_is_registered_as_a_reader() {
@@ -556,6 +616,21 @@ mod tests {
             .descriptors()
             .any(|descriptor| descriptor.format_id().as_str() == "step"
                 && descriptor.codec().is_some()));
+    }
+
+    #[cfg(feature = "solidedge")]
+    #[test]
+    fn solid_edge_is_registered_as_a_read_only_family_codec() {
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "solidedge")
+            .expect("Solid Edge descriptor exists");
+        assert_eq!(descriptor.extensions(), ["par", "psm", "asm"]);
+        assert!(descriptor.codec().is_some());
+        assert!(crate::Format::from_name("solidedge")
+            .expect("registry loads")
+            .is_none());
     }
 
     #[cfg(feature = "inventor")]
