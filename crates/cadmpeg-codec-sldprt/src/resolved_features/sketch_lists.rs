@@ -487,7 +487,7 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
 
 /// [`curve_form`] for a record of `list`: a line that §2 would read by object
 /// index is read by §2 only when its indices, plus one, are object indices of
-/// point records of the list. SolidWorks 2026 sketches list point records
+/// point records of the list. `SolidWorks` 2026 sketches list point records
 /// that carry no object index, and index the list by position.
 pub(super) fn curve_form_in(
     payload: &[u8],
