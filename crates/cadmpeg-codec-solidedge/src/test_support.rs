@@ -1642,3 +1642,6 @@ pub(crate) fn trimmed_chart_partition() -> Vec<u8> {
 
 mod flange;
 pub(crate) use flange::{flange_document, FlangeSpec};
+
+mod kinds;
+pub(crate) use kinds::{kind_document, EdgeSpec, Operand};
