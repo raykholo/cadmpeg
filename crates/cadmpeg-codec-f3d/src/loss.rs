@@ -925,6 +925,10 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
     FeatureWorkAxisLegacyLayoutAssumed,
     FeatureWorkAxisCandidatesUnresolved,
+    /// Null work-axis input references state no construction input.
+    FeatureWorkAxisInputNull,
+    /// A work axis whose stored line was read only in part states no line.
+    FeatureWorkAxisPartialLineNative,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// A pattern seed or `RemoveBody` selection of omitted bodies has no
@@ -1090,6 +1094,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftSolidInferred,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
+    /// A `SurfaceExtend` projects its stored boundary edges as the faces they bound.
+    FeatureSurfaceExtendEdgesAsFaces,
     FeatureSplitToolExtensionAssumed,
     FeatureSplitToolExtensionUnresolved,
     FeatureSplitBodyFaceToolGroupAssumed,
@@ -1978,6 +1984,8 @@ impl F3dLossCode {
         Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
         Self::FeatureWorkAxisLegacyLayoutAssumed,
         Self::FeatureWorkAxisCandidatesUnresolved,
+        Self::FeatureWorkAxisInputNull,
+        Self::FeatureWorkAxisPartialLineNative,
         Self::FeatureBodySelectionNative,
         Self::FeatureGeneratedBodyHistoryUnresolved,
         Self::FeatureReverseNormalBodyUnverified,
@@ -2083,6 +2091,7 @@ impl F3dLossCode {
         Self::FeatureLoftCenterlineAssumed,
         Self::FeatureLoftSolidInferred,
         Self::FeatureSurfaceExtendMethodUnresolved,
+        Self::FeatureSurfaceExtendEdgesAsFaces,
         Self::FeatureSplitToolExtensionAssumed,
         Self::FeatureSplitToolExtensionUnresolved,
         Self::FeatureSplitBodyFaceToolGroupAssumed,
@@ -3094,6 +3103,8 @@ impl F3dLossCode {
             }
             Self::FeatureWorkAxisLegacyLayoutAssumed => "feature.work-axis-legacy-layout-assumed",
             Self::FeatureWorkAxisCandidatesUnresolved => "feature.work-axis-candidates-unresolved",
+            Self::FeatureWorkAxisInputNull => "feature.work-axis-input-null",
+            Self::FeatureWorkAxisPartialLineNative => "feature.work-axis-partial-line-native",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
@@ -3281,6 +3292,7 @@ impl F3dLossCode {
             Self::FeatureSurfaceExtendMethodUnresolved => {
                 "feature.surface-extend-method-unresolved"
             }
+            Self::FeatureSurfaceExtendEdgesAsFaces => "feature.surface-extend-edges-as-faces",
             Self::FeatureSurfaceExtendDistanceNonpositive => {
                 "feature.surface-extend-distance-nonpositive"
             }
@@ -4101,6 +4113,8 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
+            | Self::FeatureWorkAxisInputNull
+            | Self::FeatureWorkAxisPartialLineNative
             | Self::FeatureBodySelectionNative
             | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
@@ -4206,6 +4220,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendEdgesAsFaces
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
@@ -4873,6 +4888,8 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
+            | Self::FeatureWorkAxisInputNull
+            | Self::FeatureWorkAxisPartialLineNative
             | Self::FeatureBodySelectionNative
             | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
@@ -4978,6 +4995,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendEdgesAsFaces
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
@@ -5832,6 +5850,8 @@ mod tests {
                 "feature.work-axis-unsupported-version-legacy-layout-assumed",
                 "feature.work-axis-legacy-layout-assumed",
                 "feature.work-axis-candidates-unresolved",
+                "feature.work-axis-input-null",
+                "feature.work-axis-partial-line-native",
                 "feature.body-selection-native",
                 "feature.generated-body-history-unresolved",
                 "feature.reverse-normal-body-unverified",
@@ -5937,6 +5957,7 @@ mod tests {
                 "feature.loft-centerline-assumed",
                 "feature.loft-solid-inferred",
                 "feature.surface-extend-method-unresolved",
+                "feature.surface-extend-edges-as-faces",
                 "feature.split-tool-extension-assumed",
                 "feature.split-tool-extension-unresolved",
                 "feature.split-body-face-tool-group-assumed",

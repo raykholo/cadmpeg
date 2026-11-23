@@ -1,6 +1,7 @@
 //! Object name and class declaration records.
 
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
+use crate::layout::named_object_header as named_header;
 use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
@@ -60,6 +61,24 @@ pub(crate) fn object_names(
     Ok(names)
 }
 
+/// The object identifier `name`'s named-object header holds (sldprt.md
+/// §2.3): the identifier at name +8, when the header's string marker sits
+/// at +16. Other bytes can follow a name: a `moExtFeature_c` writes a second
+/// name object there, and the scan reads its text as the identifier.
+pub(crate) fn header_object_id(payload: &[u8], name: &FeatureInputName) -> Option<u32> {
+    let offset = usize::try_from(name.offset).ok()?;
+    let units = usize::from(*payload.get(offset.checked_add(NAME_MARKER.len())?)?);
+    let string = offset
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)?
+        .checked_add(named_header::LEN)?;
+    let marker = &NAME_MARKER[2..];
+    if payload.get(string..string.checked_add(marker.len())?)? != marker {
+        return None;
+    }
+    name.object_id?.value()
+}
+
 fn decimal_matches(text: &str, value: usize) -> bool {
     !text.is_empty()
         && (text == "0" || !text.starts_with('0'))
@@ -78,14 +97,21 @@ pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
     (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
-fn payload_name_candidates(
-    payload: &[u8],
-) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+/// The marker that opens every object-name record of a lane: the lane's
+/// name class token, then the UTF-16 name prefix.
+pub(crate) fn name_marker(payload: &[u8]) -> [u8; 5] {
     let mut name_marker = [0; 5];
     name_marker.copy_from_slice(NAME_MARKER);
     if let Some(token) = name_class_token(payload) {
         name_marker[..2].copy_from_slice(&token.to_le_bytes());
     }
+    name_marker
+}
+
+fn payload_name_candidates(
+    payload: &[u8],
+) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+    let name_marker = name_marker(payload);
     payload
         .windows(name_marker.len())
         .enumerate()
