@@ -111,3 +111,11 @@
 **Known.** A `CLSID_JMPart` feature stores its suppressed state in bit `0x10` of its state word (§4.3). The `u32` at object offset 8 of a `CLSID_JMGroup` object is `1` in documents without suppressed features. A `CLSID_JMFeatureGroup` object lists the folder members (§4.3).
 
 **Need.** A document with one suppressed mirror copy or pattern and its resave without suppression; a document with one renamed folder and its resave with the default name.
+
+### DR-1035. Occurrence suppression
+
+**Question.** Where does an assembly store that an occurrence is suppressed?
+
+**Known.** The state word of a `CLSID_JAsmReference` object (§9.2) states grounding. It is `4` for a non-grounded occurrence whether or not the occurrence is suppressed.
+
+**Need.** An assembly saved with one occurrence suppressed and its copy with the occurrence active, and the same pair with the occurrence grounded.
