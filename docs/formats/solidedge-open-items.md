@@ -56,14 +56,6 @@
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
 
-### DR-1026. Occurrence visibility
-
-**Question.** Where does an assembly store that an occurrence is hidden?
-
-**Known.** Hiding an occurrence leaves its `CLSID_JAsmReference` object (§9.2), `JAsmRefAttr`, `JSitesList` and `PSMroots` unchanged. It changes the 512-byte `JVisibleData` stream throughout, and that stream does not read as plain records.
-
-**Need.** The encoding of `JVisibleData`, or an assembly saved with one occurrence hidden and its copy with the occurrence shown, plus copies with two and three hidden occurrences.
-
 ### DR-1027. Tapped hole with counterbore
 
 **Question.** Which stored value sizes the solid of a tapped hole that has a counterbore?
@@ -111,11 +103,3 @@
 **Known.** A `CLSID_JMPart` feature stores its suppressed state in bit `0x10` of its state word (§4.3). The `u32` at object offset 8 of a `CLSID_JMGroup` object is `1` in documents without suppressed features. A `CLSID_JMFeatureGroup` object lists the folder members (§4.3).
 
 **Need.** A document with one suppressed mirror copy or pattern and its resave without suppression; a document with one renamed folder and its resave with the default name.
-
-### DR-1035. Occurrence suppression
-
-**Question.** Where does an assembly store that an occurrence is suppressed?
-
-**Known.** The state word of a `CLSID_JAsmReference` object (§9.2) states grounding. It is `4` for a non-grounded occurrence whether or not the occurrence is suppressed.
-
-**Need.** An assembly saved with one occurrence suppressed and its copy with the occurrence active, and the same pair with the occurrence grounded.
