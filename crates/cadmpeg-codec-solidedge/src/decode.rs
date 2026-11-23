@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Solid Edge document decode.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
@@ -53,7 +53,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             }
         };
         ir.model.product_definitions.push(product);
-        sheet_metal::project_rule(ctx, &snapshot, &definition, &mut ir, &mut body.losses)?;
+        let design = ctx.depth() >= DecodeDepth::Design;
+        if design {
+            sheet_metal::project_rule(ctx, &snapshot, &definition, &mut ir, &mut body.losses)?;
+        }
         if let Some(cluster) = cluster {
             assembly::project(
                 ctx,
@@ -63,14 +66,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 &mut ir,
                 &mut body.losses,
             )?;
-            features::project(
-                ctx,
-                &snapshot,
-                cluster,
-                &definition,
-                &mut ir,
-                &mut body.losses,
-            )?;
+            if design {
+                features::project(
+                    ctx,
+                    &snapshot,
+                    cluster,
+                    &definition,
+                    &mut ir,
+                    &mut body.losses,
+                )?;
+            }
         }
         let mut found = false;
         let mut kernels = Vec::new();
