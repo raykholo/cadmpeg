@@ -305,6 +305,505 @@ at object offset 8 is the member count `c`. `c` pairs follow it, each the
 navigator lists the folder entry immediately before its first member, and
 lists each member as an entry of its own.
 
+
+## 5. Sketches
+
+### 5.1 Profile objects
+
+A profile is a group of cluster-0 objects with consecutive identifiers: a
+`CLSID_JProfileSet` object `S`, the `CLSID_JProfile` object `S` + 1, and
+the `CLSID_JProfile2d` object `S` + 2. A profile is stored only when a
+feature consumes it. All lengths are metres and all angles are radians.
+
+A `CLSID_JProfile` object stores the sketch frame:
+
+| Offset | Field |
+| ---: | --- |
+| 26 | three `f64`: origin in model space |
+| 50 | three `f64`: vector `A`, the plane normal |
+| 74 | three `f64`: vector `B`, the local x axis |
+| 127 | `u32` identifier of the `CLSID_JProfile2d` object |
+| 292 | `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane |
+
+The local y axis is `A` × `B`. A point (x, y) of the profile is the model
+point origin + x·`B` + y·(`A` × `B`). The plane is a `ReferencePlaneObject`.
+The origin, `A` and `B` of the profile equal those of its plane.
+
+A `CLSID_JProfile2d` object lists the profile members. The `u32` at object
+offset 8 is the member count `n`, and `n` `u32` member identifiers follow
+it.
+A member identifier `0xFFFFFFFF` names no object; the profile of a revolved
+protrusion lists one.
+
+### 5.2 Profile curves
+
+A member of class `CLSID_JLine2d` is a line segment. The four `f64` at
+object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile
+frame: the segment runs from (x0, y0) to (x1, y1).
+
+A member of class `CLSID_JCircle2d` is a full circle. The `f64` at object
+offsets 10 and 18 are the centre x and y in the profile frame, and the
+`f64` at offset 26 is the radius.
+
+A member of class `CLSID_JArc2d` is a circular arc. The `f64` at object
+offsets 10, 18 and 26 are the centre x, y and the radius. The `f64` at
+offsets 35 and 43 are the start and end angles, measured from the local x
+axis towards the local y axis. The arc runs from the start angle to the end
+angle in that sense.
+
+A member of class `CLSID_JKeyPoint2d` joins two curves and stores no
+coordinate. Members of other classes are constraints, dimensions and other
+profile items.
+
+### 5.3 Feature profile
+
+A `CLSID_JMPart` feature with function `JMProtrusionFunction`,
+`JMCutoutFunction`, `JMRevolvedProtrusionFunction`,
+`JMMultiSweepProtrusionFunction`, `JMLoftedProtrusionFunction` or
+`JMBaseTabFunction` stores the identifier of its profile as the `u32` 72
+bytes after the end of its function name (§4.2). For
+`JMMultiSweepProtrusionFunction` that profile is the sweep path, and the
+`u32` 104 bytes after the end of the function name is the identifier of the
+section profile. A feature with function
+`JMHoleFunction`, `JMFlangeFunction` or `JMFastPatternFunction` stores it 68
+bytes after the end of its function name. The identifier names a
+`CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
+profile. At most one feature names a profile.
+
+## 6. Feature extents
+
+### 6.1 Parameter slots
+
+A `CLSID_JMPart` feature with function `JMProtrusionFunction`,
+`JMCutoutFunction` or `JMRevolvedProtrusionFunction` stores its parameters
+as `u32` object identifiers after the end of its function name (§4.2):
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 72 | the profile (§5.3) |
+| 100 | the extent kind |
+| 128 | the side |
+| 184 | the depth of an extruded feature, or the axis of a revolved feature |
+| 212 | the sweep angle of a revolved feature |
+
+An identifier `0` names no object. A `Double Value Object` stores its value
+as the `f64` at object offset 8. A `CLSID_JDim` stores its value as §7.1
+states. Lengths are metres and angles are radians.
+
+### 6.2 Extent kind and side
+
+The extent kind is a `Double Value Object`. Value `13` is a finite extent
+and value `16` is an extent through all material.
+
+The side is a `Double Value Object`. Value `2` extends the feature along the
+profile normal `A` (§5.1), value `1` extends it against the normal, and
+value `3` extends it to both sides of the profile plane. For a revolved
+feature, value `2` sweeps towards the profile normal and value `1` away
+from it.
+
+### 6.3 Depth
+
+The depth of a finite extruded feature is a `CLSID_JDim` or a
+`Double Value Object`. A one-sided feature extends by the depth from the
+profile plane. A feature extended to both sides extends by half the depth to
+each side. A feature through all material stores no depth.
+
+### 6.4 Revolve axis and angle
+
+The axis of a revolved feature is a `CLSID_JMRefAxis` object. Its byte at
+object offset 12 is `3`. The three `f64` at offset 13 are a point on the
+axis in model space, and the three `f64` at offset 37 are the unit axis
+direction. The sweep angle is a `Double Value Object` or a `CLSID_JDim`.
+
+## 7. Holes, rounds, chamfers and thin walls
+
+### 7.1 Dimension values
+
+A `CLSID_JDim` object stores the `u32` value `1`, then the identifier `T` of
+the object it dimensions at offset `p`, then a `u32` type code. The `u32` at
+`p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in
+the 459-byte and 466-byte layouts and 144 in the 455-byte layout.
+
+### 7.2 Holes
+
+A `CLSID_JMPart` feature with function `JMHoleFunction` stores these object
+identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the profile (§5) |
+| 96 | the `CLSID_JMHolePropData` object |
+| 124 | the counterbore depth, a `CLSID_JDim`, or `0` |
+| 152 | the countersink angle, a `CLSID_JDim`, or `0` |
+| 208 | the extent kind (§6.2) |
+| 236 | the side (§6.2) |
+| 264 | the depth of a finite hole, a `CLSID_JDim`, or `0` |
+
+Each `CLSID_JHole2d` member of the profile is one hole position. Its `f64`
+values at object offsets 8 and 16 are the position x and y in the profile
+frame (§5.1).
+
+A `CLSID_JMHolePropData` object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 8 | `u32` hole type: `0` simple, `1` countersink, `2` counterbore, `3` tapped |
+| 12 | `f64` hole diameter; the tap drill diameter of a tapped hole |
+| 20 | `f64` counterbore or countersink diameter |
+| 28 | `f64` counterbore depth |
+| 36 | `f64` countersink angle, in degrees |
+| 72 | `f64` hole depth |
+| 1053 | `f64` thread minor diameter, in millimetres |
+| 1061 | `f64` thread major diameter, in millimetres |
+| 1069 | `u32` thread designation length `k`, in UTF-16 code units |
+| 1073 | `k` UTF-16LE code units: the thread designation |
+
+A hole of type `3` is threaded with the stored thread. A hole of another
+type can keep thread values from an earlier type; they do not apply.
+
+### 7.3 Rounds
+
+A `CLSID_JMPart` feature with function `JMRoundFunction` holds `n` edge sets.
+Its object identifiers after the end of its function name are:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 72 + 20·k | the `CLSID_JMTopologyProxy` that selects the edges of set `k` |
+| 84 + 20·n + 20·k | the kind of set `k`, a `Double Value Object` |
+| 96 + 40·n + 20·k | the radius of set `k`, a `CLSID_JDim` |
+
+`k` runs from `0` to `n` − 1. Set kind `1` is a constant radius. The count
+`n` is the number of consecutive `CLSID_JMTopologyProxy` identifiers from
+72 bytes after the name.
+
+### 7.4 Chamfers
+
+A `CLSID_JMPart` feature with function `JMChamferFunction` stores these
+object identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the chamfer type, a `Double Value Object` |
+| 96 | the `CLSID_JMTopologyProxy` of the reference face, or `0` |
+| 128 | the `CLSID_JMTopologyProxy` of the edges |
+| 156 | the first setback, a `CLSID_JDim` |
+| 184 | the second setback or the angle, a `CLSID_JDim`, or `0` |
+
+Chamfer type `41` has one setback on both faces. Type `43` has two setbacks;
+the first setback is on the reference face. Type `42` has a setback on the
+reference face and an angle from it.
+
+### 7.5 Thin walls
+
+A `CLSID_JMPart` feature with function `JMThinwallAssocFunctionNew` stores
+these object identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the thin-wall type, a `Double Value Object` |
+| 96 | the wall thickness, a `CLSID_JDim` |
+| 124 | the `CLSID_JMTopologyProxy` of the open faces |
+
+Type `4` hollows the body inward by the thickness, with the open faces
+removed.
+
+### 7.6 Edge selections
+
+A `CLSID_JMTopologyProxy` object of 559 bytes selects one straight edge. Its
+`f64` values at object offsets 121, 129 and 137 are the edge start point,
+the `f64` values at offsets 145, 153 and 161 are the unit edge direction,
+and the `f64` at offset 177 is the edge length. Lengths are metres.
+
+A proxy of another size `S` stores the edge start point at offset `S` - 438.
+The unit edge direction follows the start point after 24 bytes, and the edge
+length follows it after 56 bytes. The 559-byte offsets above are the case
+`S` = 559. A proxy of 563 bytes stores an 8-byte header extension. A proxy of
+575 bytes stores two more `(u32 0, u32 n << 16)` pairs in its name list.
+
+## 8. Patterns and mirrors
+
+### 8.1 Pattern features
+
+A pattern is a `CLSID_JMGroup` entry of the navigator (§4.1). The group
+object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 106 | `u32` identifier of the `CLSID_JMPart` object with function `JMFastPatternFunction` |
+| 337 | `u32` identifier of the seed feature |
+
+The profile of the `JMFastPatternFunction` object (§5.3) has one
+`CLSID_JPattern2d` member.
+
+A `CLSID_JPattern2d` object holds the pattern parameters after the last
+occurrence of the GUID `{0145EEC0-1602-11CE-B7EE-08003601E53B}` in it. With
+`E` the offset after that GUID:
+
+| Offset | Field |
+| ---: | --- |
+| `E` + 14 | `u32` pattern kind: `1` rectangular, `2` circular |
+| `E` + 26 | `u32` first count |
+| `E` + 30 | `u32` second count |
+| `E` + 34 | `f64` first spacing, or the angle between instances |
+| `E` + 42 | `f64` second spacing |
+
+The `CLSID_JPattern2d` object references its sketch geometry by
+`u32` triples of `0x10`, `0x80000000` and an object identifier. A
+rectangular pattern references four `CLSID_JLine2d` objects that run round
+the rectangle from the first instance to the last. The first line runs from
+the seed position along the first direction. The second line runs along the
+second direction. The first count and spacing apply along the first
+direction, and the second count and spacing along the second direction.
+
+A circular pattern references one `CLSID_JArc2d` object. Its centre is on
+the pattern axis, which is normal to the profile plane. The first count is
+the number of instances, and the angle between instances is the
+`f64` at `E` + 34. The instances follow the seed counter-clockwise about
+the profile normal `A` (§5.1).
+
+All values are in profile coordinates, metres and radians.
+
+### 8.2 Mirror features
+
+A mirror is a `CLSID_JMGroup` entry of the navigator whose group object
+stores:
+
+| Offset | Field |
+| ---: | --- |
+| 92 | `u32` seed count `c` |
+| 96 | `c` `u32` seed feature identifiers |
+| 325 + 4·`c` | `u32` identifier of the mirror plane |
+
+The mirror plane is a `ReferencePlaneObject`, the plane about which the seed
+is mirrored. Its object stores three `f64` at offset 13, a point on the plane,
+and three `f64` at offset 37, the unit plane normal. The point is in metres.
+
+## 9. Assembly occurrences
+
+### 9.1 Occurrence list
+
+The cluster-0 object of class `References Collection Object` lists the
+occurrences of an assembly document. The `u32` at object offset 16 is the
+occurrence count `n`. `ceil(n / 8)` bytes follow it, then `n` `u32`
+identifiers of `CLSID_JAsmReference` objects, one per occurrence.
+
+### 9.2 Occurrence object
+
+A `CLSID_JAsmReference` object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 16 | `u32` state word: `2` for a grounded occurrence, `4` for an occurrence that is not grounded |
+| 113 | `u32` identifier of the `CLSID_JSite` object of the referenced document |
+| 125 | nine `f64`: the rotation `R`, row-major |
+| 197 | three `f64`: the translation `t`, in metres |
+| 221 | `f64` `1` |
+
+Row `i` of `R` is the direction of the referenced document's axis `i` in the
+assembly. A point `p` of the referenced document, as a row vector, is at
+`p` `R` + `t` in the assembly. Occurrences of one document name one
+`CLSID_JSite` object.
+
+### 9.3 Referenced document
+
+A `CLSID_JSite` object with identifier `N` has its link data in the stream
+`JSite<N>/\x01Ole`, where `<N>` is `N` in decimal. The stream has a 12-byte
+header, then a file moniker at offset 12:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | the file moniker CLSID `{00000303-0000-0000-C000-000000000046}` |
+| 16 | `u16` up-level count, `0` |
+| 18 | `u32` byte count `n` |
+| 22 | `n` bytes of ASCII drive-absolute path, ending with one zero byte |
+| 22 + `n` | `u16` `0xFFFF` |
+| 24 + `n` | `u16` `0xDEAD` |
+
+A second file moniker of the same layout follows in the stream. Its up-level
+count is `1` and its path is relative to the folder of the assembly
+document.
+
+### 9.4 Occurrence structure list
+
+The stream `Preview/Structure/IOT` lists the occurrences that take part in
+the assembly. A 20-byte header holds a `u32` entry count `n` at offset 16.
+`n` entries of 20 bytes follow, so the stream is 20 + 20·`n` bytes long. An
+entry stores:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence |
+| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |
+
+An occurrence that the references collection (§9.1) lists and the stream
+does not list is suppressed. Its `CLSID_JAsmReference` object and the
+references collection are the same as for an active occurrence. A hidden
+occurrence keeps its entry.
+
+### 9.5 Family of assemblies
+
+A family-of-assemblies document has none of the ordinary root streams.
+Its root holds the streams `FamilyInfo`, `FamilyPropertyFlags` and
+`FOAPublishData`, a master storage named `Master` followed by U+0001, and one
+storage per family member. A member storage is named by the member name. The
+master storage and each member storage hold the streams of an ordinary
+document (`JSitesList`, `PSMroots`, `PSMcluster0`, `PSMtypetable`,
+`PSMspacemap/...`, `JSite<N>/\x01Ole` and the others); every stream path of
+this specification is relative to the storage of the selected member.
+
+A name is a `u32` count of UTF-16LE units that includes the terminating zero
+unit, followed by the units. `FamilyInfo` holds the name of a member. The
+document is read from the member storage with that name. Activating another
+member leaves `FamilyInfo` unchanged.
+
+`FOAPublishData` lists the members as records of the identifier `0xa000 + k`
+(`k` from 1) and the member name.
+
+The stream `Family of Assemblies Members` of the master storage holds the
+member table. It starts with a header, then one record per member. A record
+starts with the bytes `51 51 51 00`, the `u32` member identifier and the member
+name, followed by:
+
+| Field | Size |
+| --- | ---: |
+| `u32` count `c` | 4 |
+| `c` entries, each a `u32` object identifier | 4 `c` |
+| further bytes | 12 |
+| two blocks, each a `u32` `1`, a 16-byte class identifier and a `u32` `0` | 48 |
+| `u32` count `n` | 4 |
+| `n` entries | 111 `n` |
+| further bytes to the end of the record | |
+
+An entry of the second list is the `u32` identifier of a `CLSID_JAsmReference`
+object, the 13 `f64` words of the placement of §9.2 (rotation, translation and
+the word `1`) and 3 bytes. A record ends before the next record tag or at the
+end of the stream. The last `u32` of a record is its state word.
+
+The second list of every record names every occurrence of the family. The first list of a record names the
+occurrences that the member excludes; it is empty for a member that excludes
+none. The member storage of a member holds the `CLSID_JAsmReference` objects of
+the occurrences that the member does not exclude, and its references
+collection (§9.1) lists those objects. The placement of an occurrence is equal
+in every member storage that holds its object.
+
+The state word of the first record is 3 while the first member is the active
+member and 1 while another member is active. The state word of every other
+record is 3. In a family of two members the active member is therefore the
+first member when bit 1 (`2`) of the state word of the first record is set and
+the second member otherwise.
+
+The active member places the occurrences of its record's second list, taken
+from the references collection of the storage that `FamilyInfo` names. An
+occurrence in the first list of the active member's record is excluded: it
+keeps its object and placement and is suppressed in the active state.
+
+## 10. Sheet metal
+
+### 10.1 Variable table
+
+The stream `CustomPropertyVariableInfo` lists the document variables that
+the software defines. It starts with a `u32` record count `n` and a `u32`
+version `1`. `n` records of 24 bytes follow:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` key |
+| 4 | `u32` index |
+| 8 | `u32` identifier of the cluster-0 `Double Value Object` that holds the variable |
+| 12 | `u16` unit type: `1` length in metres, `16` density, `58` unitless |
+| 14 | `u16` zero |
+| 16 | `f64` value, equal to the value of the referenced object |
+
+The key is `(i - 1) << 24 | 2` for index `i` 2 or 3, and `i << 24` for the
+other indices. A part document (`.par`) lists indices 2 and 3. A sheet-metal
+document (`.psm`) lists indices 2 to 13. An assembly document lists no
+record. The indices are:
+
+| Index | Variable |
+| ---: | --- |
+| 2 | density |
+| 3 | accuracy |
+| 4 | material thickness |
+| 5 | bend radius |
+| 6 | relief width |
+| 7 | relief length |
+| 8 | neutral factor |
+| 9 | minimum arc length |
+| 10 | deviational tolerance |
+| 11 | bend deduction |
+| 12 | bend allowance |
+| 13 | bend method: `0` neutral factor, `1` bend deduction |
+
+The referenced object of a variable also stores the variable name as
+UTF-16 text. The neutral factor is the K-factor: the distance of the neutral
+surface from the inside of a bend, as a fraction of the thickness.
+
+### 10.2 Base tab
+
+A `CLSID_JMPart` feature with function `JMBaseTabFunction` stores its
+profile at the §5.3 position, the identifier of the material-thickness
+variable object (§10.1) 100 bytes after the end of its function name, and a
+side `Double Value Object` 128 bytes after the end of its function name.
+The base tab is a flat sheet of the material thickness over the region of
+its profile. Side `2` puts the material along the profile normal `A`
+(§5.1) and side `1` against it.
+
+### 10.3 Flange
+
+A `CLSID_JMPart` feature with function `JMMultiFlangeFunction` stores these
+object identifiers after the end of its function name (§4.2):
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 40 | the `CLSID_JMPart` feature that precedes this flange in the part |
+| 72 | the `CLSID_JMTopologyProxy` edge selection (§7.6) |
+| 100 | `CLSID_JDim` flange length |
+| 128 | `CLSID_JDim` entered angle |
+| 156 | `Double Value Object` material thickness, the document variable of §10.1 index 4 |
+| 184 | `Double Value Object` extent kind |
+| 240 | `Double Value Object` side |
+| 296 | `Double Value Object` inside bend radius |
+| 324 | `Double Value Object` neutral factor |
+| 380 | `Double Value Object` relief width |
+| 408 | `Double Value Object` relief length |
+| 440 | `Double Value Object` offset kind, `44` |
+| 492 | `CLSID_JDim` partial width, only where the extent kind is `135` |
+| 496 | `Double Value Object` relief type, where the extent kind is `134` |
+| 520 | `Double Value Object` relief type, where the extent kind is `135` |
+| 832 | `Double Value Object` bend method, the document variable of §10.1 index 13 |
+| 860 | `Double Value Object` bend deduction, the document variable of §10.1 index 11 |
+| 888 | `Double Value Object` bend allowance, the document variable of §10.1 index 12 |
+
+The slots from offset 492 on are 24 bytes later where the extent kind is
+`135` than where it is `134`. The slots at offsets 832, 860 and 888 are
+those of the extent kind `134` layout. The feature holds one edge. A flange
+that follows another flange in the part names that flange at offset 40.
+
+The extent kind is `134` for the full length of the edge and `135` for a
+width centred on the edge. The partial width is the stored whole-edge proxy
+and a `CLSID_JDim` at offset 492; the file stores no offset from either end
+of the edge. The side value `2` turns the flange towards the normal of the
+base face. The relief type is `53` for no relief, `51` for a square relief
+and `52` for a round relief.
+
+The length `CLSID_JDim` stores the flange length. The length runs from the
+outer sharp, the intersection of the outer faces of the base and the flange,
+to the top of the flange. The angle `CLSID_JDim` stores the entered angle
+`a`; the flange turns through the angle pi - `a` from the plane of the face
+that bounds the edge.
+
+The values at offsets 296, 324, 380 and 408 are objects of the flange, each
+bound to a document variable of §10.1 by one `Assoc subsystem Standard
+Relation implementation` object of 161 bytes. The `u32` at object offset 99
+is the identifier of the flange object. The `u32` at object offset 127 is
+the identifier of the document variable object (§10.1). A value that has a
+relation follows the document variable. A value that has no relation is set
+on the flange and holds its own number.
+
+A `JMBendTable` object stores 362 bytes and one 93-byte record per bend. In
+record `k`, the `f64` at object offset 374 + 93`k` is the inside bend radius
+and the `f64` at object offset 382 + 93`k` is the bend angle pi - `a`.
+
 ## 2. Kernel stream map
 
 The `PARASOLID` storage contains binary kernel streams. A primary partition

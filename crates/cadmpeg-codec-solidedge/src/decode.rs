@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Solid Edge document decode.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
@@ -11,7 +11,10 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
-use crate::{brep, container, dialect, features, loss::SolidEdgeLossCode, partition, settings};
+use crate::{
+    assembly, brep, container, dialect, features, loss::SolidEdgeLossCode, partition, settings,
+    sheet_metal,
+};
 use cadmpeg_container::compound::CompoundEntry;
 use cadmpeg_parasolid::records::PrimaryRecords;
 
@@ -29,10 +32,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }),
     );
     if !ctx.container_only() {
+        let member = container::DocStreams::select(ctx, &snapshot, &mut body.losses)?;
         let definition = root_definition();
         let mut product = ProductDefinition::root(definition.clone(), ExternalDocument::default());
-        let cluster = match snapshot.stream(settings::CLUSTER_STREAM) {
-            Some(entry) => Some(snapshot.open(ctx, entry)?),
+        let cluster = match member.stream(settings::CLUSTER_STREAM) {
+            Some(entry) => Some(member.open(ctx, entry)?),
             None => None,
         };
         product.units = match cluster {
@@ -50,15 +54,29 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             }
         };
         ir.model.product_definitions.push(product);
+        let design = ctx.depth() >= DecodeDepth::Design;
+        if design {
+            sheet_metal::project_rule(ctx, &member, &definition, &mut ir, &mut body.losses)?;
+        }
         if let Some(cluster) = cluster {
-            features::project(
+            assembly::project(
                 ctx,
-                &snapshot,
+                &member,
                 cluster,
                 &definition,
                 &mut ir,
                 &mut body.losses,
             )?;
+            if design {
+                features::project(
+                    ctx,
+                    &member,
+                    cluster,
+                    &definition,
+                    &mut ir,
+                    &mut body.losses,
+                )?;
+            }
         }
         let mut found = false;
         let mut kernels = Vec::new();

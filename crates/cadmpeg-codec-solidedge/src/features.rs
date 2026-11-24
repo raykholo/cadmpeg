@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_container::compound::CompoundSnapshot;
+use crate::container::DocStreams;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -279,16 +279,23 @@ fn folder_members(object: &Object<'_>) -> Option<Vec<u32>> {
 /// The function name of a `CLSID_JMPart` object (§4.2): a counted block at
 /// offset 132, then a counted ASCII name ending with one zero byte.
 fn function_name(object: &Object<'_>) -> Option<String> {
+    function_span(object).map(|(name, _)| name)
+}
+
+/// The function name of a `CLSID_JMPart` object and the object offset after
+/// its counted name, including the zero byte (§4.2).
+pub(crate) fn function_span(object: &Object<'_>) -> Option<(String, usize)> {
     let bytes = object.bytes;
     let block = usize::try_from(View::u32_le_at(bytes, FUNCTION_BLOCK_AT)?).ok()?;
     let count_at = FUNCTION_BLOCK_AT.checked_add(4)?.checked_add(block)?;
     let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
     let start = count_at.checked_add(4)?;
-    let (terminator, name) = bytes.get(start..start.checked_add(count)?)?.split_last()?;
+    let end = start.checked_add(count)?;
+    let (terminator, name) = bytes.get(start..end)?.split_last()?;
     if *terminator != 0 || !name.is_ascii() {
         return None;
     }
-    String::from_utf8(name.to_vec()).ok()
+    Some((String::from_utf8(name.to_vec()).ok()?, end))
 }
 
 /// The operation family of a function name. The families are the decoder's
@@ -304,7 +311,9 @@ fn function_family(function: &str) -> Option<OperationFamily> {
         "JMRoundFunction" => OperationFamily::Fillet,
         "JMChamferFunction" => OperationFamily::Chamfer,
         "JMThinwallAssocFunctionNew" => OperationFamily::Shell,
-        "JMBaseTabFunction" | "JMFlangeFunction" => OperationFamily::SheetMetal,
+        "JMBaseTabFunction" | "JMFlangeFunction" | "JMMultiFlangeFunction" => {
+            OperationFamily::SheetMetal
+        }
         _ => return None,
     })
 }
@@ -334,7 +343,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
     Some((native, Some(name.to_owned())))
 }
 
-fn feature_id(object: u32) -> FeatureId {
+pub(crate) fn feature_id(object: u32) -> FeatureId {
     FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "feature"),
         object,
@@ -475,7 +484,7 @@ fn rollback(
 /// assembly, adds nothing. Features state their family and no operands.
 pub(crate) fn project<'a>(
     ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &DocStreams<'_, 'a>,
     cluster: View<'a>,
     definition: &ProductDefinitionId,
     ir: &mut CadIr,
@@ -535,10 +544,6 @@ pub(crate) fn project<'a>(
         return Ok(());
     }
     losses.extend(notes);
-    losses.push(SolidEdgeLossCode::FeatureOperandsPending.note(
-        "the operands of the features are not decoded; each feature states its operation family \
-         only",
-    ));
     let members: Vec<Member> = features
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
@@ -569,6 +574,34 @@ pub(crate) fn project<'a>(
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
+    crate::sketches::project(ctx, &cluster, &types, &listed, ir, losses)?;
+    crate::extents::project(&cluster, &types, &listed, ir, losses);
+    crate::sweeps::project(&cluster, &types, &listed, ir, losses);
+    crate::sheet_metal::project_base_tabs(&cluster, &types, &listed, ir, losses);
+    crate::sheet_metal::flange::project(&cluster, &types, &listed, ir, losses);
+    crate::dressup::project(&cluster, &types, &listed, ir, losses);
+    crate::patterns::project(&cluster, &types, &listed, ir, losses);
+    let pending = ir
+        .design
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition.operation,
+                FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }
+            )
+        })
+        .count();
+    if pending > 0 {
+        losses.push(SolidEdgeLossCode::FeatureOperandsPending.note(format!(
+            "the operands of {pending} feature(s) are not decoded; each states its operation \
+             family only"
+        )));
+    }
+    losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(
+        "the rollback position and suppressed state of the features are not read; the timeline \
+         states no rollback position",
+    ));
     Ok(())
 }
 

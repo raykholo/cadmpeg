@@ -705,15 +705,29 @@ fn chunks(len: usize, size: usize) -> usize {
 /// in a storage). A stream under 4096 bytes lives in the mini stream, so its
 /// length is exact.
 pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    document_with_root(
+        PART,
+        &[("PSMroots", Vec::new()), ("JSitesList", Vec::new())],
+        streams,
+    )
+}
+
+/// As [`document`], with the root class `class` and the root streams `root`
+/// in place of the two that identify an ordinary document.
+pub(crate) fn document_with_root(
+    class: CompoundClassId,
+    root: &[(&str, Vec<u8>)],
+    streams: &[(&str, Vec<u8>)],
+) -> Vec<u8> {
     let mut nodes = vec![Node {
         name: "Root Entry".into(),
         stream: None,
         parent: 0,
     }];
-    for name in ["PSMroots", "JSitesList"] {
+    for (name, data) in root {
         nodes.push(Node {
-            name: name.into(),
-            stream: Some(Vec::new()),
+            name: (*name).into(),
+            stream: Some(data.clone()),
             parent: 0,
         });
     }
@@ -845,7 +859,7 @@ pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
         siblings.sort_by_key(|&other| name_key(&nodes[other].name));
         if index == 0 {
             entry[66] = 5;
-            entry[80..96].copy_from_slice(&PART.to_bytes());
+            entry[80..96].copy_from_slice(&class.to_bytes());
             put_u32(
                 entry,
                 116,
@@ -1164,3 +1178,562 @@ pub(crate) fn feature_document_last(features: &[Feature<'_>], last: Option<u32>)
         ("PSMtypetable", type_table(&classes, &[])),
     ])
 }
+
+/// A member of a synthetic profile.
+pub(crate) enum Member2d {
+    /// A line from (x0, y0) to (x1, y1).
+    Line([f64; 4]),
+    /// A circle by centre x, y and radius.
+    Circle([f64; 3]),
+    /// An arc by centre x, y, radius, start angle and end angle.
+    Arc([f64; 5]),
+    /// A keypoint.
+    Keypoint,
+    /// A constraint.
+    Constraint,
+    /// The identifier `0xFFFFFFFF`, which names no object.
+    None,
+    /// A hole position by x and y.
+    Hole([f64; 2]),
+}
+
+/// The frame of a synthetic profile: origin, normal `A` and x axis `B`.
+pub(crate) struct ProfileFrame {
+    pub(crate) origin: [f64; 3],
+    pub(crate) normal: [f64; 3],
+    pub(crate) x_axis: [f64; 3],
+}
+
+fn put_reals(body: &mut [u8], at: usize, values: &[f64]) {
+    // `at` is an object offset and `body` starts after the 8-byte frame.
+    for (index, value) in values.iter().enumerate() {
+        let start = at - 8 + index * 8;
+        body[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn put_words(body: &mut [u8], at: usize, values: &[u32]) {
+    for (index, value) in values.iter().enumerate() {
+        let start = at - 8 + index * 4;
+        body[start..start + 4].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// The bytes after the frame of a `CLSID_JProfile` object.
+pub(crate) fn profile_body(frame: &ProfileFrame, members: u32, plane: u32) -> Vec<u8> {
+    let mut body = vec![0_u8; 304 - 8];
+    put_reals(&mut body, 26, &frame.origin);
+    put_reals(&mut body, 50, &frame.normal);
+    put_reals(&mut body, 74, &frame.x_axis);
+    put_words(&mut body, 127, &[members]);
+    put_words(&mut body, 292, &[0x10, 0x8000_0000, plane]);
+    body
+}
+
+/// The bytes after the frame of a `CLSID_JProfile2d` object.
+pub(crate) fn profile_2d_body(members: &[u32]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for id in members {
+        body.extend_from_slice(&id.to_le_bytes());
+    }
+    body
+}
+
+/// The bytes after the frame of a `CLSID_JMPart` object whose function block
+/// stores `profile` at the offset after the function name that `after` gives.
+pub(crate) fn part_body_with_profile(function: &str, after: usize, profile: u32) -> Vec<u8> {
+    let mut body = part_body(function);
+    // The stored profile identifier is `after` bytes past the name's end.
+    body.resize(body.len() + after, 0);
+    body.extend_from_slice(&profile.to_le_bytes());
+    body
+}
+
+/// The cluster objects of a profile group `set`, `set + 1`, `set + 2`, with the
+/// member objects `first_member`, `first_member + 1`, ... Forms are declaration
+/// indices of [`SKETCH_CLASSES`].
+pub(crate) fn profile_group(
+    set: u32,
+    frame: &ProfileFrame,
+    plane: u32,
+    first_member: u32,
+    members: &[Member2d],
+) -> Vec<Object> {
+    let mut objects = vec![
+        Object {
+            id: set,
+            form: 5,
+            flags: 0,
+            body: vec![0; 8],
+        },
+        Object {
+            id: set + 1,
+            form: 6,
+            flags: 0,
+            body: profile_body(frame, set + 2, plane),
+        },
+    ];
+    let mut ids = Vec::new();
+    let mut stored = Vec::new();
+    for (index, member) in members.iter().enumerate() {
+        if matches!(member, Member2d::None) {
+            ids.push(u32::MAX);
+            continue;
+        }
+        let id = first_member + u32::try_from(index).unwrap();
+        ids.push(id);
+        let (form, body) = match member {
+            Member2d::None => unreachable!("handled above"),
+            Member2d::Line(values) => (8, curve_body(&values[..], 42)),
+            Member2d::Circle(values) => (9, curve_body(&values[..3], 34)),
+            Member2d::Arc(values) => (10, arc_body(values)),
+            Member2d::Keypoint => (11, vec![0; 8]),
+            Member2d::Constraint => (12, vec![0; 8]),
+            Member2d::Hole(values) => {
+                let mut bytes = vec![0_u8; 24 - 8];
+                put_reals(&mut bytes, 8, &values[..]);
+                (17, bytes)
+            }
+        };
+        stored.push(Object {
+            id,
+            form,
+            flags: 0,
+            body,
+        });
+    }
+    objects.push(Object {
+        id: set + 2,
+        form: 7,
+        flags: 0,
+        body: profile_2d_body(&ids),
+    });
+    objects.extend(stored);
+    objects
+}
+
+/// A line or circle body: `values` at object offset 10, `size` bytes in all.
+fn curve_body(values: &[f64], size: usize) -> Vec<u8> {
+    let mut body = vec![0_u8; size - 8];
+    put_reals(&mut body, 10, values);
+    body
+}
+
+fn arc_body(values: &[f64; 5]) -> Vec<u8> {
+    let mut body = vec![0_u8; 51 - 8];
+    put_reals(&mut body, 10, &values[..3]);
+    put_reals(&mut body, 35, &values[3..]);
+    body
+}
+
+/// The class names of [`sketch_document`], by form.
+pub(crate) const SKETCH_CLASSES: [&str; 14] = [
+    "ReferencePlaneObject",
+    "CLSID_JMPart",
+    "CLSID_JMGroup",
+    "CLSID_JMPartOwner",
+    "FeatureNavigatorObject",
+    "CLSID_JProfileSet",
+    "CLSID_JProfile",
+    "CLSID_JProfile2d",
+    "CLSID_JLine2d",
+    "CLSID_JCircle2d",
+    "CLSID_JArc2d",
+    "CLSID_JKeyPoint2d",
+    "CLSID_JConstraint2d",
+    "CLSID_JPatternProfile",
+];
+
+/// A document with one base-plane triple, one feature of `function` whose
+/// function block names the object `named` as its profile, and the profile
+/// groups `groups`. The feature is object 10 and the navigator lists it.
+pub(crate) fn sketch_document(
+    function: &str,
+    after: usize,
+    named: u32,
+    groups: Vec<Vec<Object>>,
+) -> Vec<u8> {
+    feature_with_groups(
+        part_body_with_profile(function, after, named),
+        groups.into_iter().flatten().collect(),
+        &SKETCH_CLASSES,
+    )
+}
+
+/// A document with one base-plane triple, the feature object 10 with body
+/// `body`, the objects `extra` and a navigator that lists the feature.
+fn feature_with_groups(body: Vec<u8>, extra: Vec<Object>, classes: &[&str]) -> Vec<u8> {
+    feature_with_streams(body, extra, classes, &[])
+}
+
+/// [`feature_with_groups`] with the streams `streams` beside the cluster.
+fn feature_with_streams(
+    body: Vec<u8>,
+    extra: Vec<Object>,
+    classes: &[&str],
+    streams: &[(&str, Vec<u8>)],
+) -> Vec<u8> {
+    let mut objects = Vec::new();
+    for id in 1..=3 {
+        objects.push(Object {
+            id,
+            form: 0,
+            flags: 0,
+            body: vec![0; 8],
+        });
+    }
+    objects.push(Object {
+        id: 10,
+        form: 1,
+        flags: 0,
+        body,
+    });
+    objects.push(Object {
+        id: 7,
+        form: 3,
+        flags: 0,
+        body: vec![0; 8],
+    });
+    objects.push(Object {
+        id: 5000,
+        form: 4,
+        flags: 0,
+        body: navigator_body([1, 2, 3], &[10]),
+    });
+    objects.push(Object {
+        id: 300,
+        form: 13,
+        flags: 0,
+        body: vec![0; 8],
+    });
+    objects.extend(extra);
+    objects.sort_by_key(|object| object.id);
+    let (cluster, map) = cluster_and_map(&objects);
+    let mut all = vec![
+        ("PSMcluster0", cluster),
+        ("PSMspacemap/0x00000000", map),
+        ("PSMtypetable", type_table(classes, &[])),
+    ];
+    all.extend(streams.iter().cloned());
+    document(&all)
+}
+
+/// The profile sets of [`sweep_document`]: the path and the section.
+pub(crate) const SWEEP_PATH_SET: u32 = 100;
+pub(crate) const SWEEP_SECTION_SET: u32 = 110;
+
+/// A document with one `JMMultiSweepProtrusionFunction` feature, object 10,
+/// whose path profile (72 bytes after the name) and section profile (104
+/// bytes after the name) are the groups given; a `None` leaves the slot `0`.
+pub(crate) fn sweep_document(
+    path: Option<(&ProfileFrame, &[Member2d])>,
+    section: Option<(&ProfileFrame, &[Member2d])>,
+) -> Vec<u8> {
+    let mut body = part_body("JMMultiSweepProtrusionFunction");
+    let end = body.len();
+    body.resize(end + 104 + 4, 0);
+    let mut extra = Vec::new();
+    if let Some((frame, members)) = path {
+        body[end + 72..end + 76].copy_from_slice(&(SWEEP_PATH_SET + 1).to_le_bytes());
+        extra.extend(profile_group(SWEEP_PATH_SET, frame, 1, 200, members));
+    }
+    if let Some((frame, members)) = section {
+        body[end + 104..end + 108].copy_from_slice(&(SWEEP_SECTION_SET + 1).to_le_bytes());
+        extra.extend(profile_group(SWEEP_SECTION_SET, frame, 1, 500, members));
+    }
+    feature_with_groups(body, extra, &SKETCH_CLASSES)
+}
+
+/// The class names of [`extent_document`], by form.
+pub(crate) const EXTENT_CLASSES: [&str; 17] = [
+    "ReferencePlaneObject",
+    "CLSID_JMPart",
+    "CLSID_JMGroup",
+    "CLSID_JMPartOwner",
+    "FeatureNavigatorObject",
+    "CLSID_JProfileSet",
+    "CLSID_JProfile",
+    "CLSID_JProfile2d",
+    "CLSID_JLine2d",
+    "CLSID_JCircle2d",
+    "CLSID_JArc2d",
+    "CLSID_JKeyPoint2d",
+    "CLSID_JConstraint2d",
+    "CLSID_JPatternProfile",
+    "Double Value Object",
+    "CLSID_JDim",
+    "CLSID_JMRefAxis",
+];
+
+/// An object a feature's parameter slot names.
+#[derive(Clone, Copy)]
+pub(crate) enum Slot {
+    /// The slot holds `0`.
+    Empty,
+    /// A `Double Value Object` with this value.
+    Double(f64),
+    /// A `CLSID_JDim` with this value, in the layout with `p` = 148.
+    Dim(f64),
+    /// A `CLSID_JDim` with this value, in the layout with `p` = 144.
+    DimCompact(f64),
+    /// A `CLSID_JDim` whose repeated target differs from its target.
+    DimBroken(f64),
+    /// A `CLSID_JMRefAxis` through `point` along `direction`.
+    Axis {
+        point: [f64; 3],
+        direction: [f64; 3],
+    },
+}
+
+/// The four parameter slots of a feature (§6.1).
+#[derive(Clone, Copy)]
+pub(crate) struct Slots {
+    pub(crate) kind: Slot,
+    pub(crate) side: Slot,
+    /// The depth or the axis.
+    pub(crate) third: Slot,
+    pub(crate) angle: Slot,
+}
+
+/// The first identifier of the slot objects of [`extent_document`].
+const SLOT_OBJECT: u32 = 400;
+/// The profile set of [`extent_document`].
+pub(crate) const EXTENT_SET: u32 = 100;
+
+/// The bytes after the frame of a `CLSID_JDim` with `p`, the target and its
+/// repeat, and the value (§7.1).
+fn dim_body(p: usize, target: u32, repeat: u32, value: f64) -> Vec<u8> {
+    let mut body = vec![0_u8; p + 62 - 8];
+    put_words(&mut body, p - 4, &[1, target]);
+    put_words(&mut body, p + 50, &[repeat]);
+    put_reals(&mut body, p + 54, &[value]);
+    body
+}
+
+fn slot_object(id: u32, slot: Slot) -> Option<Object> {
+    let (form, body) = match slot {
+        Slot::Empty => return None,
+        Slot::Double(value) => (14, value.to_le_bytes().to_vec()),
+        Slot::Dim(value) => (15, dim_body(148, 7, 7, value)),
+        Slot::DimCompact(value) => (15, dim_body(144, 7, 7, value)),
+        Slot::DimBroken(value) => (15, dim_body(148, 7, 8, value)),
+        Slot::Axis { point, direction } => {
+            let mut body = vec![0_u8; 61 - 8];
+            body[12 - 8] = 3;
+            put_reals(&mut body, 13, &point);
+            put_reals(&mut body, 37, &direction);
+            (16, body)
+        }
+    };
+    Some(Object {
+        id,
+        form,
+        flags: 0,
+        body,
+    })
+}
+
+/// A document with one feature of `function` whose profile is a group of
+/// `members` on `frame` and whose slots hold `slots`. The feature is object
+/// 10.
+pub(crate) fn extent_document(
+    function: &str,
+    frame: &ProfileFrame,
+    members: &[Member2d],
+    slots: Slots,
+) -> Vec<u8> {
+    extent_document_with_streams(function, frame, members, slots, &[])
+}
+
+/// [`extent_document`] with the streams `streams` beside the cluster.
+pub(crate) fn extent_document_with_streams(
+    function: &str,
+    frame: &ProfileFrame,
+    members: &[Member2d],
+    slots: Slots,
+    streams: &[(&str, Vec<u8>)],
+) -> Vec<u8> {
+    let mut body = part_body_with_profile(function, 72, EXTENT_SET + 1);
+    let end = body.len() - 72 - 4;
+    body.resize(end + 216 + 4, 0);
+    let mut extra = profile_group(EXTENT_SET, frame, 1, 200, members);
+    let table = [
+        (100, slots.kind),
+        (128, slots.side),
+        (184, slots.third),
+        (212, slots.angle),
+    ];
+    for (index, (after, slot)) in table.into_iter().enumerate() {
+        let id = SLOT_OBJECT + u32::try_from(index).unwrap();
+        if let Some(object) = slot_object(id, slot) {
+            let at = end + after;
+            body[at..at + 4].copy_from_slice(&id.to_le_bytes());
+            extra.push(object);
+        }
+    }
+    feature_with_streams(body, extra, &EXTENT_CLASSES, streams)
+}
+
+/// A `CustomPropertyVariableInfo` stream that lists `records` as (index,
+/// value) pairs (§10.1). The table states `count` records.
+pub(crate) fn variable_table(count: u32, records: &[(u32, f64)]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&count.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    for &(index, value) in records {
+        let mut record = [0_u8; 24];
+        let key = if index < 4 {
+            ((index - 1) << 24) | 2
+        } else {
+            index << 24
+        };
+        record[0..4].copy_from_slice(&key.to_le_bytes());
+        record[4..8].copy_from_slice(&index.to_le_bytes());
+        record[8..12].copy_from_slice(&(1000 + index).to_le_bytes());
+        record[12..14].copy_from_slice(&1_u16.to_le_bytes());
+        record[16..24].copy_from_slice(&value.to_le_bytes());
+        bytes.extend_from_slice(&record);
+    }
+    bytes
+}
+
+/// The class names of [`dressup_document`], by form.
+pub(crate) const DRESSUP_CLASSES: [&str; 20] = [
+    "ReferencePlaneObject",
+    "CLSID_JMPart",
+    "CLSID_JMGroup",
+    "CLSID_JMPartOwner",
+    "FeatureNavigatorObject",
+    "CLSID_JProfileSet",
+    "CLSID_JProfile",
+    "CLSID_JProfile2d",
+    "CLSID_JLine2d",
+    "CLSID_JCircle2d",
+    "CLSID_JArc2d",
+    "CLSID_JKeyPoint2d",
+    "CLSID_JConstraint2d",
+    "CLSID_JPatternProfile",
+    "Double Value Object",
+    "CLSID_JDim",
+    "CLSID_JMRefAxis",
+    "CLSID_JHole2d",
+    "CLSID_JMHolePropData",
+    "CLSID_JMTopologyProxy",
+];
+
+/// The parameters of a `CLSID_JMHolePropData` object (§7.2).
+#[derive(Clone, Copy)]
+pub(crate) struct HoleProps {
+    pub(crate) kind: u32,
+    pub(crate) diameter: f64,
+    pub(crate) head_diameter: f64,
+    pub(crate) head_depth: f64,
+    pub(crate) sink_degrees: f64,
+    pub(crate) depth: f64,
+    /// The thread block at object offset 1053: minor and major diameter in
+    /// millimetres and the designation. `None` leaves the object 80 bytes.
+    pub(crate) thread: Option<(f64, f64, &'static str)>,
+}
+
+/// An object a hole, round or chamfer slot names.
+#[derive(Clone, Copy)]
+pub(crate) enum Dress {
+    /// A slot object of [`Slot`].
+    Value(Slot),
+    /// A `CLSID_JMTopologyProxy` that stores no straight edge.
+    Proxy,
+    /// A 559-byte `CLSID_JMTopologyProxy` that stores a straight edge by its
+    /// start, unit direction and length, in metres (§7.6).
+    EdgeProxy([f64; 3], [f64; 3], f64),
+    /// A `CLSID_JMHolePropData`.
+    Props(HoleProps),
+}
+
+/// Bytes after the function name that every synthetic hole, round or chamfer
+/// block holds, so that an empty slot reads as `0`.
+const MIN_BLOCK: usize = 264;
+
+/// A document with one feature of `function` whose slots hold `slots`, each
+/// by its byte count after the function name. A `profile` is stored 68 bytes
+/// after the name, as a hole stores it. The feature is object 10.
+pub(crate) fn dressup_document(
+    function: &str,
+    profile: Option<(&ProfileFrame, &[Member2d])>,
+    slots: &[(usize, Dress)],
+) -> Vec<u8> {
+    let mut body = part_body(function);
+    let end = body.len();
+    let last = slots.iter().map(|(after, _)| *after).max().unwrap_or(0);
+    body.resize(end + last.max(MIN_BLOCK) + 4, 0);
+    let mut extra = Vec::new();
+    if let Some((frame, members)) = profile {
+        body[end + 68..end + 72].copy_from_slice(&(EXTENT_SET + 1).to_le_bytes());
+        extra = profile_group(EXTENT_SET, frame, 1, 200, members);
+    }
+    for (index, (after, dress)) in slots.iter().enumerate() {
+        let id = SLOT_OBJECT + u32::try_from(index).unwrap();
+        let object = match dress {
+            Dress::Value(slot) => slot_object(id, *slot),
+            Dress::Proxy => Some(Object {
+                id,
+                form: 19,
+                flags: 0,
+                body: vec![0; 8],
+            }),
+            Dress::EdgeProxy(start, direction, length) => {
+                let mut bytes = vec![0_u8; 559 - 8];
+                put_reals(&mut bytes, 121, start);
+                put_reals(&mut bytes, 145, direction);
+                put_reals(&mut bytes, 177, &[*length]);
+                Some(Object {
+                    id,
+                    form: 19,
+                    flags: 0,
+                    body: bytes,
+                })
+            }
+            Dress::Props(props) => {
+                let mut bytes = vec![0_u8; 80 - 8];
+                put_words(&mut bytes, 8, &[props.kind]);
+                put_reals(&mut bytes, 12, &[props.diameter, props.head_diameter]);
+                put_reals(&mut bytes, 28, &[props.head_depth, props.sink_degrees]);
+                put_reals(&mut bytes, 72, &[props.depth]);
+                if let Some((minor, major, designation)) = props.thread {
+                    let units: Vec<u16> = designation.encode_utf16().collect();
+                    bytes.resize(1073 - 8 + units.len() * 2, 0);
+                    put_reals(&mut bytes, 1053, &[minor, major]);
+                    put_words(&mut bytes, 1069, &[u32::try_from(units.len()).unwrap()]);
+                    for (index, unit) in units.iter().enumerate() {
+                        let at = 1073 - 8 + index * 2;
+                        bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+                    }
+                }
+                Some(Object {
+                    id,
+                    form: 18,
+                    flags: 0,
+                    body: bytes,
+                })
+            }
+        };
+        if let Some(object) = object {
+            body[end + after..end + after + 4].copy_from_slice(&id.to_le_bytes());
+            extra.push(object);
+        }
+    }
+    feature_with_groups(body, extra, &DRESSUP_CLASSES)
+}
+
+mod patterns;
+pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, PatternSpec};
+
+mod assembly;
+pub(crate) use assembly::{
+    assembly_document, assembly_document_with_structure, family_document, family_info,
+    member_table, member_table_of, structure_stream, MemberSpec, OccurrenceSpec, RecordSpec,
+    SiteSpec,
+};
+
+mod flange;
+pub(crate) use flange::{flange_document, FlangeSpec};
