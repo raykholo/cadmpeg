@@ -8,7 +8,8 @@ use cadmpeg_ir::products::{JointOperands, OperandContainer};
 use serde_json::Value;
 
 use crate::test_support::{
-    assembly_document_with_relations, OccurrenceSpec, RelationSpec, SiteSpec,
+    assembly_document_with_list, assembly_document_with_relations, relation_list_body,
+    OccurrenceSpec, RelationSpec, SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -176,6 +177,7 @@ fn a_ground_relation_with_another_placement_is_not_transferred() {
     let result = decode(&[relation]);
     assert!(result.ir().model.assembly_joints.is_empty());
     assert_eq!(count(&result, "assembly.relation-unread"), 1);
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
 }
 
 #[test]
@@ -337,4 +339,222 @@ fn a_document_without_a_relation_list_adds_nothing() {
     assert!(result.ir().model.assembly_joints.is_empty());
     assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
     assert!(records(&result).is_empty());
+}
+
+/// The messages of the losses with `code`.
+fn messages(result: &DecodeResult, code: &str) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == code)
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+/// The translation column of a joint frame, in millimetres.
+fn frame_translation(result: &DecodeResult) -> [f64; 3] {
+    let [joint] = result.ir().model.assembly_joints.as_slice() else {
+        panic!("one joint")
+    };
+    let JointOperands::Grounded { connector, .. } = joint.operands() else {
+        panic!("a grounded joint")
+    };
+    let rows = connector.frame.affine_rows();
+    [rows[0][3], rows[1][3], rows[2][3]]
+}
+
+fn decode_document(bytes: Vec<u8>) -> DecodeResult {
+    SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+}
+
+#[test]
+fn a_state_word_other_than_2_or_4_states_no_ground_check() {
+    // §9.6: only the state words 2 and 4 say whether a ground relation exists.
+    let mut odd = occurrences();
+    odd[0].state = 6;
+    odd[1].state = 0;
+    let result = decode_with(&odd, &[], &PICKS);
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
+    assert!(result.ir().model.assembly_joints.is_empty());
+    let result = decode_with(&odd, &[ground_first()], &PICKS);
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+}
+
+#[test]
+fn an_unreadable_occurrence_placement_takes_the_frame_of_its_ground_relation() {
+    let mut unreadable = occurrences();
+    unreadable[0].unit = 2.0;
+    // The stored translation is in metres and the frame is in millimetres.
+    let relation = RelationSpec::Ground {
+        id: 30,
+        reference: FIRST,
+        rotation: IDENTITY,
+        translation: [0.5, 0.0, 0.0],
+    };
+    let result = decode_with(&unreadable, &[relation], &PICKS);
+    let translation = frame_translation(&result);
+    assert!((translation[0] - 500.0).abs() <= EPS_VALUE);
+    assert!(translation[1].abs() <= EPS_VALUE && translation[2].abs() <= EPS_VALUE);
+    assert_eq!(count(&result, "assembly.relation-unread"), 0);
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
+}
+
+#[test]
+fn an_absent_relation_list_leaves_a_grounded_occurrence_without_a_relation() {
+    // §9.6: an occurrence has a ground relation if and only if its state word is 2.
+    let result = decode_document(assembly_document_with_list(
+        &occurrences(),
+        &sites(),
+        None,
+        &[],
+        &PICKS,
+    ));
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 1);
+    assert_eq!(count(&result, "assembly.relation-unread"), 0);
+    assert!(result.ir().model.assembly_joints.is_empty());
+}
+
+#[test]
+fn an_absent_relation_list_with_no_grounded_occurrence_adds_nothing() {
+    let mut free = occurrences();
+    free[0].state = 4;
+    let result = decode_document(assembly_document_with_list(
+        &free,
+        &sites(),
+        None,
+        &[],
+        &PICKS,
+    ));
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
+    assert_eq!(count(&result, "assembly.relation-unread"), 0);
+}
+
+#[test]
+fn a_relation_list_without_a_readable_count_adds_one_loss() {
+    // The count is the `u32` at object offset 16; the object ends at offset 18.
+    let mut list = relation_list_body(&[30]);
+    list.truncate(10);
+    let result = decode_document(assembly_document_with_list(
+        &occurrences(),
+        &sites(),
+        Some(list),
+        &[ground_first()],
+        &PICKS,
+    ));
+    assert_eq!(count(&result, "assembly.relation-unread"), 1);
+    assert!(records(&result).is_empty());
+    // The ground set is empty, so the grounded occurrence has no relation.
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 1);
+}
+
+#[test]
+fn a_ground_relation_longer_than_its_fields_is_read() {
+    // §9.6 states the fields through offset 116; the object can continue.
+    let relation = RelationSpec::Patched {
+        spec: Box::new(ground_first()),
+        at: 127,
+        bytes: vec![0xAB; 9],
+    };
+    let result = decode(&[relation]);
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+    assert_eq!(count(&result, "assembly.relation-unread"), 0);
+    assert_eq!(records(&result).len(), 1);
+}
+
+#[test]
+fn an_unexpected_constant_word_adds_a_loss_and_keeps_the_relation() {
+    // §9.7: the planar word at offset 40 is `1`; the tangent word at offset 52 is `4`.
+    let planar_spec = RelationSpec::Patched {
+        spec: Box::new(planar(0x3002, 0.0)),
+        at: 40,
+        bytes: 2_u32.to_le_bytes().to_vec(),
+    };
+    let tangent_spec = RelationSpec::Patched {
+        spec: Box::new(RelationSpec::Tangent {
+            id: 33,
+            operands: [SECOND, FIRST],
+            picks: PICKS,
+            flags: 0x3040,
+            dimension: 51,
+        }),
+        at: 52,
+        bytes: 5_u32.to_le_bytes().to_vec(),
+    };
+    let result = decode(&[ground_first(), planar_spec, tangent_spec]);
+    let records = records(&result);
+    assert!(records.iter().any(|r| r["kind"] == "planar"));
+    assert!(records.iter().any(|r| r["kind"] == "tangent"));
+    let notes = messages(&result, "assembly.relation-unread");
+    assert_eq!(notes.len(), 2);
+    assert!(notes
+        .iter()
+        .any(|m| m.contains("offset 40") && m.contains("0x2")));
+    assert!(notes
+        .iter()
+        .any(|m| m.contains("offset 52") && m.contains("0x5")));
+}
+
+#[test]
+fn a_count_above_the_entries_present_reads_the_entries_present() {
+    // The count is the `u32` at object offset 16, which is offset 8 of the body.
+    let mut list = relation_list_body(&[30]);
+    list[8..12].copy_from_slice(&3_u32.to_le_bytes());
+    let result = decode_document(assembly_document_with_list(
+        &occurrences(),
+        &sites(),
+        Some(list),
+        &[ground_first()],
+        &PICKS,
+    ));
+    assert_eq!(count(&result, "assembly.relation-unread"), 1);
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+    assert_eq!(records(&result).len(), 1);
+}
+
+#[test]
+fn a_bad_entry_mark_skips_that_entry_and_continues() {
+    // Three entries of five bytes follow the count and one bitmap byte, that is
+    // from object offset 21. The mark of entry 1 is at offset 21 + 5 + 4.
+    let axial = RelationSpec::Axial {
+        id: 32,
+        operands: [SECOND, FIRST],
+        picks: PICKS,
+        flags: 0x8000_3000,
+    };
+    let relations = [ground_first(), planar(0x3002, 0.0), axial];
+    let mut list = relation_list_body(&[30, 31, 32]);
+    list[30 - 8] = 1;
+    let result = decode_document(assembly_document_with_list(
+        &occurrences(),
+        &sites(),
+        Some(list),
+        &relations,
+        &PICKS,
+    ));
+    let notes = messages(&result, "assembly.relation-unread");
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].contains("entry 1"));
+    let records = records(&result);
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().any(|r| r["kind"] == "ground"));
+    assert!(records.iter().any(|r| r["kind"] == "axial"));
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+}
+
+#[test]
+fn two_ground_relations_of_one_occurrence_state_one_joint() {
+    let again = RelationSpec::Ground {
+        id: 35,
+        reference: FIRST,
+        rotation: IDENTITY,
+        translation: [0.0; 3],
+    };
+    let result = decode(&[ground_first(), again]);
+    assert_eq!(result.ir().model.assembly_joints.len(), 1);
+    assert_eq!(count(&result, "assembly.relation-unread"), 1);
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
 }

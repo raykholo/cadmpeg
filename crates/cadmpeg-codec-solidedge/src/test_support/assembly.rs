@@ -205,6 +205,13 @@ pub(crate) enum RelationSpec {
         flags: u32,
         dimension: u32,
     },
+    /// `spec` with `bytes` written at the object offset `at`; the object grows
+    /// where they end past it.
+    Patched {
+        spec: Box<RelationSpec>,
+        at: usize,
+        bytes: Vec<u8>,
+    },
 }
 
 impl RelationSpec {
@@ -216,6 +223,7 @@ impl RelationSpec {
             | Self::Axial { id, .. }
             | Self::Tangent { id, .. }
             | Self::Angular { id, .. } => *id,
+            Self::Patched { spec, .. } => spec.id(),
         }
     }
 
@@ -299,6 +307,16 @@ impl RelationSpec {
                 put_words(&mut body, 42, &[1, *flags, *dimension]);
                 (ANGULAR_FORM, body)
             }
+            Self::Patched { spec, at, bytes } => {
+                let mut object = spec.object();
+                let start = at.checked_sub(8).unwrap();
+                let end = start + bytes.len();
+                if object.body.len() < end {
+                    object.body.resize(end, 0);
+                }
+                object.body[start..end].copy_from_slice(bytes);
+                return object;
+            }
         };
         Object {
             id: self.id(),
@@ -319,9 +337,10 @@ fn pick_object(id: u32) -> Object {
     }
 }
 
-/// The relation list object: `n` at offset 16, `ceil(n / 8)` bitmap bytes,
-/// then an entry of an identifier and a byte for each listed relation.
-fn relation_list(listed: &[u32]) -> Object {
+/// The bytes after the frame of the relation list object: `n` at offset 16,
+/// `ceil(n / 8)` bitmap bytes, then an entry of an identifier and a byte for
+/// each listed relation.
+pub(crate) fn relation_list_body(listed: &[u32]) -> Vec<u8> {
     let mut body = vec![0_u8; 12];
     put_words(&mut body, 16, &[u32::try_from(listed.len()).unwrap()]);
     body.resize(12 + listed.len().div_ceil(8), 0);
@@ -329,12 +348,7 @@ fn relation_list(listed: &[u32]) -> Object {
         body.extend_from_slice(&id.to_le_bytes());
         body.push(0);
     }
-    Object {
-        id: RELATIONS,
-        form: RELATIONS_FORM,
-        flags: 0,
-        body,
-    }
+    body
 }
 
 /// As [`assembly_document`], with a relation list of `listed` and the objects
@@ -346,7 +360,33 @@ pub(crate) fn assembly_document_with_relations(
     relations: &[RelationSpec],
     picks: &[u32],
 ) -> Vec<u8> {
-    let mut extra = vec![relation_list(listed)];
+    assembly_document_with_list(
+        occurrences,
+        sites,
+        Some(relation_list_body(listed)),
+        relations,
+        picks,
+    )
+}
+
+/// As [`assembly_document_with_relations`], with the relation list object body
+/// `list`, or without a relation list object for `None`.
+pub(crate) fn assembly_document_with_list(
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    list: Option<Vec<u8>>,
+    relations: &[RelationSpec],
+    picks: &[u32],
+) -> Vec<u8> {
+    let mut extra: Vec<Object> = list
+        .into_iter()
+        .map(|body| Object {
+            id: RELATIONS,
+            form: RELATIONS_FORM,
+            flags: 0,
+            body,
+        })
+        .collect();
     extra.extend(relations.iter().map(RelationSpec::object));
     extra.extend(picks.iter().map(|id| pick_object(*id)));
     let ids: Vec<u32> = occurrences.iter().map(|spec| spec.id).collect();

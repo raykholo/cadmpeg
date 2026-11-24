@@ -1105,7 +1105,8 @@ kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
 section = "9.6"
 anchor = "A `CLSID_JAsmGroundConstraint` object stores:"
-size = 127
+size = 116
+note = "The size is the length through the unit word; an object can be longer."
 
 [[record.gap]]
 offset = 0
@@ -1140,11 +1141,6 @@ type = "f64"
 value = 1.0
 source = "spec"
 anchor = "| 108 | `f64` `1` |"
-
-[[record.gap]]
-offset = 116
-size = 11
-note = "§9.6 states no field after the unit word."
 
 [[record]]
 name = "assembly_planar"

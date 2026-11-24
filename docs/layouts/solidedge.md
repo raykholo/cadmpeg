@@ -493,7 +493,9 @@ Unstated regions:
 
 ## `assembly_ground`
 
-Spec §9.6 · layout: byte offsets · size: 127 B
+Spec §9.6 · layout: byte offsets · size: 116 B
+
+The size is the length through the unit word; an object can be longer.
 
 Parsed by:
 - `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
@@ -508,7 +510,6 @@ Parsed by:
 Unstated regions:
 
 - `0..8` (8 B): §9.6 states no field before the occurrence identifier.
-- `116..127` (11 B): §9.6 states no field after the unit word.
 
 ## `assembly_planar`
 

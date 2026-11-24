@@ -383,10 +383,14 @@ pub(crate) mod constraints_collection {
 
 /// Byte offsets for the `assembly_ground` record.
 ///
-/// Spec §9.6. Record length 127 B.
+/// Spec §9.6. Record length 116 B.
+///
+/// ```text
+/// The size is the length through the unit word; an object can be longer.
+/// ```
 pub(crate) mod assembly_ground {
     /// Record length in bytes. Spec §9.6.
-    pub(crate) const LEN: usize = 127;
+    pub(crate) const LEN: usize = 116;
     /// Offset of `reference` (`u32`, little-endian). Spec §9.6.
     pub(crate) const REFERENCE: usize = 8;
     /// Offset of `rotation` (`f64[9]`, little-endian). Spec §9.6.

@@ -7,16 +7,17 @@
 //! placement of the grounded occurrence. A ground relation and the state word
 //! of the occurrence (§9.2) state the same fact: where they disagree the
 //! occurrence states no joint and the document adds
-//! `assembly.ground-disagrees`.
+//! `assembly.ground-disagrees`. A document without a relation list holds no
+//! ground relation.
 //!
 //! Every relation becomes a record of the native arena `assembly_relations`
 //! with its operand occurrences, the identifier of the pick object of each
 //! operand, its offset or angle, its flag bits and its dimension object. The
 //! placement relations have no typed joint: a typed joint states a frame for
-//! each connector, and the frame of a picked face or axis is stored in the pick
-//! object, whose layout the specification does not state. A document that
+//! each connector, and the pick object layout is not decoded. A document that
 //! holds such a relation adds `assembly.relation-not-typed` once. A relation
-//! that does not read adds `assembly.relation-unread`.
+//! that does not read, a relation list entry that does not read and a constant
+//! word with another value add `assembly.relation-unread`.
 //!
 //! Stored lengths are metres and the native record states millimetres.
 
@@ -112,6 +113,12 @@ struct Relation {
     record: RelationRecord,
     /// The occurrence a ground relation grounds.
     grounded: Option<u32>,
+    /// The placement a ground relation states, where it is a rigid placement.
+    frame: Option<Transform>,
+    /// Whether a ground relation states another placement than its occurrence.
+    mismatch: bool,
+    /// Constant words that hold another value than the specification states.
+    notes: Vec<String>,
 }
 
 fn relation_id(object: u32) -> String {
@@ -135,56 +142,85 @@ fn real(bytes: &[u8], at: usize) -> Result<f64, String> {
         .ok_or_else(|| format!("the real at offset {at} is not finite"))
 }
 
-fn expect_word(bytes: &[u8], at: usize, want: u32) -> Result<(), String> {
+/// Check a constant word. Another value is noted and the relation is kept.
+fn expect_word(bytes: &[u8], at: usize, want: u32, notes: &mut Vec<String>) -> Result<(), String> {
     let found = word(bytes, at)?;
-    if found == want {
-        Ok(())
-    } else {
-        Err(format!(
-            "the word at offset {at} is {found:#x}, not {want:#x}"
-        ))
+    if found != want {
+        notes.push(format!(
+            "the constant word at offset {at} is {found:#x}, not {want:#x}"
+        ));
     }
+    Ok(())
 }
 
-/// The identifiers the relation list names and the declared count, or `None`
-/// where the cluster holds no relation list.
-fn listing(cluster: &Cluster<'_>, types: &TypeTable) -> Option<(usize, Vec<u32>)> {
-    let object = cluster
+/// The identifiers the relation list names. An entry that does not read is
+/// skipped and noted; the entries have a fixed size.
+fn listing(cluster: &Cluster<'_>, types: &TypeTable, losses: &mut Vec<LossNote>) -> Vec<u32> {
+    let Some(object) = cluster
         .objects()
-        .find(|object| types.class_name(object.form, object.flags) == Some(COLLECTION_CLASS))?;
+        .find(|object| types.class_name(object.form, object.flags) == Some(COLLECTION_CLASS))
+    else {
+        return Vec::new();
+    };
     let bytes = object.bytes;
-    let declared = View::u32_le_at(bytes, constraints_collection::COUNT)
-        .and_then(|count| usize::try_from(count).ok())
-        .unwrap_or(0);
+    let unread = |reason: String| {
+        SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
+            "the relation list {reason}; the relations are not transferred"
+        ))
+    };
+    let Some(count) = View::u32_le_at(bytes, constraints_collection::COUNT) else {
+        losses.push(unread("states no readable count".into()));
+        return Vec::new();
+    };
+    let Ok(declared) = usize::try_from(count) else {
+        losses.push(unread(format!(
+            "states the count {count}, which is too large"
+        )));
+        return Vec::new();
+    };
     let first = constraints_collection::COUNT
         .checked_add(4)
         .and_then(|at| at.checked_add(declared.div_ceil(8)));
+    let room = first
+        .and_then(|first| bytes.len().checked_sub(first))
+        .map_or(0, |rest| rest / constraint_entry::LEN);
+    if declared > room {
+        losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
+            "the relation list states {declared} relation(s) and holds {room} entries; \
+             the others are not transferred"
+        )));
+    }
     let mut ids = Vec::new();
-    if let Some(first) = first {
-        let room = bytes
-            .len()
-            .checked_sub(first)
-            .map_or(0, |rest| rest / constraint_entry::LEN);
-        for index in 0..declared.min(room) {
-            let Some(at) = index
-                .checked_mul(constraint_entry::LEN)
-                .and_then(|offset| first.checked_add(offset))
-            else {
-                break;
-            };
-            let entry = (
-                at.checked_add(constraint_entry::OBJECT)
-                    .and_then(|object| View::u32_le_at(bytes, object)),
-                at.checked_add(constraint_entry::MARK)
-                    .and_then(|mark| bytes.get(mark).copied()),
-            );
-            match entry {
-                (Some(id), Some(ENTRY_MARK)) => ids.push(id),
-                _ => break,
+    let Some(first) = first else {
+        return ids;
+    };
+    for index in 0..declared.min(room) {
+        let Some(at) = index
+            .checked_mul(constraint_entry::LEN)
+            .and_then(|offset| first.checked_add(offset))
+        else {
+            break;
+        };
+        let id = at
+            .checked_add(constraint_entry::OBJECT)
+            .and_then(|object| View::u32_le_at(bytes, object));
+        let mark = at
+            .checked_add(constraint_entry::MARK)
+            .and_then(|mark| bytes.get(mark).copied());
+        match (id, mark) {
+            (Some(id), Some(ENTRY_MARK)) => ids.push(id),
+            (Some(_), Some(mark)) => {
+                losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
+                    "entry {index} of the relation list has the mark {mark:#x}, not \
+                     {ENTRY_MARK:#x}; it is not transferred"
+                )));
             }
+            _ => losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
+                "entry {index} of the relation list is unreadable; it is not transferred"
+            ))),
         }
     }
-    Some((declared, ids))
+    ids
 }
 
 /// The occurrence an operand word names.
@@ -230,7 +266,13 @@ fn check_len(bytes: &[u8], len: usize, kind: &str) -> Result<(), String> {
 
 fn ground(placements: &Placements, object: &Object<'_>) -> Result<Relation, String> {
     let bytes = object.bytes;
-    check_len(bytes, assembly_ground::LEN, "ground relation")?;
+    if bytes.len() < assembly_ground::LEN {
+        return Err(format!(
+            "the ground relation object has {} bytes, fewer than the {} its fields need",
+            bytes.len(),
+            assembly_ground::LEN
+        ));
+    }
     let reference = word(bytes, assembly_ground::REFERENCE)?;
     let placed = operand(placements, reference)?;
     let mut rotation = [0.0_f64; 9];
@@ -252,17 +294,26 @@ fn ground(placements: &Placements, object: &Object<'_>) -> Result<Relation, Stri
     if (real(bytes, assembly_ground::UNIT)? - 1.0).abs() > EPS_UNIT {
         return Err("the word after the translation is not 1".into());
     }
-    if let Some(transform) = placed.transform {
+    let r = [
+        [rotation[0], rotation[1], rotation[2]],
+        [rotation[3], rotation[4], rotation[5]],
+        [rotation[6], rotation[7], rotation[8]],
+    ];
+    // CADIR rows are the columns of the stored rotation (§9.2).
+    let frame = if super::proper_rotation(&r) {
+        Transform::affine(std::array::from_fn(|j| {
+            [r[0][j], r[1][j], r[2][j], translation[j] * MM_PER_M]
+        }))
+    } else {
+        None
+    };
+    let mismatch = placed.transform.is_some_and(|transform| {
         let rows = transform.affine_rows();
-        // CADIR rows are the columns of the stored rotation (§9.2).
-        let same = (0..3).all(|j| {
+        !(0..3).all(|j| {
             (0..3).all(|i| (rows[j][i] - rotation[i * 3 + j]).abs() <= EPS_SAME_PLACEMENT)
                 && (rows[j][3] - translation[j] * MM_PER_M).abs() <= EPS_SAME_PLACEMENT
-        });
-        if !same {
-            return Err("the placement differs from the placement of the occurrence".into());
-        }
-    }
+        })
+    });
     Ok(Relation {
         record: RelationRecord {
             id: relation_id(object.id),
@@ -276,6 +327,9 @@ fn ground(placements: &Placements, object: &Object<'_>) -> Result<Relation, Stri
             dimension: None,
         },
         grounded: Some(reference),
+        frame,
+        mismatch,
+        notes: Vec::new(),
     })
 }
 
@@ -304,6 +358,7 @@ fn placement(
     class: &str,
 ) -> Result<Relation, String> {
     let bytes = object.bytes;
+    let mut notes = Vec::new();
     let mut record = RelationRecord {
         id: relation_id(object.id),
         kind: "",
@@ -321,7 +376,7 @@ fn placement(
             record.operands = pair(cluster, types, placements, bytes)?;
             record.kind = "planar";
             record.offset = Some(real(bytes, assembly_planar::OFFSET)? * MM_PER_M);
-            expect_word(bytes, assembly_planar::ONE, ONE)?;
+            expect_word(bytes, assembly_planar::ONE, ONE, &mut notes)?;
             let flags = word(bytes, assembly_planar::FLAGS)?;
             record.opposed = Some(flags & OPPOSED_FLAG != 0);
             record.flags = Some(flags);
@@ -331,23 +386,26 @@ fn placement(
             check_len(bytes, assembly_axial::LEN, "axial relation")?;
             record.operands = pair(cluster, types, placements, bytes)?;
             record.kind = "axial";
-            expect_word(bytes, assembly_axial::ONE, ONE)?;
+            expect_word(bytes, assembly_axial::ONE, ONE, &mut notes)?;
             record.flags = Some(word(bytes, assembly_axial::FLAGS)?);
-            expect_word(bytes, assembly_axial::TAIL, ONE)?;
+            expect_word(bytes, assembly_axial::TAIL, ONE, &mut notes)?;
         }
         _ => {
             check_len(bytes, assembly_tangent::LEN, "tangent relation")?;
             record.operands = pair(cluster, types, placements, bytes)?;
             record.kind = "tangent";
-            expect_word(bytes, assembly_tangent::ONE, ONE)?;
+            expect_word(bytes, assembly_tangent::ONE, ONE, &mut notes)?;
             record.flags = Some(word(bytes, assembly_tangent::FLAGS)?);
             record.dimension = Some(word(bytes, assembly_tangent::DIMENSION)?);
-            expect_word(bytes, assembly_tangent::TAIL, TANGENT_TAIL)?;
+            expect_word(bytes, assembly_tangent::TAIL, TANGENT_TAIL, &mut notes)?;
         }
     }
     Ok(Relation {
         record,
         grounded: None,
+        frame: None,
+        mismatch: false,
+        notes,
     })
 }
 
@@ -382,6 +440,7 @@ fn angular(
     object: &Object<'_>,
 ) -> Result<Relation, String> {
     let bytes = object.bytes;
+    let mut notes = Vec::new();
     check_len(bytes, assembly_angular::LEN, "angular relation")?;
     let first = angular_group(
         cluster,
@@ -397,7 +456,7 @@ fn angular(
         bytes,
         assembly_angular::SECOND_GROUP,
     )?;
-    expect_word(bytes, assembly_angular::ONE, ONE)?;
+    expect_word(bytes, assembly_angular::ONE, ONE, &mut notes)?;
     Ok(Relation {
         record: RelationRecord {
             id: relation_id(object.id),
@@ -411,6 +470,9 @@ fn angular(
             dimension: Some(word(bytes, assembly_angular::DIMENSION)?),
         },
         grounded: None,
+        frame: None,
+        mismatch: false,
+        notes,
     })
 }
 
@@ -444,16 +506,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let Some((declared, ids)) = listing(cluster, types) else {
-        return Ok(());
-    };
-    if ids.len() < declared {
-        losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
-            "the relation list states {declared} relation(s) and holds the identifiers of {}; \
-             the others are not transferred",
-            ids.len()
-        )));
-    }
+    let ids = listing(cluster, types, losses);
     let mut seen = BTreeSet::new();
     let mut relations = Vec::new();
     for id in ids {
@@ -464,7 +517,14 @@ pub(super) fn project(
             continue;
         }
         match read_relation(cluster, types, placements, id) {
-            Ok(relation) => relations.push(relation),
+            Ok(relation) => {
+                for note in &relation.notes {
+                    losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
+                        "relation object {id:#x}: {note}; the relation is kept"
+                    )));
+                }
+                relations.push(relation);
+            }
             Err(reason) => losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
                 "relation object {id:#x} does not read: {reason}; it is not transferred"
             ))),
@@ -480,13 +540,14 @@ pub(super) fn project(
         if placed.grounded.is_some_and(|grounded| grounded != listed) {
             disagree.insert(*reference);
             losses.push(SolidEdgeLossCode::AssemblyGroundDisagrees.note(format!(
-                "occurrence object {reference:#x} {} a ground relation and its state word says it \
+                "occurrence object {reference:#x} {} ground relation and its state word says it \
                  is {}grounded; it states no grounded joint",
-                if listed { "has" } else { "has no" },
+                if listed { "has a" } else { "has no" },
                 if listed { "not " } else { "" },
             )));
         }
     }
+    let mut jointed = BTreeSet::new();
     let mut untyped = 0_usize;
     for relation in &relations {
         ctx.charge_entities(1, "project Solid Edge assembly relation")?;
@@ -500,10 +561,26 @@ pub(super) fn project(
         if disagree.contains(&reference) {
             continue;
         }
-        let Some(frame) = placed.transform else {
+        if !jointed.insert(reference) {
             losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
-                "the occurrence object {reference:#x} states no placement; its ground relation \
-                 states no grounded joint"
+                "relation object {:#x} grounds the occurrence object {reference:#x} again; it \
+                 states no second grounded joint",
+                relation.record.object
+            )));
+            continue;
+        }
+        if relation.mismatch {
+            losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
+                "the placement of relation object {:#x} differs from the placement of the \
+                 occurrence object {reference:#x}; it states no grounded joint",
+                relation.record.object
+            )));
+            continue;
+        }
+        let Some(frame) = placed.transform.or(relation.frame) else {
+            losses.push(SolidEdgeLossCode::AssemblyRelationUnread.note(format!(
+                "neither the occurrence object {reference:#x} nor its ground relation states a \
+                 placement; it states no grounded joint"
             )));
             continue;
         };
@@ -526,8 +603,7 @@ pub(super) fn project(
     if untyped > 0 {
         losses.push(SolidEdgeLossCode::AssemblyRelationNotTyped.note(format!(
             "{untyped} placement relation(s) are kept as native records only: a typed joint \
-             needs a frame for each connector and the frame of a picked entity is stored in its \
-             pick object, which is not decoded"
+             needs a frame for each connector and the pick object layout is not decoded"
         )));
     }
     if relations.is_empty() {
