@@ -4,14 +4,30 @@
 use super::{cluster_and_map, document, put_reals, put_words, type_table, Object};
 
 /// The class names of an assembly document, by form.
-const ASSEMBLY_CLASSES: [&str; 3] = [
+const ASSEMBLY_CLASSES: [&str; 10] = [
     "References Collection Object",
     "CLSID_JAsmReference",
     "CLSID_JSite",
+    "Constraints Collection Object",
+    "CLSID_JAsmGroundConstraint",
+    "CLSID_JAsmPlanarConstraint",
+    "CLSID_JAsmAxialConstraint",
+    "CLSID_JAsmTangentConstraint",
+    "CLSID_JAsmAngularConstraint",
+    "CLSID_JMembassy",
 ];
 const COLLECTION_FORM: u16 = 0;
 const REFERENCE_FORM: u16 = 1;
 const SITE_FORM: u16 = 2;
+const RELATIONS_FORM: u16 = 3;
+const GROUND_FORM: u16 = 4;
+const PLANAR_FORM: u16 = 5;
+const AXIAL_FORM: u16 = 6;
+const TANGENT_FORM: u16 = 7;
+const ANGULAR_FORM: u16 = 8;
+const PICK_FORM: u16 = 9;
+/// The object identifier of the relation list.
+pub(crate) const RELATIONS: u32 = 2;
 /// The object identifier of the references collection.
 pub(crate) const COLLECTION: u32 = 1;
 /// Bytes of an occurrence object, the frame included.
@@ -127,6 +143,204 @@ pub(crate) fn assembly_document_with_structure(
     sites: &[SiteSpec<'_>],
     structure: Option<Vec<u8>>,
 ) -> Vec<u8> {
+    assembly_document_full(listed, occurrences, sites, structure, Vec::new())
+}
+
+/// One relation object of an assembly.
+pub(crate) enum RelationSpec {
+    Ground {
+        id: u32,
+        reference: u32,
+        rotation: [f64; 9],
+        /// In metres.
+        translation: [f64; 3],
+    },
+    Planar {
+        id: u32,
+        operands: [u32; 2],
+        picks: [u32; 2],
+        /// In metres.
+        offset: f64,
+        flags: u32,
+        dimension: u32,
+    },
+    Axial {
+        id: u32,
+        operands: [u32; 2],
+        picks: [u32; 2],
+        flags: u32,
+    },
+    Tangent {
+        id: u32,
+        operands: [u32; 2],
+        picks: [u32; 2],
+        flags: u32,
+        dimension: u32,
+    },
+    Angular {
+        id: u32,
+        operands: [u32; 2],
+        picks: [u32; 2],
+        /// In radians.
+        angle: f64,
+        flags: u32,
+        dimension: u32,
+    },
+}
+
+impl RelationSpec {
+    /// The object identifier.
+    pub(crate) fn id(&self) -> u32 {
+        match self {
+            Self::Ground { id, .. }
+            | Self::Planar { id, .. }
+            | Self::Axial { id, .. }
+            | Self::Tangent { id, .. }
+            | Self::Angular { id, .. } => *id,
+        }
+    }
+
+    fn pair_body(len: usize, operands: [u32; 2], picks: [u32; 2]) -> Vec<u8> {
+        let mut body = vec![0_u8; len - 8];
+        put_words(
+            &mut body,
+            8,
+            &[operands[0], operands[1], picks[0], picks[1]],
+        );
+        body
+    }
+
+    fn object(&self) -> Object {
+        let (form, body) = match self {
+            Self::Ground {
+                reference,
+                rotation,
+                translation,
+                ..
+            } => {
+                let mut body = vec![0_u8; 127 - 8];
+                put_words(&mut body, 8, &[*reference]);
+                put_reals(&mut body, 12, rotation);
+                put_reals(&mut body, 84, translation);
+                put_reals(&mut body, 108, &[1.0]);
+                (GROUND_FORM, body)
+            }
+            Self::Planar {
+                operands,
+                picks,
+                offset,
+                flags,
+                dimension,
+                ..
+            } => {
+                let mut body = Self::pair_body(52, *operands, *picks);
+                put_reals(&mut body, 32, &[*offset]);
+                put_words(&mut body, 40, &[1, *flags, *dimension]);
+                (PLANAR_FORM, body)
+            }
+            Self::Axial {
+                operands,
+                picks,
+                flags,
+                ..
+            } => {
+                let mut body = Self::pair_body(64, *operands, *picks);
+                put_words(&mut body, 32, &[1, *flags]);
+                put_words(&mut body, 52, &[1]);
+                (AXIAL_FORM, body)
+            }
+            Self::Tangent {
+                operands,
+                picks,
+                flags,
+                dimension,
+                ..
+            } => {
+                let mut body = Self::pair_body(60, *operands, *picks);
+                put_words(&mut body, 32, &[1, *flags, *dimension]);
+                put_words(&mut body, 52, &[4]);
+                (TANGENT_FORM, body)
+            }
+            Self::Angular {
+                operands,
+                picks,
+                angle,
+                flags,
+                dimension,
+                ..
+            } => {
+                let mut body = vec![0_u8; 54 - 8];
+                for (group, at) in [0_usize, 13].into_iter().enumerate() {
+                    body[at..at + 4].copy_from_slice(&operands[group].to_le_bytes());
+                    body[at + 4..at + 8].copy_from_slice(&picks[group].to_le_bytes());
+                    body[at + 8] = 2;
+                    body[at + 9..at + 13].copy_from_slice(&operands[group].to_le_bytes());
+                }
+                put_reals(&mut body, 34, &[*angle]);
+                put_words(&mut body, 42, &[1, *flags, *dimension]);
+                (ANGULAR_FORM, body)
+            }
+        };
+        Object {
+            id: self.id(),
+            form,
+            flags: 0,
+            body,
+        }
+    }
+}
+
+/// A pick object with the identifier `id`.
+fn pick_object(id: u32) -> Object {
+    Object {
+        id,
+        form: PICK_FORM,
+        flags: 0,
+        body: vec![0; 64],
+    }
+}
+
+/// The relation list object: `n` at offset 16, `ceil(n / 8)` bitmap bytes,
+/// then an entry of an identifier and a byte for each listed relation.
+fn relation_list(listed: &[u32]) -> Object {
+    let mut body = vec![0_u8; 12];
+    put_words(&mut body, 16, &[u32::try_from(listed.len()).unwrap()]);
+    body.resize(12 + listed.len().div_ceil(8), 0);
+    for id in listed {
+        body.extend_from_slice(&id.to_le_bytes());
+        body.push(0);
+    }
+    Object {
+        id: RELATIONS,
+        form: RELATIONS_FORM,
+        flags: 0,
+        body,
+    }
+}
+
+/// As [`assembly_document`], with a relation list of `listed` and the objects
+/// of `relations` and of the pick objects `picks`.
+pub(crate) fn assembly_document_with_relations(
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    listed: &[u32],
+    relations: &[RelationSpec],
+    picks: &[u32],
+) -> Vec<u8> {
+    let mut extra = vec![relation_list(listed)];
+    extra.extend(relations.iter().map(RelationSpec::object));
+    extra.extend(picks.iter().map(|id| pick_object(*id)));
+    let ids: Vec<u32> = occurrences.iter().map(|spec| spec.id).collect();
+    assembly_document_full(&ids, occurrences, sites, None, extra)
+}
+
+fn assembly_document_full(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    structure: Option<Vec<u8>>,
+    extra: Vec<Object>,
+) -> Vec<u8> {
     let mut collection = vec![0_u8; 12];
     put_words(&mut collection, 16, &[u32::try_from(listed.len()).unwrap()]);
     collection.resize(12 + listed.len().div_ceil(8), 0);
@@ -147,6 +361,7 @@ pub(crate) fn assembly_document_with_structure(
             body: occurrence_body(occurrence),
         });
     }
+    objects.extend(extra);
     let mut streams = Vec::new();
     for site in sites {
         objects.push(Object {

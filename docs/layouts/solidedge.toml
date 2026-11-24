@@ -928,10 +928,17 @@ offset = 0
 size = 16
 note = "§9.2 states no field before the state word."
 
-[[record.gap]]
+[[record.field]]
+name = "state"
 offset = 16
-size = 97
-note = "The state word of §9.2 is not decoded into a field; §9.2 states no other field before the site identifier."
+type = "u32"
+source = "spec"
+anchor = "| 16 | `u32` state word: `2` for a grounded occurrence, `4` for an occurrence that is not grounded |"
+
+[[record.gap]]
+offset = 20
+size = 93
+note = "§9.2 states no other field between the state word and the site identifier."
 
 [[record.field]]
 name = "site"
@@ -1048,3 +1055,426 @@ offset = 18
 type = "u32"
 source = "spec"
 anchor = "| 18 | `u32` byte count `n` |"
+
+[[record]]
+name = "constraint_entry"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.5"
+anchor = "`n` entries of five"
+size = 5
+
+[[record.field]]
+name = "object"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "bytes. An entry is a `u32` identifier of a relation object and one zero byte."
+
+[[record.field]]
+name = "mark"
+offset = 4
+type = "u8"
+value = 0
+source = "spec"
+anchor = "bytes. An entry is a `u32` identifier of a relation object and one zero byte."
+
+[[record]]
+name = "constraints_collection"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.5"
+anchor = "The cluster-0 object of class `Constraints Collection Object` lists the"
+size = 20
+
+[[record.gap]]
+offset = 0
+size = 16
+note = "§9.5 states no field before the relation count."
+
+[[record.field]]
+name = "count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "relations of an assembly document. The `u32` at object offset 16 is the"
+
+[[record]]
+name = "assembly_ground"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.6"
+anchor = "A `CLSID_JAsmGroundConstraint` object stores:"
+size = 127
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§9.6 states no field before the occurrence identifier."
+
+[[record.field]]
+name = "reference"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | `u32` identifier of the grounded `CLSID_JAsmReference` object (§9.2) |"
+
+[[record.field]]
+name = "rotation"
+offset = 12
+type = "f64[9]"
+source = "spec"
+anchor = "| 12 | nine `f64`: the rotation of the occurrence, row-major |"
+
+[[record.field]]
+name = "translation"
+offset = 84
+type = "f64[3]"
+source = "spec"
+anchor = "| 84 | three `f64`: the translation of the occurrence, in metres |"
+
+[[record.field]]
+name = "unit"
+offset = 108
+type = "f64"
+value = 1.0
+source = "spec"
+anchor = "| 108 | `f64` `1` |"
+
+[[record.gap]]
+offset = 116
+size = 11
+note = "§9.6 states no field after the unit word."
+
+[[record]]
+name = "assembly_planar"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.7"
+anchor = "A `CLSID_JAsmPlanarConstraint` object is 52 bytes long and continues:"
+size = 52
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§9.7 states no field before the first operand."
+
+[[record.field]]
+name = "operand_first"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | identifier of the first operand `CLSID_JAsmReference` object (§9.2) |"
+
+[[record.field]]
+name = "operand_second"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| 12 | identifier of the second operand `CLSID_JAsmReference` object |"
+
+[[record.field]]
+name = "pick_first"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | identifier of the `CLSID_JMembassy` pick object of the first operand |"
+
+[[record.field]]
+name = "pick_second"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| 20 | identifier of the `CLSID_JMembassy` pick object of the second operand |"
+
+[[record.gap]]
+offset = 24
+size = 8
+note = "§9.7 states no field between the pick identifiers and offset 32."
+
+[[record.field]]
+name = "offset"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "| 32 | `f64` offset between the two planes, in metres |"
+
+[[record.field]]
+name = "one"
+offset = 40
+type = "u32"
+value = 1
+source = "spec"
+anchor = "| 40 | `u32` `1` |"
+
+[[record.field]]
+name = "flags"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "| 44 | `u32` flags: bit `0x2` is set when the plane normals oppose and clear when they point the same way |"
+
+[[record.field]]
+name = "dimension"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "| 48 | `u32` identifier of the `CLSID_JDim` object of the offset |"
+
+[[record]]
+name = "assembly_axial"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.7"
+anchor = "A `CLSID_JAsmAxialConstraint` object is 64 bytes long and continues:"
+size = 64
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§9.7 states no field before the first operand."
+
+[[record.field]]
+name = "operand_first"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | identifier of the first operand `CLSID_JAsmReference` object (§9.2) |"
+
+[[record.field]]
+name = "operand_second"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| 12 | identifier of the second operand `CLSID_JAsmReference` object |"
+
+[[record.field]]
+name = "pick_first"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | identifier of the `CLSID_JMembassy` pick object of the first operand |"
+
+[[record.field]]
+name = "pick_second"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| 20 | identifier of the `CLSID_JMembassy` pick object of the second operand |"
+
+[[record.gap]]
+offset = 24
+size = 8
+note = "§9.7 states no field between the pick identifiers and offset 32."
+
+[[record.field]]
+name = "one"
+offset = 32
+type = "u32"
+value = 1
+source = "spec"
+anchor = "| 32 | `u32` `1` |"
+
+[[record.field]]
+name = "flags"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "| 36 | `u32` flags |"
+
+[[record.gap]]
+offset = 40
+size = 12
+note = "§9.7 states these bytes as zero."
+
+[[record.field]]
+name = "tail"
+offset = 52
+type = "u32"
+value = 1
+source = "spec"
+anchor = "| 52 | `u32` `1` |"
+
+[[record.gap]]
+offset = 56
+size = 8
+note = "§9.7 states these bytes as zero."
+
+[[record]]
+name = "assembly_tangent"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.7"
+anchor = "A `CLSID_JAsmTangentConstraint` object is 60 bytes long and continues:"
+size = 60
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§9.7 states no field before the first operand."
+
+[[record.field]]
+name = "operand_first"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | identifier of the first operand `CLSID_JAsmReference` object (§9.2) |"
+
+[[record.field]]
+name = "operand_second"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| 12 | identifier of the second operand `CLSID_JAsmReference` object |"
+
+[[record.field]]
+name = "pick_first"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | identifier of the `CLSID_JMembassy` pick object of the first operand |"
+
+[[record.field]]
+name = "pick_second"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| 20 | identifier of the `CLSID_JMembassy` pick object of the second operand |"
+
+[[record.gap]]
+offset = 24
+size = 8
+note = "§9.7 states no field between the pick identifiers and offset 32."
+
+[[record.field]]
+name = "one"
+offset = 32
+type = "u32"
+value = 1
+source = "spec"
+anchor = "| 32 | `u32` `1` |"
+
+[[record.field]]
+name = "flags"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "| 36 | `u32` flags |"
+
+[[record.field]]
+name = "dimension"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "| 40 | `u32` identifier of the `CLSID_JDim` object of the relation |"
+
+[[record.gap]]
+offset = 44
+size = 8
+note = "§9.7 states these bytes as zero."
+
+[[record.field]]
+name = "tail"
+offset = 52
+type = "u32"
+value = 4
+source = "spec"
+anchor = "| 52 | `u32` `4` |"
+
+[[record.gap]]
+offset = 56
+size = 4
+note = "§9.7 states these bytes as zero."
+
+[[record]]
+name = "assembly_angular_operand"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.8"
+anchor = "A group is the `u32`"
+size = 13
+
+[[record.field]]
+name = "reference"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "identifier of an operand `CLSID_JAsmReference` object, the `u32` identifier of"
+
+[[record.field]]
+name = "pick"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "its `CLSID_JMembassy` pick object, the byte `2`, and the operand identifier"
+
+[[record.field]]
+name = "tag"
+offset = 8
+type = "u8"
+value = 2
+source = "spec"
+anchor = "its `CLSID_JMembassy` pick object, the byte `2`, and the operand identifier"
+
+[[record.field]]
+name = "reference_again"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "its `CLSID_JMembassy` pick object, the byte `2`, and the operand identifier"
+
+[[record]]
+name = "assembly_angular"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/relations.rs"
+section = "9.8"
+anchor = "A `CLSID_JAsmAngularConstraint` object is 54 bytes long."
+size = 54
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§9.8 states no field before the first operand group."
+
+[[record.field]]
+name = "first_group"
+offset = 8
+type = "bytes[13]"
+source = "spec"
+anchor = "operand groups of 13 bytes, at offsets 8 and 21. A group is the `u32`"
+
+[[record.field]]
+name = "second_group"
+offset = 21
+type = "bytes[13]"
+source = "spec"
+anchor = "operand groups of 13 bytes, at offsets 8 and 21. A group is the `u32`"
+
+[[record.field]]
+name = "angle"
+offset = 34
+type = "f64"
+source = "spec"
+anchor = "| 34 | `f64` angle between the two picked entities, in radians |"
+
+[[record.field]]
+name = "one"
+offset = 42
+type = "u32"
+value = 1
+source = "spec"
+anchor = "| 42 | `u32` `1` |"
+
+[[record.field]]
+name = "flags"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "| 46 | `u32` flags |"
+
+[[record.field]]
+name = "dimension"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "| 50 | `u32` identifier of the `CLSID_JDim` object of the angle |"

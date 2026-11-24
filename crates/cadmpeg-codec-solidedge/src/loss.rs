@@ -32,6 +32,9 @@ pub(crate) enum SolidEdgeLossCode {
     AssemblyOccurrenceUnread,
     AssemblyReferenceUnread,
     AssemblyVisibilityUnread,
+    AssemblyRelationUnread,
+    AssemblyRelationNotTyped,
+    AssemblyGroundDisagrees,
 }
 
 impl SolidEdgeLossCode {
@@ -83,6 +86,15 @@ impl SolidEdgeLossCode {
                 "assembly.visibility-unread",
                 LossTaxonomy::MetadataNotTransferred,
             ),
+            Self::AssemblyRelationUnread => {
+                ("assembly.relation-unread", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::AssemblyRelationNotTyped => {
+                ("assembly.relation-not-typed", LossTaxonomy::RecordNotTyped)
+            }
+            Self::AssemblyGroundDisagrees => {
+                ("assembly.ground-disagrees", LossTaxonomy::DecodeDiagnostic)
+            }
             Self::FeatureRollbackUnread => (
                 "feature.rollback-unread",
                 LossTaxonomy::FeatureHistoryRetained,

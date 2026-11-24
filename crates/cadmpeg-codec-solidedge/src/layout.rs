@@ -310,6 +310,8 @@ pub(crate) mod references_collection {
 pub(crate) mod assembly_reference {
     /// Record length in bytes. Spec §9.2.
     pub(crate) const LEN: usize = 229;
+    /// Offset of `state` (`u32`, little-endian). Spec §9.2.
+    pub(crate) const STATE: usize = 16;
     /// Offset of `site` (`u32`, little-endian). Spec §9.2.
     pub(crate) const SITE: usize = 113;
     /// Offset of `rotation` (`f64[9]`, little-endian). Spec §9.2.
@@ -357,4 +359,128 @@ pub(crate) mod file_moniker {
     pub(crate) const UP_LEVEL: usize = 16;
     /// Offset of `path_len` (`u32`, little-endian). Spec §9.3.
     pub(crate) const PATH_LEN: usize = 18;
+}
+
+/// Byte offsets for the `constraint_entry` record.
+///
+/// Spec §9.5. Record length 5 B.
+pub(crate) mod constraint_entry {
+    /// Record length in bytes. Spec §9.5.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `object` (`u32`, little-endian). Spec §9.5.
+    pub(crate) const OBJECT: usize = 0;
+    /// Offset of `mark` (`u8`). Spec §9.5.
+    pub(crate) const MARK: usize = 4;
+}
+
+/// Byte offsets for the `constraints_collection` record.
+///
+/// Spec §9.5. Record length 20 B.
+pub(crate) mod constraints_collection {
+    /// Offset of `count` (`u32`, little-endian). Spec §9.5.
+    pub(crate) const COUNT: usize = 16;
+}
+
+/// Byte offsets for the `assembly_ground` record.
+///
+/// Spec §9.6. Record length 127 B.
+pub(crate) mod assembly_ground {
+    /// Record length in bytes. Spec §9.6.
+    pub(crate) const LEN: usize = 127;
+    /// Offset of `reference` (`u32`, little-endian). Spec §9.6.
+    pub(crate) const REFERENCE: usize = 8;
+    /// Offset of `rotation` (`f64[9]`, little-endian). Spec §9.6.
+    pub(crate) const ROTATION: usize = 12;
+    /// Offset of `translation` (`f64[3]`, little-endian). Spec §9.6.
+    pub(crate) const TRANSLATION: usize = 84;
+    /// Offset of `unit` (`f64`, little-endian). Spec §9.6.
+    pub(crate) const UNIT: usize = 108;
+}
+
+/// Byte offsets for the `assembly_planar` record.
+///
+/// Spec §9.7. Record length 52 B.
+pub(crate) mod assembly_planar {
+    /// Record length in bytes. Spec §9.7.
+    pub(crate) const LEN: usize = 52;
+    /// Offset of `operand_first` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const OPERAND_FIRST: usize = 8;
+    /// Offset of `operand_second` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const OPERAND_SECOND: usize = 12;
+    /// Offset of `pick_first` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const PICK_FIRST: usize = 16;
+    /// Offset of `pick_second` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const PICK_SECOND: usize = 20;
+    /// Offset of `offset` (`f64`, little-endian). Spec §9.7.
+    pub(crate) const OFFSET: usize = 32;
+    /// Offset of `one` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const ONE: usize = 40;
+    /// Offset of `flags` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const FLAGS: usize = 44;
+    /// Offset of `dimension` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const DIMENSION: usize = 48;
+}
+
+/// Byte offsets for the `assembly_axial` record.
+///
+/// Spec §9.7. Record length 64 B.
+pub(crate) mod assembly_axial {
+    /// Record length in bytes. Spec §9.7.
+    pub(crate) const LEN: usize = 64;
+    /// Offset of `one` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const ONE: usize = 32;
+    /// Offset of `flags` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const FLAGS: usize = 36;
+    /// Offset of `tail` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const TAIL: usize = 52;
+}
+
+/// Byte offsets for the `assembly_tangent` record.
+///
+/// Spec §9.7. Record length 60 B.
+pub(crate) mod assembly_tangent {
+    /// Record length in bytes. Spec §9.7.
+    pub(crate) const LEN: usize = 60;
+    /// Offset of `one` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const ONE: usize = 32;
+    /// Offset of `flags` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const FLAGS: usize = 36;
+    /// Offset of `dimension` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const DIMENSION: usize = 40;
+    /// Offset of `tail` (`u32`, little-endian). Spec §9.7.
+    pub(crate) const TAIL: usize = 52;
+}
+
+/// Byte offsets for the `assembly_angular_operand` record.
+///
+/// Spec §9.8. Record length 13 B.
+pub(crate) mod assembly_angular_operand {
+    /// Offset of `reference` (`u32`, little-endian). Spec §9.8.
+    pub(crate) const REFERENCE: usize = 0;
+    /// Offset of `pick` (`u32`, little-endian). Spec §9.8.
+    pub(crate) const PICK: usize = 4;
+    /// Offset of `tag` (`u8`). Spec §9.8.
+    pub(crate) const TAG: usize = 8;
+    /// Offset of `reference_again` (`u32`, little-endian). Spec §9.8.
+    pub(crate) const REFERENCE_AGAIN: usize = 9;
+}
+
+/// Byte offsets for the `assembly_angular` record.
+///
+/// Spec §9.8. Record length 54 B.
+pub(crate) mod assembly_angular {
+    /// Record length in bytes. Spec §9.8.
+    pub(crate) const LEN: usize = 54;
+    /// Offset of `first_group` (`bytes[13]`). Spec §9.8.
+    pub(crate) const FIRST_GROUP: usize = 8;
+    /// Offset of `second_group` (`bytes[13]`). Spec §9.8.
+    pub(crate) const SECOND_GROUP: usize = 21;
+    /// Offset of `angle` (`f64`, little-endian). Spec §9.8.
+    pub(crate) const ANGLE: usize = 34;
+    /// Offset of `one` (`u32`, little-endian). Spec §9.8.
+    pub(crate) const ONE: usize = 42;
+    /// Offset of `flags` (`u32`, little-endian). Spec §9.8.
+    pub(crate) const FLAGS: usize = 46;
+    /// Offset of `dimension` (`u32`, little-endian). Spec §9.8.
+    pub(crate) const DIMENSION: usize = 50;
 }

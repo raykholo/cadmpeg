@@ -407,6 +407,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 4 | `state` | `u32` | little | spec | \| 16 \| `u32` state word: `2` for a grounded occurrence, `4` for an occurrence that is not grounded \| |
 | 113 | 4 | `site` | `u32` | little | spec | \| 113 \| `u32` identifier of the `CLSID_JSite` object of the referenced document \| |
 | 125 | 72 | `rotation` | `f64[9]` | little | spec | \| 125 \| nine `f64`: the rotation `R`, row-major \| |
 | 197 | 24 | `translation` | `f64[3]` | little | spec | \| 197 \| three `f64`: the translation `t`, in metres \| |
@@ -415,7 +416,7 @@ Parsed by:
 Unstated regions:
 
 - `0..16` (16 B): §9.2 states no field before the state word.
-- `16..113` (97 B): The state word of §9.2 is not decoded into a field; §9.2 states no other field before the site identifier.
+- `20..113` (93 B): §9.2 states no other field between the state word and the site identifier.
 - `117..125` (8 B): §9.2 states no field between the site identifier and the rotation.
 
 ## `occurrence_structure_header`
@@ -462,3 +463,155 @@ Parsed by:
 | 0 | 16 | `clsid` | `bytes[16]` | little | spec | \| 0 \| the file moniker CLSID `{00000303-0000-0000-C000-000000000046}` \| · value `[3, 3, 0, 0, 0, 0, 0, 0, 192, 0, 0, 0, 0, 0, 0, 70]` |
 | 16 | 2 | `up_level` | `u16` | little | spec | \| 16 \| `u16` up-level count, `0` \| |
 | 18 | 4 | `path_len` | `u32` | little | spec | \| 18 \| `u32` byte count `n` \| |
+
+## `constraint_entry`
+
+Spec §9.5 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `object` | `u32` | little | spec | bytes. An entry is a `u32` identifier of a relation object and one zero byte. |
+| 4 | 1 | `mark` | `u8` | little | spec | bytes. An entry is a `u32` identifier of a relation object and one zero byte. · value `0` |
+
+## `constraints_collection`
+
+Spec §9.5 · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 4 | `count` | `u32` | little | spec | relations of an assembly document. The `u32` at object offset 16 is the |
+
+Unstated regions:
+
+- `0..16` (16 B): §9.5 states no field before the relation count.
+
+## `assembly_ground`
+
+Spec §9.6 · layout: byte offsets · size: 127 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `reference` | `u32` | little | spec | \| 8 \| `u32` identifier of the grounded `CLSID_JAsmReference` object (§9.2) \| |
+| 12 | 72 | `rotation` | `f64[9]` | little | spec | \| 12 \| nine `f64`: the rotation of the occurrence, row-major \| |
+| 84 | 24 | `translation` | `f64[3]` | little | spec | \| 84 \| three `f64`: the translation of the occurrence, in metres \| |
+| 108 | 8 | `unit` | `f64` | little | spec | \| 108 \| `f64` `1` \| · value `1.0` |
+
+Unstated regions:
+
+- `0..8` (8 B): §9.6 states no field before the occurrence identifier.
+- `116..127` (11 B): §9.6 states no field after the unit word.
+
+## `assembly_planar`
+
+Spec §9.7 · layout: byte offsets · size: 52 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `operand_first` | `u32` | little | spec | \| 8 \| identifier of the first operand `CLSID_JAsmReference` object (§9.2) \| |
+| 12 | 4 | `operand_second` | `u32` | little | spec | \| 12 \| identifier of the second operand `CLSID_JAsmReference` object \| |
+| 16 | 4 | `pick_first` | `u32` | little | spec | \| 16 \| identifier of the `CLSID_JMembassy` pick object of the first operand \| |
+| 20 | 4 | `pick_second` | `u32` | little | spec | \| 20 \| identifier of the `CLSID_JMembassy` pick object of the second operand \| |
+| 32 | 8 | `offset` | `f64` | little | spec | \| 32 \| `f64` offset between the two planes, in metres \| |
+| 40 | 4 | `one` | `u32` | little | spec | \| 40 \| `u32` `1` \| · value `1` |
+| 44 | 4 | `flags` | `u32` | little | spec | \| 44 \| `u32` flags: bit `0x2` is set when the plane normals oppose and clear when they point the same way \| |
+| 48 | 4 | `dimension` | `u32` | little | spec | \| 48 \| `u32` identifier of the `CLSID_JDim` object of the offset \| |
+
+Unstated regions:
+
+- `0..8` (8 B): §9.7 states no field before the first operand.
+- `24..32` (8 B): §9.7 states no field between the pick identifiers and offset 32.
+
+## `assembly_axial`
+
+Spec §9.7 · layout: byte offsets · size: 64 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `operand_first` | `u32` | little | spec | \| 8 \| identifier of the first operand `CLSID_JAsmReference` object (§9.2) \| |
+| 12 | 4 | `operand_second` | `u32` | little | spec | \| 12 \| identifier of the second operand `CLSID_JAsmReference` object \| |
+| 16 | 4 | `pick_first` | `u32` | little | spec | \| 16 \| identifier of the `CLSID_JMembassy` pick object of the first operand \| |
+| 20 | 4 | `pick_second` | `u32` | little | spec | \| 20 \| identifier of the `CLSID_JMembassy` pick object of the second operand \| |
+| 32 | 4 | `one` | `u32` | little | spec | \| 32 \| `u32` `1` \| · value `1` |
+| 36 | 4 | `flags` | `u32` | little | spec | \| 36 \| `u32` flags \| |
+| 52 | 4 | `tail` | `u32` | little | spec | \| 52 \| `u32` `1` \| · value `1` |
+
+Unstated regions:
+
+- `0..8` (8 B): §9.7 states no field before the first operand.
+- `24..32` (8 B): §9.7 states no field between the pick identifiers and offset 32.
+- `40..52` (12 B): §9.7 states these bytes as zero.
+- `56..64` (8 B): §9.7 states these bytes as zero.
+
+## `assembly_tangent`
+
+Spec §9.7 · layout: byte offsets · size: 60 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `operand_first` | `u32` | little | spec | \| 8 \| identifier of the first operand `CLSID_JAsmReference` object (§9.2) \| |
+| 12 | 4 | `operand_second` | `u32` | little | spec | \| 12 \| identifier of the second operand `CLSID_JAsmReference` object \| |
+| 16 | 4 | `pick_first` | `u32` | little | spec | \| 16 \| identifier of the `CLSID_JMembassy` pick object of the first operand \| |
+| 20 | 4 | `pick_second` | `u32` | little | spec | \| 20 \| identifier of the `CLSID_JMembassy` pick object of the second operand \| |
+| 32 | 4 | `one` | `u32` | little | spec | \| 32 \| `u32` `1` \| · value `1` |
+| 36 | 4 | `flags` | `u32` | little | spec | \| 36 \| `u32` flags \| |
+| 40 | 4 | `dimension` | `u32` | little | spec | \| 40 \| `u32` identifier of the `CLSID_JDim` object of the relation \| |
+| 52 | 4 | `tail` | `u32` | little | spec | \| 52 \| `u32` `4` \| · value `4` |
+
+Unstated regions:
+
+- `0..8` (8 B): §9.7 states no field before the first operand.
+- `24..32` (8 B): §9.7 states no field between the pick identifiers and offset 32.
+- `44..52` (8 B): §9.7 states these bytes as zero.
+- `56..60` (4 B): §9.7 states these bytes as zero.
+
+## `assembly_angular_operand`
+
+Spec §9.8 · layout: byte offsets · size: 13 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `reference` | `u32` | little | spec | identifier of an operand `CLSID_JAsmReference` object, the `u32` identifier of |
+| 4 | 4 | `pick` | `u32` | little | spec | its `CLSID_JMembassy` pick object, the byte `2`, and the operand identifier |
+| 8 | 1 | `tag` | `u8` | little | spec | its `CLSID_JMembassy` pick object, the byte `2`, and the operand identifier · value `2` |
+| 9 | 4 | `reference_again` | `u32` | little | spec | its `CLSID_JMembassy` pick object, the byte `2`, and the operand identifier |
+
+## `assembly_angular`
+
+Spec §9.8 · layout: byte offsets · size: 54 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/relations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 13 | `first_group` | `bytes[13]` | little | spec | operand groups of 13 bytes, at offsets 8 and 21. A group is the `u32` |
+| 21 | 13 | `second_group` | `bytes[13]` | little | spec | operand groups of 13 bytes, at offsets 8 and 21. A group is the `u32` |
+| 34 | 8 | `angle` | `f64` | little | spec | \| 34 \| `f64` angle between the two picked entities, in radians \| |
+| 42 | 4 | `one` | `u32` | little | spec | \| 42 \| `u32` `1` \| · value `1` |
+| 46 | 4 | `flags` | `u32` | little | spec | \| 46 \| `u32` flags \| |
+| 50 | 4 | `dimension` | `u32` | little | spec | \| 50 \| `u32` identifier of the `CLSID_JDim` object of the angle \| |
+
+Unstated regions:
+
+- `0..8` (8 B): §9.8 states no field before the first operand group.

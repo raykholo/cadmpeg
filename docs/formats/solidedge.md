@@ -579,3 +579,92 @@ An occurrence that the references collection (§9.1) lists and the stream
 does not list is suppressed. Its `CLSID_JAsmReference` object and the
 references collection are the same as for an active occurrence. A hidden
 occurrence keeps its entry.
+
+### 9.5 Relation list
+
+The cluster-0 object of class `Constraints Collection Object` lists the
+relations of an assembly document. The `u32` at object offset 16 is the
+relation count `n`. `ceil(n / 8)` bytes follow it, then `n` entries of five
+bytes. An entry is a `u32` identifier of a relation object and one zero byte.
+Every relation object of the document has an entry. The class of a relation
+object selects its layout:
+
+| Class | Relation | Section |
+| --- | --- | --- |
+| `CLSID_JAsmGroundConstraint` | ground | 9.6 |
+| `CLSID_JAsmPlanarConstraint` | planar | 9.7 |
+| `CLSID_JAsmAxialConstraint` | axial | 9.7 |
+| `CLSID_JAsmTangentConstraint` | tangent | 9.7 |
+| `CLSID_JAsmAngularConstraint` | angular | 9.8 |
+
+### 9.6 Ground relation
+
+A `CLSID_JAsmGroundConstraint` object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 8 | `u32` identifier of the grounded `CLSID_JAsmReference` object (§9.2) |
+| 12 | nine `f64`: the rotation of the occurrence, row-major |
+| 84 | three `f64`: the translation of the occurrence, in metres |
+| 108 | `f64` `1` |
+
+The values at offsets 12, 84 and 108 equal the placement words of the
+grounded occurrence (§9.2). An occurrence has a ground relation if and only
+if its state word is `2`. An assembly can ground several occurrences.
+
+### 9.7 Placement relations
+
+A planar, axial or tangent relation object starts with four `u32` values:
+
+| Offset | Field |
+| ---: | --- |
+| 8 | identifier of the first operand `CLSID_JAsmReference` object (§9.2) |
+| 12 | identifier of the second operand `CLSID_JAsmReference` object |
+| 16 | identifier of the `CLSID_JMembassy` pick object of the first operand |
+| 20 | identifier of the `CLSID_JMembassy` pick object of the second operand |
+
+A pick object selects the entity of the referenced document that the
+relation constrains on its operand.
+
+A `CLSID_JAsmPlanarConstraint` object is 52 bytes long and continues:
+
+| Offset | Field |
+| ---: | --- |
+| 32 | `f64` offset between the two planes, in metres |
+| 40 | `u32` `1` |
+| 44 | `u32` flags: bit `0x2` is set when the plane normals oppose and clear when they point the same way |
+| 48 | `u32` identifier of the `CLSID_JDim` object of the offset |
+
+A `CLSID_JAsmAxialConstraint` object is 64 bytes long and continues:
+
+| Offset | Field |
+| ---: | --- |
+| 32 | `u32` `1` |
+| 36 | `u32` flags |
+| 52 | `u32` `1` |
+
+A `CLSID_JAsmTangentConstraint` object is 60 bytes long and continues:
+
+| Offset | Field |
+| ---: | --- |
+| 32 | `u32` `1` |
+| 36 | `u32` flags |
+| 40 | `u32` identifier of the `CLSID_JDim` object of the relation |
+| 52 | `u32` `4` |
+
+The bytes of these objects that no table states are zero.
+
+### 9.8 Angular relation
+
+A `CLSID_JAsmAngularConstraint` object is 54 bytes long. It starts with two
+operand groups of 13 bytes, at offsets 8 and 21. A group is the `u32`
+identifier of an operand `CLSID_JAsmReference` object, the `u32` identifier of
+its `CLSID_JMembassy` pick object, the byte `2`, and the operand identifier
+again. The groups are followed by:
+
+| Offset | Field |
+| ---: | --- |
+| 34 | `f64` angle between the two picked entities, in radians |
+| 42 | `u32` `1` |
+| 46 | `u32` flags |
+| 50 | `u32` identifier of the `CLSID_JDim` object of the angle |

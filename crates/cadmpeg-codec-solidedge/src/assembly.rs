@@ -15,8 +15,9 @@
 //! list is suppressed, and a listed occurrence is hidden where its flags say
 //! so. A document without a readable list states neither and adds
 //! `assembly.visibility-unread` once. The state word states whether the
-//! occurrence is grounded, so it states no suppression. A document with no
-//! references collection adds nothing.
+//! occurrence is grounded, so it states no suppression; the relations of the
+//! document (`relations`) state the grounded joints and agree with it. A
+//! document with no references collection adds nothing.
 //!
 //! Stored lengths are metres and CADIR states millimetres. The stored rotation
 //! `R` maps a row vector `p` to `p R + t`; CADIR applies a transform to a
@@ -42,6 +43,8 @@ use crate::layout::{
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, SpaceMap, TypeTable, SPACE_MAP_STREAM, TYPE_TABLE_STREAM};
 
+mod relations;
+
 /// The class of the object that lists the occurrences.
 const COLLECTION_CLASS: &str = "References Collection Object";
 /// The class of an occurrence.
@@ -60,6 +63,10 @@ const PATH_END: u16 = 0xFFFF;
 const STRUCTURE_STREAM: &str = "Preview/Structure/IOT";
 /// The flag of a structure entry that marks a hidden occurrence (§9.4).
 const HIDDEN_FLAG: u32 = 0x2;
+/// The state words of a grounded occurrence and of an occurrence that is not
+/// grounded (§9.2).
+const STATE_GROUNDED: u32 = 2;
+const STATE_FREE: u32 = 4;
 
 /// Largest deviation of a rotation entry from an orthonormal matrix.
 const EPS_ORTHO: f64 = 1e-6;
@@ -122,6 +129,8 @@ fn listing(cluster: &Cluster<'_>, types: &TypeTable) -> Option<Listing> {
 /// One occurrence as stored.
 struct Stored {
     site: u32,
+    /// Whether the state word says the occurrence is grounded.
+    grounded: Option<bool>,
     /// The placement, or the reason it is not stated.
     transform: Result<Transform, String>,
 }
@@ -203,8 +212,14 @@ fn read_occurrence(cluster: &Cluster<'_>, types: &TypeTable, id: u32) -> Result<
     if types.class_name(site_object.form, site_object.flags) != Some(SITE_CLASS) {
         return Err(format!("the object {site:#x} is not a {SITE_CLASS}"));
     }
+    let grounded = match View::u32_le_at(bytes, assembly_reference::STATE) {
+        Some(STATE_GROUNDED) => Some(true),
+        Some(STATE_FREE) => Some(false),
+        _ => None,
+    };
     Ok(Stored {
         site,
+        grounded,
         transform: placement(bytes),
     })
 }
@@ -320,6 +335,7 @@ pub(crate) fn project<'a>(
     let mut placed = BTreeSet::new();
     let mut new_definitions = Vec::new();
     let mut occurrences = Vec::new();
+    let mut placements = relations::Placements::new();
     for id in listing.ids {
         if !placed.insert(id) {
             losses.push(SolidEdgeLossCode::AssemblyOccurrenceUnread.note(format!(
@@ -374,6 +390,14 @@ pub(crate) fn project<'a>(
                 None
             }
         };
+        placements.insert(
+            id,
+            relations::Placed {
+                occurrence: occurrence_id(id),
+                transform,
+                grounded: stored.grounded,
+            },
+        );
         occurrences.push((id, Occurrence::new(occurrence_id(id), prototype, transform)));
     }
     if occurrences.is_empty() {
@@ -412,7 +436,7 @@ pub(crate) fn project<'a>(
     }
     ir.model.product_definitions.extend(new_definitions);
     ir.model.occurrences.extend(occurrences);
-    Ok(())
+    relations::project(ctx, &cluster, &types, &placements, ir, losses)
 }
 
 #[cfg(test)]

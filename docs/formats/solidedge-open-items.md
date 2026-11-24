@@ -87,3 +87,27 @@
 **Known.** Set kind `1` is a constant radius with the layout of §7.3. One read round has set kind `2`. Its feature object is longer and holds two more `CLSID_JMTopologyProxy` identifiers and two `CLSID_JDim` identifiers after the kind.
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
+
+### DR-1063. Relation pick objects
+
+**Question.** Which fields of a `CLSID_JMembassy` pick object state the entity that a relation selects on an operand, and what frame does the entity have in the referenced document?
+
+**Known.** A relation names one pick object per operand (§9.7, §9.8). Read pick objects are 229, 316, 341, 408 and 495 bytes long. They hold `f64` lengths in metres and unit vectors. The `CLSID_JRelationElemList` object of the document lists the pick objects, with objects of 122 or 180 bytes that hold a 16-byte identifier. The identifier also occurs in the cluster of the referenced document.
+
+**Need.** For each of plane, cylinder face and edge selections, a document pair that differs only in the selected entity.
+
+### DR-1064. Relation flags and states
+
+**Question.** What do the flag bits of axial, tangent and angular relations state, and which field states that a relation is suppressed, driven or locked?
+
+**Known.** Bit `0x2` of the planar flags states opposed normals (§9.7). The axial flags are `0x80003000` in every read document. The tangent flags are `0x3040` in one read document and `0x3000` in another. The angular flags are `0x3700` in every read document.
+
+**Need.** One document with a suppressed relation, one with a driven dimension, and a tangent relation and an angular relation each saved twice with one side or sense changed.
+
+### DR-1065. Relation kinds not read
+
+**Question.** Which classes and layouts store fixed, connect, parallel, perpendicular, distance and other relations between occurrences?
+
+**Known.** The relation list holds relations of the five classes in §9.5 in every read document.
+
+**Need.** One document for each further relation kind that Solid Edge offers.
