@@ -107,3 +107,15 @@ Need: Build offset planes on planar faces with each orientation value, attach as
 Conflict: Reversing the support normal changes the offset side. The surface normal and orientation value leave the in-plane axis unresolved.
 
 Note: A face-supported offset plane retains its feature as Native with `plane.not-supported` until its attachment frame is proved.
+
+## ONSHAPE-012 — Derived insert placement and configuration
+
+Question: Which stored fields place or configure a derived Part Studio insert, and how do they move the inserted bodies?
+
+Known: A derived feature that has only the `partStudio` reference, an empty `configuration` and an optional whole-studio `parts` query inserts bodies at their source placement. The decoder reads it as stored geometry with a design reference.
+
+Need: Derived features that store a transform, mate connector, configuration value or partial part selection, with the rollback states before and after each feature and the captured source studio.
+
+Conflict: A stored transform or configuration changes the inserted bodies. Without it the decoder cannot state their final placement.
+
+Note: A derived feature with any other parameter or reference member remains Native with `history.not-supported`.
