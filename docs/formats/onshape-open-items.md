@@ -107,3 +107,11 @@ Need: Build an asymmetric profile and a path with bends in two planes. Save each
 Conflict: Different frame rules can rotate an asymmetric section about the path tangent.
 
 Note: The decoder maps the plain form to a sweep operation.
+
+## ONSHAPE-040 — Face sketch attachment sense against face orientation
+
+Question: Does the sign of the `sketchMatrix` normal of a face sketch follow the rollback face `orientation` value?
+
+Known: The matrix normal is parallel or anti-parallel to the `PLANE` surface normal.
+
+Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
