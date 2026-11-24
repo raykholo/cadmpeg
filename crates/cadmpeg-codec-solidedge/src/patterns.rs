@@ -17,7 +17,10 @@ use cadmpeg_ir::design::construction::{kinds, AxisValue, Construction, FrameValu
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::body::{Pattern, PatternInstances, PatternSeeds};
-use cadmpeg_ir::design::ops::shared::{LinearRun, PatternLayout, PatternRun, RunSides, Spacing};
+use cadmpeg_ir::design::ops::shared::{
+    CircularLayout, LinearLayout, LinearRun, MirrorLayout, PatternLayout, PatternRun, RunSides,
+    Spacing,
+};
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, Selection,
 };
@@ -87,7 +90,7 @@ fn word(object: &Object<'_>, at: usize, what: &str) -> Result<u32, String> {
 fn seed_of(listed: &[Listed], id: u32) -> Result<u32, String> {
     if listed
         .iter()
-        .any(|entry| entry.object == id && entry.kind != Kind::Folder)
+        .any(|entry| entry.object == id && !matches!(entry.kind, Kind::Folder(_)))
     {
         Ok(id)
     } else {
@@ -281,7 +284,7 @@ fn read_pattern(
             let [first, second, ..] = lines.as_slice() else {
                 return Err("a rectangular pattern references fewer than two lines".to_owned());
             };
-            let layout = PatternLayout::Linear {
+            let layout = PatternLayout::Linear(LinearLayout {
                 first: linear_run(
                     &frame,
                     first,
@@ -297,7 +300,7 @@ fn read_pattern(
                     "second",
                 )?),
                 seed_only: Some(Dimension::Literal(false)),
-            };
+            });
             Ok(pattern(seeds, layout))
         }
         KIND_CIRCULAR => {
@@ -317,7 +320,7 @@ fn read_pattern(
             }
             let step = Angle::new(first_step)
                 .ok_or_else(|| "the angle between instances is not finite".to_owned())?;
-            let layout = PatternLayout::Circular {
+            let layout = PatternLayout::Circular(CircularLayout {
                 axis: Construction::<kinds::Axis> {
                     resolved: Some(axis),
                     ..construction::empty()
@@ -325,7 +328,7 @@ fn read_pattern(
                 angular: run(instances, Dimension::Literal(step)),
                 radial: None,
                 orientation: None,
-            };
+            });
             Ok(pattern(seeds, layout))
         }
         other => Err(format!("the pattern kind {other} is not 1 or 2")),
@@ -411,10 +414,10 @@ fn read_mirror(
     if class != PLANE_CLASS {
         return Err(format!("the mirror plane object is of class {class}"));
     }
-    let layout = PatternLayout::Mirror {
+    let layout = PatternLayout::Mirror(MirrorLayout {
         plane: mirror_plane(&plane)?,
         stitch_tolerance: None,
-    };
+    });
     Ok(pattern(seeds(&ids)?, layout))
 }
 

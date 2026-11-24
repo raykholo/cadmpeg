@@ -7,12 +7,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::container::DocStreams;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -341,7 +341,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Group | Kind::Folder(_) => return None,
     };
     let native = FeatureOperation::Native {
-        kind: NonBlankString::new(format!("solidedge:{name}"))?,
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("solidedge"), name)?,
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
     };
@@ -608,10 +608,6 @@ pub(crate) fn project<'a>(
              family only"
         )));
     }
-    losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(
-        "the rollback position and suppressed state of the features are not read; the timeline \
-         states no rollback position",
-    ));
     Ok(())
 }
 
