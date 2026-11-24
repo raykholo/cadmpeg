@@ -30,6 +30,17 @@ pub(crate) enum SolidEdgeLossCode {
     IntersectionNurbsBoundaryAssumed,
     IntersectionNurbsIsolineAssumed,
     EdgeToleranceWidened,
+    UnitsUnread,
+    UnitCodeUnknown,
+    UnitNotNeutral,
+    FeatureStorageUnread,
+    FeatureNavigatorAbsent,
+    FeatureOperandsPending,
+    FeatureKindUnknown,
+    FeatureRollbackUnread,
+    FeatureFolderUnread,
+    FeatureFolderNameUnread,
+    FeatureSuppressionUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -111,6 +122,35 @@ impl SolidEdgeLossCode {
                 LossTaxonomy::MetadataNotTransferred,
             ),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::MissingGeometryStream),
+            Self::UnitsUnread => ("units.unread", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitCodeUnknown => ("units.code-unknown", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitNotNeutral => ("units.not-neutral", LossTaxonomy::MetadataNotTransferred),
+            Self::FeatureStorageUnread => {
+                ("feature.storage-unread", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::FeatureNavigatorAbsent => {
+                ("feature.navigator-absent", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::FeatureOperandsPending => {
+                ("feature.operands-pending", LossTaxonomy::RecordNotTyped)
+            }
+            Self::FeatureKindUnknown => ("feature.kind-unknown", LossTaxonomy::RecordNotTyped),
+            Self::FeatureFolderUnread => (
+                "feature.folder-unread",
+                LossTaxonomy::FeatureHistoryRetained,
+            ),
+            Self::FeatureFolderNameUnread => (
+                "feature.folder-name-unread",
+                LossTaxonomy::MetadataNotTransferred,
+            ),
+            Self::FeatureSuppressionUnread => (
+                "feature.suppression-unread",
+                LossTaxonomy::FeatureHistoryRetained,
+            ),
+            Self::FeatureRollbackUnread => (
+                "feature.rollback-unread",
+                LossTaxonomy::FeatureHistoryRetained,
+            ),
         };
         LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)
     }

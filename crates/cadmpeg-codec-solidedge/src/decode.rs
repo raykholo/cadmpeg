@@ -6,10 +6,12 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
-use crate::{brep, container, dialect, loss::SolidEdgeLossCode, partition};
+use crate::{brep, container, dialect, features, loss::SolidEdgeLossCode, partition, settings};
 use cadmpeg_container::compound::CompoundEntry;
 use cadmpeg_parasolid::records::PrimaryRecords;
 
@@ -27,6 +29,37 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }),
     );
     if !ctx.container_only() {
+        let definition = root_definition();
+        let mut product = ProductDefinition::root(definition.clone(), ExternalDocument::default());
+        let cluster = match snapshot.stream(settings::CLUSTER_STREAM) {
+            Some(entry) => Some(snapshot.open(ctx, entry)?),
+            None => None,
+        };
+        product.units = match cluster {
+            Some(cluster) => {
+                let sets = settings::property_sets(ctx, cluster.window());
+                settings::unit_system(&sets, &mut body.losses)
+            }
+            None => {
+                body.losses
+                    .push(SolidEdgeLossCode::UnitsUnread.note(format!(
+                    "the document has no {} stream; the document unit system is not transferred",
+                    settings::CLUSTER_STREAM
+                )));
+                None
+            }
+        };
+        ir.model.product_definitions.push(product);
+        if let Some(cluster) = cluster {
+            features::project(
+                ctx,
+                &snapshot,
+                cluster,
+                &definition,
+                &mut ir,
+                &mut body.losses,
+            )?;
+        }
         let mut found = false;
         let mut kernels = Vec::new();
         for (ordinal, entry) in snapshot.entries().iter().enumerate() {
@@ -143,4 +176,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         body,
         source_fidelity: SourceFidelity::new(Sha256Digest::digest(root.window())),
     })
+}
+
+fn root_definition() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("solidedge", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    )
 }
