@@ -71,3 +71,13 @@ Need: A stored one-sided thin extrude over a line with `endParam < startParam`, 
 Conflict: Reversing the parameter interval reverses the profile tangent relative to the stored carrier direction.
 
 Note: The decoder retains its current side mapping until stored wall geometry establishes the source convention. A one-sided thin wall over a line with `endParam < startParam` reports `extrude.thin-not-supported` naming ONSHAPE-007 and the side assumed.
+
+## ONSHAPE-008 — Offset plane with `oppositeDirection`
+
+Question: How does `oppositeDirection: true` on an `OFFSET` `cPlane` place the constructed plane and orient its normal?
+
+Known: With `oppositeDirection` equal to `false`, the plane contains `o + d * n` and retains the support normal `n`.
+
+Need: A bundle with `oppositeDirection` equal to `true` whose final geometry fixes the offset side and the constructed normal.
+
+Note: A flipped offset plane retains its feature as Native with `plane.not-supported`.

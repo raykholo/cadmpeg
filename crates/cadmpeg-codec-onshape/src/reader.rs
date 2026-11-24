@@ -4,6 +4,7 @@
 use crate::archive;
 pub(super) mod expression;
 mod features;
+mod planes;
 pub(super) mod query;
 mod regions;
 mod sketch;
@@ -695,6 +696,8 @@ pub(super) fn read(
                         && features::value(feature, "bodyType") == Some("THIN")
                     {
                         OnshapeLossCode::ThinNotSupported
+                    } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
+                        OnshapeLossCode::PlaneNotSupported
                     } else {
                         OnshapeLossCode::HistoryNotSupported
                     };
