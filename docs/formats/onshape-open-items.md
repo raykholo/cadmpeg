@@ -107,3 +107,15 @@ Need: Build offset planes on planar faces with each orientation value, attach as
 Conflict: Reversing the support normal changes the offset side. The surface normal and orientation value leave the in-plane axis unresolved.
 
 Note: A face-supported offset plane retains its feature as Native with `plane.not-supported` until its attachment frame is proved.
+
+## ONSHAPE-030 — Shell wall sense with opposite direction
+
+Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?
+
+Known: A `false` value places the wall inside the original boundary. The Onshape `shell` specification names the control "Opposite direction" and lists no other direction control.
+
+Need: A stored shell with `oppositeDirection` set to `true`, its input body and its final STEP body.
+
+Conflict: None.
+
+Note: The decoder retains a shell with `oppositeDirection` set to `true`, the hollow form or an unlisted parameter as Native with `shell.not-supported` or `history.not-supported`.
