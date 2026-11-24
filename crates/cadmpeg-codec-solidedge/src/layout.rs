@@ -458,3 +458,15 @@ pub(crate) mod standard_relation {
     /// Offset of `variable_object` (`u32`, little-endian). Spec §10.3.
     pub(crate) const VARIABLE_OBJECT: usize = 127;
 }
+
+/// Byte offsets for the `file_moniker_extension` record.
+///
+/// Spec §9.3. Record length 30 B.
+pub(crate) mod file_moniker_extension {
+    /// Record length in bytes. Spec §9.3.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `size` (`u32`, little-endian). Spec §9.3.
+    pub(crate) const SIZE: usize = 20;
+    /// Offset of `path_bytes` (`u32`, little-endian). Spec §9.3.
+    pub(crate) const PATH_BYTES: usize = 24;
+}

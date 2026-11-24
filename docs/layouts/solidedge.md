@@ -591,3 +591,17 @@ Unstated regions:
 - `0..99` (99 B): §10.3 states no field before the flange object identifier.
 - `103..127` (24 B): §10.3 states no field between the flange object identifier and the document variable identifier.
 - `131..161` (30 B): §10.3 states no field after the document variable identifier.
+
+## `file_moniker_extension`
+
+Spec §9.3 · layout: byte offsets · size: 30 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 20 | `reserved` | `bytes[20]` | little | spec | \| 0 \| 20 reserved bytes \| |
+| 20 | 4 | `size` | `u32` | little | spec | \| 20 \| `u32` size `s` of the remaining extension, `0` when the moniker stores no Unicode path \| |
+| 24 | 4 | `path_bytes` | `u32` | little | spec | \| 24 \| `u32` byte count `m` of the Unicode path; `s` is `m` + 6 \| |
+| 28 | 2 | `key` | `u16` | little | spec | \| 28 \| `u16` key value \| |
