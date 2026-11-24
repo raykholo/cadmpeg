@@ -898,7 +898,7 @@ these object identifiers after the end of its function name:
 
 Lengths are metres.
 
-## 2. Kernel stream map
+## 11. Kernel stream map
 
 The `PARASOLID` storage contains binary kernel streams. A primary partition
 has the path `PARASOLID/STREAM<n>.P_B`, where `<n>` is a decimal stream index.
@@ -909,7 +909,7 @@ Each stream has its own transmit header and node-index space.
 `JSite<n>`. Assembly sites carry reference and physical-property streams,
 including `JAsmRefAttr` and `JAsmPhysicalPropertiesAttr`.
 
-## 3. Transmit envelope
+## 12. Transmit envelope
 
 A kernel stream starts with the Parasolid text header. Header lines end with
 LF. Named text fields use `KEY=VALUE;`. The header has `**PART1;`, `**PART2;`,
@@ -930,7 +930,7 @@ The binary header and node grammar are specified in
 [`parasolid.md`](parasolid.md). An embedded-schema token names its base schema
 and is followed by the maximum node type and the user-field size.
 
-## 4. Geometry
+## 13. Geometry
 
 Primary partition node indices identify bodies, regions, shells, faces,
 loops, fins, edges, vertices, and their carriers. References are local to
@@ -958,7 +958,7 @@ vertex or run past it. Limit records carry a type character and a counted
 point array. Types `L`, `H`, `T`, and `B` place their terminal point first in
 that array.
 
-## 5. Document version declarations
+## 14. Document version declarations
 
 The root streams `Versions`, `DocVersion2`, and `BuildVersions` carry document
 version declarations. These declarations and the kernel schema token occupy
