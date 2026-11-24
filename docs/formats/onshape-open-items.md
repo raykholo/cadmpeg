@@ -72,6 +72,30 @@ Conflict: Reversing the parameter interval reverses the profile tangent relative
 
 Note: The decoder retains its current side mapping until stored wall geometry establishes the source convention. A one-sided thin wall over a line with `endParam < startParam` reports `extrude.thin-not-supported` naming ONSHAPE-007 and the side assumed.
 
+## ONSHAPE-008 — Offset plane direction and alignment controls
+
+Question: How do `oppositeDirection`, `flipNormal` and `flipAlignment` establish the offset plane frame?
+
+Known: An `OFFSET` `cPlane` stores its support query in `entities` and its length in `offset`. Its controls include Boolean `oppositeDirection`, `flipNormal` and `flipAlignment`. With these controls false, the plane contains `o + d * n` and retains support normal `n`. `flipNormal` reverses the constructed normal. `flipAlignment` changes in-plane alignment, which the IR stores as `u_axis`.
+
+Need: Build an offset plane on a default plane, place an asymmetric sketch on it, and save with each control changed separately. Compare the cPlane parameters, sketch attachment matrix and final geometry.
+
+Conflict: Offset side, normal sense and in-plane alignment affect the placed sketch frame.
+
+Note: A true direction or alignment control retains the feature as Native with `plane.not-supported`.
+
+## ONSHAPE-009 — Offset plane on a planar face
+
+Question: Which stored fields establish the oriented support frame of an `OFFSET` cPlane on a planar face?
+
+Known: The `entities` query carries a deterministic face id. The rollback face stores `orientation` as `true` or `false` and a `PLANE` surface with `origin` in metres and a `normal` vector. A face sketch stores its attachment sense and in-plane axis in its `plane.normal` and `plane.x` fields. Coplanarity relates that attachment to the surface. The cPlane offset is a signed length.
+
+Need: Build offset planes on planar faces with each orientation value, attach asymmetric sketches, and save with positive and negative offsets. Compare rollback surface normals, orientation values, sketch attachment matrices and final geometry.
+
+Conflict: Reversing the support normal changes the offset side. The surface normal and orientation value leave the in-plane axis unresolved.
+
+Note: A face-supported offset plane retains its feature as Native with `plane.not-supported` until its attachment frame is proved.
+
 ## ONSHAPE-010 — Sweep profile frame
 
 Question: Which frame rule does `profileControl: "NONE"` apply along a curved sweep path, and which value applies when the parameter is omitted?
