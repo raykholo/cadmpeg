@@ -727,7 +727,6 @@ fn component_document(
                 operation: FeatureOperation::Unresolved {
                     family: OperationFamily::Extrude,
                 },
-                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
