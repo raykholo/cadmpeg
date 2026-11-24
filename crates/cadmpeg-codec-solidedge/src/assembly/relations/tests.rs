@@ -327,7 +327,7 @@ fn a_listed_object_that_is_not_a_relation_is_not_transferred() {
 }
 
 #[test]
-fn a_document_without_a_relation_list_adds_nothing() {
+fn a_document_without_a_relation_list_leaves_its_grounded_occurrence_unrelated() {
     let bytes = crate::test_support::assembly_document(
         &[FIRST],
         &[OccurrenceSpec::at_identity(FIRST, 10)],
@@ -337,7 +337,9 @@ fn a_document_without_a_relation_list_adds_nothing() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert!(result.ir().model.assembly_joints.is_empty());
-    assert_eq!(count(&result, "assembly.ground-disagrees"), 0);
+    // §9.6: an occurrence has a ground relation if and only if its state word
+    // is 2. The occurrence has state 2 and the document has no relation.
+    assert_eq!(count(&result, "assembly.ground-disagrees"), 1);
     assert!(records(&result).is_empty());
 }
 
