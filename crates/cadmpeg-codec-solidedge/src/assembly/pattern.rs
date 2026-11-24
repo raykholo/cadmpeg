@@ -271,6 +271,7 @@ fn read_pattern(
                 native_options,
                 source_settings: NativeOptions::new(),
             })),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

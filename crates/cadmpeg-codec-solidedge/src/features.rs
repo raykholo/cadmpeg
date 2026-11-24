@@ -420,6 +420,7 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
             suppressed: entry.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
