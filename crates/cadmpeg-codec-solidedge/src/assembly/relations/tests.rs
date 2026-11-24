@@ -26,10 +26,12 @@ fn sites() -> [SiteSpec<'static>; 2] {
         SiteSpec {
             id: 10,
             links: Some(["C:\\x\\a.par", "a.par"]),
+            long: [None, None],
         },
         SiteSpec {
             id: 11,
             links: Some(["C:\\x\\b.par", "b.par"]),
+            long: [None, None],
         },
     ]
 }

@@ -1030,5 +1030,5 @@ pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, Pattern
 mod assembly;
 pub(crate) use assembly::{
     assembly_document, assembly_document_with_relations, assembly_document_with_structure,
-    structure_stream, OccurrenceSpec, RelationSpec, SiteSpec,
+    link_stream, structure_stream, OccurrenceSpec, RelationSpec, SiteSpec,
 };
