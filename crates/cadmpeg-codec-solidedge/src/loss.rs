@@ -19,7 +19,6 @@ pub(crate) enum SolidEdgeLossCode {
     AttributesPending,
     WireTopologyUnsupported,
     BodyKindAssumed,
-    IntersectionFrameFromChart,
     IntersectionChartReduced,
     EdgeCarrierSampled,
     IntersectionFrameFromSupportsAssumed,
@@ -59,6 +58,15 @@ pub(crate) enum SolidEdgeLossCode {
     SheetMetalContourFlangeUnread,
     SheetMetalBendOperandUnread,
     AssemblyPatternUnread,
+    SurfaceUnresolved,
+    CurveUnresolved,
+    LoopUnreadable,
+    FaceSenseUnresolved,
+    ChainTruncated,
+    VertexUnresolved,
+    CurveConstructionDropped,
+    RegionFacesUntransferred,
+    BodyPlacementUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -125,10 +133,6 @@ impl SolidEdgeLossCode {
             Self::IntersectionChartReduced => (
                 "curve.intersection-chart-reduced",
                 LossTaxonomy::MetadataNotTransferred,
-            ),
-            Self::IntersectionFrameFromChart => (
-                "curve.intersection-frame-from-chart",
-                LossTaxonomy::CarrierAxisInferred,
             ),
             Self::BodyKindAssumed => ("body.kind-assumed", LossTaxonomy::TopologyGaugeSubstituted),
             Self::WireTopologyUnsupported => (
@@ -212,6 +216,29 @@ impl SolidEdgeLossCode {
             Self::FeatureRollbackUnread => (
                 "feature.rollback-unread",
                 LossTaxonomy::FeatureHistoryRetained,
+            ),
+            Self::SurfaceUnresolved => ("surface.unresolved", LossTaxonomy::GeometryNotTransferred),
+            Self::CurveUnresolved => ("curve.unresolved", LossTaxonomy::GeometryNotTransferred),
+            Self::LoopUnreadable => ("loop.unreadable", LossTaxonomy::TopologyNotTransferred),
+            Self::FaceSenseUnresolved => {
+                ("face.sense-unresolved", LossTaxonomy::SourceTopologyInvalid)
+            }
+            Self::ChainTruncated => (
+                "topology.chain-truncated",
+                LossTaxonomy::TopologyNotTransferred,
+            ),
+            Self::VertexUnresolved => ("vertex.unresolved", LossTaxonomy::SourceTopologyInvalid),
+            Self::CurveConstructionDropped => (
+                "curve.construction-dropped",
+                LossTaxonomy::GeometryNotTransferred,
+            ),
+            Self::RegionFacesUntransferred => (
+                "region.faces-untransferred",
+                LossTaxonomy::TopologyNotTransferred,
+            ),
+            Self::BodyPlacementUnread => (
+                "body.placement-unread",
+                LossTaxonomy::AssemblyPlacementsNotTransferred,
             ),
         };
         LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)

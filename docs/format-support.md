@@ -74,7 +74,7 @@ its result.
 | SolidWorks eDrawings `.eprt` and `.easm`          | L2    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
-| Solid Edge `.par`, `.psm`, and `.asm`             | L0    |
+| Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
 | Onshape bundle                                    | L0    |
 
 <!-- /generated: ladder-table -->
@@ -720,10 +720,15 @@ The generated cells and the profile prose answer different questions. A cell is 
 ## Solid Edge `.par`, `.psm`, and `.asm`
 
 Detected by compound-file content. The reader lists streams and reads primary
-Parasolid partitions from part and sheet-metal documents into body topology,
-analytic carriers, and NURBS.
-Unreadable partitions and unresolved carriers produce losses. The primary-state
-selection carries an assumption loss.
+Parasolid partitions from every document kind it detects (part, sheet metal,
+assembly, and family of assemblies) into bodies, regions, shells, faces, loops,
+coedges, edges, and vertices with orientation and trimming, analytic carriers,
+and NURBS. Void regions that own faces transfer as regions. Unreadable
+partitions, untransferred faces, and unresolved carriers produce losses, and a
+shell that does not state every member is marked. The primary-state selection
+carries an assumption loss. The headline is L2: placed analytic and NURBS
+carriers transfer, and structural validation still reports the undecoded
+product root on every document.
 The codec is read-only. Feature history, display attributes, and assembly placements are pending.
 
 See [`formats/solidedge.md`](formats/solidedge.md) and
@@ -731,7 +736,7 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 <!-- generated: dialects solidedge -->
 
-**Ladder: L0.**
+**Ladder: L2.**
 
 | Dialect             | Read     | Write |
 | ------------------- | -------- | ----- |
