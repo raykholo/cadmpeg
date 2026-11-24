@@ -533,7 +533,7 @@ pub(super) fn project(
     if relations.is_empty() {
         return Ok(());
     }
-    let namespace = ir.native.namespace_mut("solidedge");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("solidedge"));
     namespace.set_arena_from(
         ctx,
         "assembly_relations",
