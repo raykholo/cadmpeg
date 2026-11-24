@@ -56,6 +56,9 @@ pub(crate) enum SolidEdgeLossCode {
     SheetMetalBendMethodUnread,
     SheetMetalBaseTabUnread,
     SheetMetalFlangeFieldUnread,
+    SheetMetalHemFieldUnread,
+    SheetMetalContourFlangeUnread,
+    SheetMetalBendOperandUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -194,6 +197,17 @@ impl SolidEdgeLossCode {
             }
             Self::SheetMetalFlangeFieldUnread => (
                 "sheet-metal.flange-field-unread",
+                LossTaxonomy::RecordNotTyped,
+            ),
+            Self::SheetMetalHemFieldUnread => {
+                ("sheet-metal.hem-field-unread", LossTaxonomy::RecordNotTyped)
+            }
+            Self::SheetMetalContourFlangeUnread => (
+                "sheet-metal.contour-flange-unread",
+                LossTaxonomy::RecordNotTyped,
+            ),
+            Self::SheetMetalBendOperandUnread => (
+                "sheet-metal.bend-operand-unread",
                 LossTaxonomy::RecordNotTyped,
             ),
             Self::FeatureRollbackUnread => (

@@ -1740,3 +1740,6 @@ pub(crate) use flange::{flange_document, FlangeSpec};
 
 mod helix;
 pub(crate) use helix::{helix_document, HelixSpec};
+
+mod kinds;
+pub(crate) use kinds::{kind_document, EdgeSpec, Operand};
