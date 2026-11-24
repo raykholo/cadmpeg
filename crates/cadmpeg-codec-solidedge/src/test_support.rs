@@ -1737,3 +1737,6 @@ pub(crate) use assembly::{
 
 mod flange;
 pub(crate) use flange::{flange_document, FlangeSpec};
+
+mod helix;
+pub(crate) use helix::{helix_document, HelixSpec};
