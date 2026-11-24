@@ -762,6 +762,47 @@ from the references collection of the storage that `FamilyInfo` names. An
 occurrence in the first list of the active member's record is excluded: it
 keeps its object and placement and is suppressed in the active state.
 
+### 9.6 Assembly patterns
+
+A pattern of an occurrence along a layout sketch is a `CLSID_JAsmPattern`
+object. Its copies are `CLSID_JAsmReference` objects of the same document
+(§9.2) that the references collection (§9.1) lists with the seed. A pattern
+object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 16 | `u32` identifier of the seed `CLSID_JAsmReference` object |
+| 20 | `u32` identifier of the `CLSID_JPattern2d` object of the layout sketch |
+
+The `CLSID_JPattern2d` object states the counts, the spacings and the sketch
+geometry as for a part pattern (§8.1), with `E` the offset 84 bytes after the
+zero byte that ends the ASCII text `JPattern2dGeomsFunction` in the object.
+The profile that lists the object as a member states the layout frame. The pattern object ends with the copy list:
+a `u32` count `m`, one byte, `m` items and 12 bytes. An item is the `u32`
+identifier of a `CLSID_JAsmPatternOcc` object, the byte `0x10`, the
+identifier in decimal ASCII and a zero byte.
+
+A `CLSID_JAsmPatternOcc` object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 12 | `u32` index of the copy along the second run |
+| 16 | `u32` index of the copy along the first run; for a circular pattern, the index of the copy |
+| 24 | `u32` identifier of the seed `CLSID_JAsmReference` object |
+| 36 | `u32` identifier of the `CLSID_JAsmReference` object of the copy |
+
+The copy object stores the placement of the copy as an occurrence does
+(§9.2). The seed has index `0` in every run. The document can hold a copy
+whose indices repeat those of another copy, and a `CLSID_JAsmReference`
+object at a copy's placement that no `CLSID_JAsmPatternOcc` object names;
+each is an occurrence of its own.
+
+### 9.7 Mirrored occurrences
+
+A mirrored component is an occurrence (§9.2) whose rotation has determinant
+`+1`; the stored placement is not a reflection. A `CLSID_JAsmGroup` object
+stores the identifier of that occurrence as a `u32` at object offset 17.
+
 ## 10. Sheet metal
 
 ### 10.1 Variable table

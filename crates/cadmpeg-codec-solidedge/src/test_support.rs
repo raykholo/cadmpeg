@@ -1730,9 +1730,10 @@ pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, Pattern
 
 mod assembly;
 pub(crate) use assembly::{
-    assembly_document, assembly_document_with_structure, family_document, family_info, link_stream,
-    member_table, member_table_of, structure_entry, structure_items, structure_node,
-    structure_stream, MemberSpec, OccurrenceSpec, RecordSpec, SiteSpec,
+    assembly_document, assembly_document_with_structure, assembly_pattern_document,
+    family_document, family_info, link_stream, member_table, member_table_of, structure_entry,
+    structure_items, structure_node, structure_stream, AssemblyPatternSpec, MemberSpec,
+    OccurrenceSpec, RecordSpec, SiteSpec, PATTERN_OBJECT, PATTERN_SITE,
 };
 
 mod flange;
