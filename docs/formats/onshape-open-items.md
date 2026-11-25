@@ -115,3 +115,15 @@ Question: Does the sign of the `sketchMatrix` normal of a face sketch follow the
 Known: The `sketchMatrix` normal sign and the face `orientation` value are both stored.
 
 Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
+
+## ONSHAPE-030 — Shell wall sense with opposite direction
+
+Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?
+
+Known: A `false` value places the wall inside the original boundary. The Onshape `shell` specification names the control "Opposite direction" and lists no other direction control.
+
+Need: A stored shell with `oppositeDirection` set to `true`, its input body and its final STEP body.
+
+Conflict: None.
+
+Note: The decoder retains a shell with `oppositeDirection` set to `true`, the hollow form or an unlisted parameter as Native with `shell.not-supported` or `history.not-supported`.
