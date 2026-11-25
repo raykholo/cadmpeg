@@ -1671,3 +1671,58 @@ fn scope_placement_accepts_typed_container_and_frame_references() {
     assert_eq!(u_axis.get(), Vector3::new(0.0, 1.0, 0.0));
     assert!(parse(&bytes[..scope_end - 1]).is_none());
 }
+
+fn foot_origin_test_placement(foot_origin: bool) -> DesignSketchPlacement {
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
+    };
+    // u = +x, v = -z, normal = +y; the stored translation is (5, 10, 2.5) mm.
+    let rows = [
+        [1.0, 0.0, 0.0, 0.5],
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, -1.0, 0.0, 0.25],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut placement = DesignSketchPlacement {
+        frame: DesignSketchFrame::new(
+            0,
+            DesignSketchFrameForm::ScopeExplicit(SketchPlacementMatrix::try_from(rows).unwrap()),
+        )
+        .unwrap(),
+        id: "f3d:native:design-sketch-placement#0".into(),
+        scope_record_index: Some(10),
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        display_name: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("293".to_owned()).unwrap(),
+        record_index: 11,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
+            .unwrap(),
+    };
+    if foot_origin {
+        placement.set_foot_origin();
+    }
+    placement
+}
+
+#[test]
+fn a_sketch_on_a_foot_origin_plane_measures_from_the_foot_of_the_design_origin() {
+    let origin_of = |foot_origin: bool| {
+        let placement = foot_origin_test_placement(foot_origin);
+        let (sketches, _) = crate::test_support::with_decode_context(|decode_ctx| {
+            project_sketch_design(
+                decode_ctx,
+                &SketchProjectInputs::new(std::slice::from_ref(&placement), &[], &[], &[], &[]),
+                1.0e-6,
+            )
+        })
+        .expect("placement projects")
+        .into_tuple();
+        sketches[0]
+            .resolved_placement()
+            .map(|(origin, _, _)| origin.get())
+    };
+    assert_eq!(origin_of(false), Some(Point3::new(5.0, 10.0, 2.5)));
+    assert_eq!(origin_of(true), Some(Point3::new(0.0, 10.0, 0.0)));
+}

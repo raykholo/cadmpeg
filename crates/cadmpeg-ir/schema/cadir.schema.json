@@ -51972,7 +51972,7 @@
               "$ref": "#/$defs/OccurrenceId"
             },
             "occurrence_path": {
-              "description": "Native keys of the nested occurrences, outermost first, that lead\nfrom the prototype of `occurrence` to the document that owns the\nobject. Empty when the prototype of `occurrence` owns the object.",
+              "description": "Final identity segments of the nested occurrences, outermost\nfirst, that lead from the prototype of `occurrence` to the\ndocument that owns the object. Empty when the prototype of\n`occurrence` owns the object.",
               "type": "array",
               "items": {
                 "type": "string"

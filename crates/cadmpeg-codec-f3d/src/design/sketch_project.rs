@@ -2,7 +2,9 @@
 //! Project planar and spatial sketch geometry.
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
-use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
+use crate::design::face_resolve::{
+    placement_origin, placement_point, placement_vector, sketch_curve_is_spatial,
+};
 use crate::design::feature_project::sweep_loft::closed_spatial_sketch_profiles;
 use crate::design::feature_project::SpatialProfileSearch;
 use crate::design::geometry::closed_sketch_profiles;
@@ -334,11 +336,7 @@ pub(crate) fn project_sketch_design(
             continue;
         }
         let Ok(resolved) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-            Point3::new(
-                placement.transform()[0][3] * placement_origin_scale(placement),
-                placement.transform()[1][3] * placement_origin_scale(placement),
-                placement.transform()[2][3] * placement_origin_scale(placement),
-            ),
+            placement_origin(placement),
             Vector3::new(
                 placement.transform()[0][2],
                 placement.transform()[1][2],
@@ -745,36 +743,8 @@ pub(crate) fn project_spatial_sketch_design(
             record_spline_segment(&mut spline_segments, scope, record, points);
         }
     }
-    let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
-        let origin_scale = placement_origin_scale(placement);
-        Point3::new(
-            placement.transform()[0][0] * point.x
-                + placement.transform()[0][1] * point.y
-                + placement.transform()[0][2] * point.z
-                + placement.transform()[0][3] * origin_scale,
-            placement.transform()[1][0] * point.x
-                + placement.transform()[1][1] * point.y
-                + placement.transform()[1][2] * point.z
-                + placement.transform()[1][3] * origin_scale,
-            placement.transform()[2][0] * point.x
-                + placement.transform()[2][1] * point.y
-                + placement.transform()[2][2] * point.z
-                + placement.transform()[2][3] * origin_scale,
-        )
-    };
-    let transform_vector = |placement: &DesignSketchPlacement, vector: &Vector3| {
-        Vector3::new(
-            placement.transform()[0][0] * vector.x
-                + placement.transform()[0][1] * vector.y
-                + placement.transform()[0][2] * vector.z,
-            placement.transform()[1][0] * vector.x
-                + placement.transform()[1][1] * vector.y
-                + placement.transform()[1][2] * vector.z,
-            placement.transform()[2][0] * vector.x
-                + placement.transform()[2][1] * vector.y
-                + placement.transform()[2][2] * vector.z,
-        )
-    };
+    let transform_point = placement_point;
+    let transform_vector = placement_vector;
 
     let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();

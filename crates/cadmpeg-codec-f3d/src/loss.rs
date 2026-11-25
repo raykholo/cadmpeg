@@ -843,6 +843,7 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCoincidentBoundaryAssumed,
     FeatureProfileCrossingRunsAssumed,
     FeatureProfilePartialEntryAssumed,
+    FeatureProfileArcBridgeAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// A stored transition certifies regions with stale curve identities.
@@ -1194,9 +1195,17 @@ pub(crate) enum F3dLossCode {
     XrefLineageDisagrees,
     XrefIdentityBlank,
     XrefArchiveIdentityDisagrees,
+    /// A reference resolved to its archive member by lineage and version
+    /// URNs because the document has no redirection table.
+    XrefRedirectionFromLineage,
+    /// More than one archive member states the lineage and version URNs of a
+    /// reference, so the reference keeps its target path.
+    XrefLineageAmbiguous,
 
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
+    /// A compact legacy carrier has an unresolved current pose.
+    XrefPlacementPoseUnstated,
     /// An external reference has no admitted occurrence placement.
     XrefOccurrenceUnplaced,
     /// An external reference keeps the identity fallback without placement proof.
@@ -1938,6 +1947,7 @@ impl F3dLossCode {
         Self::FeatureProfileCoincidentBoundaryAssumed,
         Self::FeatureProfileCrossingRunsAssumed,
         Self::FeatureProfilePartialEntryAssumed,
+        Self::FeatureProfileArcBridgeAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
@@ -2167,7 +2177,10 @@ impl F3dLossCode {
         Self::XrefLineageDisagrees,
         Self::XrefIdentityBlank,
         Self::XrefArchiveIdentityDisagrees,
+        Self::XrefRedirectionFromLineage,
+        Self::XrefLineageAmbiguous,
         Self::XrefPlacementUndecoded,
+        Self::XrefPlacementPoseUnstated,
         Self::XrefOccurrenceUnplaced,
         Self::XrefPlacementIdentityAssumed,
         Self::XrefPlacementMetadataNative,
@@ -3022,6 +3035,7 @@ impl F3dLossCode {
                 "feature.profile-coincident-boundary-assumed"
             }
             Self::FeatureProfileCrossingRunsAssumed => "feature.profile-crossing-runs-assumed",
+            Self::FeatureProfileArcBridgeAssumed => "feature.profile-arc-bridge-assumed",
             Self::FeatureProfilePartialEntryAssumed => "feature.profile-partial-entry-assumed",
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileMemberReferenceLost => "feature.profile-member-reference-lost",
@@ -3389,8 +3403,11 @@ impl F3dLossCode {
             Self::XrefLineageDisagrees => "xref.lineage-disagrees",
             Self::XrefIdentityBlank => "xref.identity-blank",
             Self::XrefArchiveIdentityDisagrees => "xref.archive-identity-disagrees",
+            Self::XrefRedirectionFromLineage => "xref.redirection-from-lineage",
+            Self::XrefLineageAmbiguous => "xref.lineage-ambiguous",
 
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefPlacementPoseUnstated => "xref.placement-pose-unstated",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
             Self::XrefPlacementIdentityAssumed => "xref.placement-identity-assumed",
             Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
@@ -4072,6 +4089,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentBoundaryAssumed
             | Self::FeatureProfileCrossingRunsAssumed
             | Self::FeatureProfilePartialEntryAssumed
+            | Self::FeatureProfileArcBridgeAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileMemberReferenceLost
@@ -4292,9 +4310,12 @@ impl F3dLossCode {
             | Self::MeshCollectionWordsNative
             | Self::XrefLineageDisagrees
             | Self::XrefIdentityBlank
+            | Self::XrefRedirectionFromLineage
+            | Self::XrefLineageAmbiguous
             | Self::XrefArchiveIdentityDisagrees
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementPoseUnstated
             | Self::XrefOccurrenceUnplaced
             | Self::XrefPlacementIdentityAssumed
             | Self::XrefPlacementRoleUnbound
@@ -4525,9 +4546,12 @@ impl F3dLossCode {
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
+            | Self::XrefRedirectionFromLineage
+            | Self::XrefLineageAmbiguous
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementPoseUnstated
             | Self::XrefOccurrenceUnplaced
             | Self::XrefPlacementIdentityAssumed
             | Self::XrefPlacementRoleUnbound
@@ -4848,6 +4872,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentBoundaryAssumed
             | Self::FeatureProfileCrossingRunsAssumed
             | Self::FeatureProfilePartialEntryAssumed
+            | Self::FeatureProfileArcBridgeAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileMemberReferenceLost
@@ -5811,6 +5836,7 @@ mod tests {
                 "feature.profile-coincident-boundary-assumed",
                 "feature.profile-crossing-runs-assumed",
                 "feature.profile-partial-entry-assumed",
+                "feature.profile-arc-bridge-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
@@ -6040,7 +6066,10 @@ mod tests {
                 "xref.lineage-disagrees",
                 "xref.identity-blank",
                 "xref.archive-identity-disagrees",
+                "xref.redirection-from-lineage",
+                "xref.lineage-ambiguous",
                 "xref.placement-undecoded",
+                "xref.placement-pose-unstated",
                 "xref.occurrence-unplaced",
                 "xref.placement-identity-assumed",
                 "xref.placement-metadata-native",
