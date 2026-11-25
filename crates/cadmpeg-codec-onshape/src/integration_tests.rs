@@ -2,6 +2,7 @@
 //! Synthetic bundle parity and admission tests.
 mod bundle;
 mod custom_features;
+mod derived;
 mod face_sketch;
 mod member_isolation;
 mod permissive;
