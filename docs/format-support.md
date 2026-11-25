@@ -75,7 +75,7 @@ its result.
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
-| Onshape bundle                                    | L0    |
+| Onshape bundle                                    | L4    |
 
 <!-- /generated: ladder-table -->
 
@@ -749,7 +749,7 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 <!-- generated: dialects onshape -->
 
-**Ladder: L0.**
+**Ladder: L4.**
 
 | Dialect            | Read     | Write |
 | ------------------ | -------- | ----- |
@@ -758,9 +758,13 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 <!-- /generated: dialects onshape -->
 
-The decoder reads one Part Studio from an offline version 1 bundle. It
-composes final STEP geometry and maps supported sketches, variables,
-extrusions, revolves, fillets, chamfers and holes. Historical picks use
-rollback topology. Original members remain embedded assets. Synthetic tests
-pin the reader projection and resource bounds. Real-file evaluation is
-pending.
+The decoder reads one Part Studio from an offline version 1 bundle, with
+captured Derived studios and assemblies. It composes final STEP geometry and
+maps sketches on default planes, offset planes and model faces, variables,
+extrusions (including up to next), revolves, sweeps, fillets, chamfers, holes,
+shells and subtractions after a Derived insert. Historical picks use rollback
+topology. Original members remain embedded assets. Typed features with
+operation semantics, sketch geometry, ordering and dependencies set L4. A
+recorded evaluation backs it. Body and face colours and the full sketch
+constraint and feature-family set are not yet established, so L5 and L6 are
+not claimed. Synthetic tests pin the reader projection and resource bounds.
