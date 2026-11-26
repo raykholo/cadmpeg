@@ -32,10 +32,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }),
     );
     if !ctx.container_only() {
+        let member = container::DocStreams::select(ctx, &snapshot, &mut body.losses)?;
         let definition = root_definition();
         let mut product = ProductDefinition::root(definition.clone(), ExternalDocument::default());
-        let cluster = match snapshot.stream(settings::CLUSTER_STREAM) {
-            Some(entry) => match snapshot.open(ctx, entry) {
+        let cluster = match member.stream(settings::CLUSTER_STREAM) {
+            Some(entry) => match member.open(ctx, entry) {
                 Ok(cluster) => Ok(cluster),
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => Err(format!(
@@ -64,12 +65,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ir.model.product_definitions.push(product);
         let design = ctx.depth() >= DecodeDepth::Design;
         if design {
-            sheet_metal::project_rule(ctx, &snapshot, &definition, &mut ir, &mut body.losses)?;
+            sheet_metal::project_rule(ctx, &member, &definition, &mut ir, &mut body.losses)?;
         }
         if let Ok(cluster) = cluster {
             assembly::project(
                 ctx,
-                &snapshot,
+                &member,
                 cluster,
                 &definition,
                 &mut ir,
@@ -78,7 +79,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             if design {
                 features::project(
                     ctx,
-                    &snapshot,
+                    &member,
                     cluster,
                     &definition,
                     &mut ir,

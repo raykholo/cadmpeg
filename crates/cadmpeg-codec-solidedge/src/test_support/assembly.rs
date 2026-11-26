@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic assembly documents (`docs/formats/solidedge.md` §9).
 
-use super::{cluster_and_map, document, put_reals, put_words, type_table, Object};
+use super::{
+    cluster_and_map, document, document_with_root, put_reals, put_words, type_table, Object, FAMILY,
+};
 
 /// The class names of an assembly document, by form.
 const ASSEMBLY_CLASSES: [&str; 3] = [
@@ -102,6 +104,46 @@ pub(crate) fn assembly_document(
     occurrences: &[OccurrenceSpec],
     sites: &[SiteSpec<'_>],
 ) -> Vec<u8> {
+    assembly_document_with_structure(listed, occurrences, sites, None)
+}
+
+/// The stream of an occurrence structure list: a 20-byte header with the entry
+/// count at offset 16, then 20-byte entries of `(flags, object)`.
+pub(crate) fn structure_stream(entries: &[(u32, u32)]) -> Vec<u8> {
+    let mut bytes = vec![0_u8; 16];
+    bytes.extend_from_slice(&u32::try_from(entries.len()).unwrap().to_le_bytes());
+    for (flags, object) in entries {
+        bytes.extend_from_slice(&flags.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&object.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+    }
+    bytes
+}
+
+/// As [`assembly_document`], with the `Preview/Structure/IOT` stream `structure`
+/// where it is `Some`.
+pub(crate) fn assembly_document_with_structure(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    structure: Option<Vec<u8>>,
+) -> Vec<u8> {
+    let files = assembly_streams(listed, occurrences, sites, structure);
+    let borrowed: Vec<(&str, Vec<u8>)> = files
+        .iter()
+        .map(|(name, bytes)| (name.as_str(), bytes.clone()))
+        .collect();
+    document(&borrowed)
+}
+
+/// The streams of [`assembly_document`], by path.
+fn assembly_streams(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    structure: Option<Vec<u8>>,
+) -> Vec<(String, Vec<u8>)> {
     let mut collection = vec![0_u8; 12];
     put_words(&mut collection, 16, &[u32::try_from(listed.len()).unwrap()]);
     collection.resize(12 + listed.len().div_ceil(8), 0);
@@ -145,9 +187,126 @@ pub(crate) fn assembly_document(
         ),
     ];
     files.extend(streams);
+    if let Some(structure) = structure {
+        files.push(("Preview/Structure/IOT".to_owned(), structure));
+    }
+    files
+}
+
+/// The `FamilyInfo` stream naming `active`.
+pub(crate) fn family_info(active: &str) -> Vec<u8> {
+    unit_string(active)
+}
+
+fn unit_string(name: &str) -> Vec<u8> {
+    let units: Vec<u16> = name.encode_utf16().chain([0]).collect();
+    let mut bytes = u32::try_from(units.len()).unwrap().to_le_bytes().to_vec();
+    for unit in units {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes
+}
+
+/// One record of the member table.
+pub(crate) struct RecordSpec<'a> {
+    pub(crate) name: &'a str,
+    /// The first list: the occurrences the member excludes.
+    pub(crate) excluded: &'a [u32],
+    /// The second list: the occurrences of the family.
+    pub(crate) listed: &'a [u32],
+    /// The last word of the record.
+    pub(crate) word: u32,
+}
+
+/// The member table of `records`: a header, then per record the name, the
+/// first list, 12 bytes, two blocks, the second list and the trailing words.
+pub(crate) fn member_table_of(records: &[RecordSpec<'_>]) -> Vec<u8> {
+    let mut bytes = b"\x44\xf5\x90\x6c\x03\0\0\0QQP\0\0\xa0\0\0".to_vec();
+    bytes.extend_from_slice(&u32::try_from(records.len()).unwrap().to_le_bytes());
+    for (ordinal, record) in records.iter().enumerate() {
+        bytes.extend_from_slice(b"QQQ\0");
+        bytes.extend_from_slice(&(0xa001 + u32::try_from(ordinal).unwrap()).to_le_bytes());
+        bytes.extend_from_slice(&unit_string(record.name));
+        bytes.extend_from_slice(&u32::try_from(record.excluded.len()).unwrap().to_le_bytes());
+        for id in record.excluded {
+            bytes.extend_from_slice(&id.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0; 12]);
+        for _ in 0..2 {
+            bytes.extend_from_slice(&1_u32.to_le_bytes());
+            bytes.extend_from_slice(&[0x5a; 16]);
+            bytes.extend_from_slice(&0_u32.to_le_bytes());
+        }
+        bytes.extend_from_slice(&u32::try_from(record.listed.len()).unwrap().to_le_bytes());
+        for id in record.listed {
+            bytes.extend_from_slice(&id.to_le_bytes());
+            bytes.extend_from_slice(&[0; 13 * 8 + 3]);
+        }
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&record.word.to_le_bytes());
+    }
+    bytes
+}
+
+/// The member table with one record per `(name, listed)` member: no
+/// exclusion and the last word `3`.
+pub(crate) fn member_table(members: &[(&str, &[u32])]) -> Vec<u8> {
+    member_table_of(
+        &members
+            .iter()
+            .map(|&(name, listed)| RecordSpec {
+                name,
+                excluded: &[],
+                listed,
+                word: 3,
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// One member storage of a family document.
+pub(crate) struct MemberSpec<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) listed: &'a [u32],
+    pub(crate) occurrences: Vec<OccurrenceSpec>,
+}
+
+/// A family of assemblies: the root streams, the master storage holding the
+/// member table and one storage per member with the occurrences of its spec.
+/// `info` is the `FamilyInfo` stream; `table` replaces the member table when
+/// given.
+pub(crate) fn family_document(
+    info: Vec<u8>,
+    table: Option<Vec<u8>>,
+    members: &[MemberSpec<'_>],
+    sites: &[SiteSpec<'_>],
+) -> Vec<u8> {
+    let mut files = vec![(
+        "Master\u{1}/Family of Assemblies Members".to_owned(),
+        table.unwrap_or_else(|| {
+            member_table(
+                &members
+                    .iter()
+                    .map(|member| (member.name, member.listed))
+                    .collect::<Vec<_>>(),
+            )
+        }),
+    )];
+    for member in members {
+        let listed: Vec<u32> = member.occurrences.iter().map(|spec| spec.id).collect();
+        for (path, bytes) in assembly_streams(&listed, &member.occurrences, sites, None) {
+            files.push((format!("{}/{path}", member.name), bytes));
+        }
+        files.push((format!("{}/PSMroots", member.name), Vec::new()));
+        files.push((format!("{}/JSitesList", member.name), Vec::new()));
+    }
     let borrowed: Vec<(&str, Vec<u8>)> = files
         .iter()
         .map(|(name, bytes)| (name.as_str(), bytes.clone()))
         .collect();
-    document(&borrowed)
+    document_with_root(
+        FAMILY,
+        &[("FamilyInfo", info), ("FOAPublishData", vec![0; 8])],
+        &borrowed,
+    )
 }

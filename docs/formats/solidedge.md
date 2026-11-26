@@ -573,7 +573,7 @@ A `CLSID_JAsmReference` object stores:
 
 | Offset | Field |
 | ---: | --- |
-| 16 | `u32` state word; bit `0x04` set states that the occurrence is suppressed |
+| 16 | `u32` state word: `2` for a grounded occurrence, `4` for an occurrence that is not grounded |
 | 113 | `u32` identifier of the `CLSID_JSite` object of the referenced document |
 | 125 | nine `f64`: the rotation `R`, row-major |
 | 197 | three `f64`: the translation `t`, in metres |
@@ -581,9 +581,8 @@ A `CLSID_JAsmReference` object stores:
 
 Row `i` of `R` is the direction of the referenced document's axis `i` in the
 assembly. A point `p` of the referenced document, as a row vector, is at
-`p` `R` + `t` in the assembly. The state word is `2` for an occurrence that
-is not suppressed. Occurrences of one document name one `CLSID_JSite`
-object.
+`p` `R` + `t` in the assembly. Occurrences of one document name one
+`CLSID_JSite` object.
 
 ### 9.3 Referenced document
 
@@ -603,6 +602,80 @@ header, then a file moniker at offset 12:
 A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
 document.
+
+### 9.4 Occurrence structure list
+
+The stream `Preview/Structure/IOT` lists the occurrences that take part in
+the assembly. A 20-byte header holds a `u32` entry count `n` at offset 16.
+`n` entries of 20 bytes follow, so the stream is 20 + 20·`n` bytes long. An
+entry stores:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence |
+| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |
+
+An occurrence that the references collection (§9.1) lists and the stream
+does not list is suppressed. Its `CLSID_JAsmReference` object and the
+references collection are the same as for an active occurrence. A hidden
+occurrence keeps its entry.
+
+### 9.5 Family of assemblies
+
+A family-of-assemblies document has none of the ordinary root streams.
+Its root holds the streams `FamilyInfo`, `FamilyPropertyFlags` and
+`FOAPublishData`, a master storage named `Master` followed by U+0001, and one
+storage per family member. A member storage is named by the member name. The
+master storage and each member storage hold the streams of an ordinary
+document (`JSitesList`, `PSMroots`, `PSMcluster0`, `PSMtypetable`,
+`PSMspacemap/...`, `JSite<N>/\x01Ole` and the others); every stream path of
+this specification is relative to the storage of the selected member.
+
+A name is a `u32` count of UTF-16LE units that includes the terminating zero
+unit, followed by the units. `FamilyInfo` holds the name of a member. The
+document is read from the member storage with that name. Activating another
+member leaves `FamilyInfo` unchanged.
+
+`FOAPublishData` lists the members as records of the identifier `0xa000 + k`
+(`k` from 1) and the member name.
+
+The stream `Family of Assemblies Members` of the master storage holds the
+member table. It starts with a header, then one record per member. A record
+starts with the bytes `51 51 51 00`, the `u32` member identifier and the member
+name, followed by:
+
+| Field | Size |
+| --- | ---: |
+| `u32` count `c` | 4 |
+| `c` entries, each a `u32` object identifier | 4 `c` |
+| further bytes | 12 |
+| two blocks, each a `u32` `1`, a 16-byte class identifier and a `u32` `0` | 48 |
+| `u32` count `n` | 4 |
+| `n` entries | 111 `n` |
+| further bytes to the end of the record | |
+
+An entry of the second list is the `u32` identifier of a `CLSID_JAsmReference`
+object, the 13 `f64` words of the placement of §9.2 (rotation, translation and
+the word `1`) and 3 bytes. A record ends before the next record tag or at the
+end of the stream. The last `u32` of a record is its state word.
+
+The second list of every record names every occurrence of the family. The first list of a record names the
+occurrences that the member excludes; it is empty for a member that excludes
+none. The member storage of a member holds the `CLSID_JAsmReference` objects of
+the occurrences that the member does not exclude, and its references
+collection (§9.1) lists those objects. The placement of an occurrence is equal
+in every member storage that holds its object.
+
+The state word of the first record is 3 while the first member is the active
+member and 1 while another member is active. The state word of every other
+record is 3. In a family of two members the active member is therefore the
+first member when bit 1 (`2`) of the state word of the first record is set and
+the second member otherwise.
+
+The active member places the occurrences of its record's second list, taken
+from the references collection of the storage that `FamilyInfo` names. An
+occurrence in the first list of the active member's record is excluded: it
+keeps its object and placement and is suppressed in the active state.
 
 ## 10. Sheet metal
 

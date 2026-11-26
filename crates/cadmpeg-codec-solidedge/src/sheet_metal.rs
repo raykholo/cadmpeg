@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_container::compound::CompoundSnapshot;
+use crate::container::DocStreams;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -256,7 +256,7 @@ fn rule(
 /// `sheet-metal.rule-unread`.
 pub(crate) fn project_rule<'a>(
     ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+    snapshot: &DocStreams<'_, 'a>,
     definition: &ProductDefinitionId,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,

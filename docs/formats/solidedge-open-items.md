@@ -80,14 +80,6 @@
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
 
-### DR-1026. Occurrence visibility
-
-**Question.** Where does an assembly store that an occurrence is hidden?
-
-**Known.** Hiding an occurrence leaves its `CLSID_JAsmReference` object (§9.2), `JAsmRefAttr`, `JSitesList` and `PSMroots` unchanged. It changes the 512-byte `JVisibleData` stream throughout, and that stream does not read as plain records.
-
-**Need.** The encoding of `JVisibleData`, or an assembly saved with one occurrence hidden and its copy with the occurrence shown, plus copies with two and three hidden occurrences.
-
 ### DR-1027. Tapped hole with counterbore
 
 **Question.** Which stored value sizes the solid of a tapped hole that has a counterbore?
@@ -160,3 +152,11 @@
 
 **Need.** Close corners with each closure type, with each relief form and with a corner between flanges of an angle other than a right angle.
 
+
+### DR-1043. Member record fields and activation in larger families
+
+**Question.** What do the 12 bytes after the first list, the class identifiers of the two blocks, the bytes after the second list before the state word, and the last 3 bytes of a second-list entry state (§9.5)? Which member is active in a family of three or more members, and what do the bits of the state word other than bit 1 state?
+
+**Known.** Each block starts with `u32` `1` and ends with `u32` `0`. The 12 bytes are zero in every record. The 112 bytes after the second list, the state word excluded, are equal in every record of every family. The last 3 bytes of an entry are zero. The state word of the second record is 3 in both active states of a family of two members.
+
+**Need.** Families of three or more members with each member active in turn, a family whose `FamilyInfo` names a member other than the first, and members that differ in replaced and moved components, with the stored member table of each state.

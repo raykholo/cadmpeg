@@ -1038,17 +1038,10 @@ offset = 0
 size = 16
 note = "§9.2 states no field before the state word."
 
-[[record.field]]
-name = "state"
-offset = 16
-type = "u32"
-source = "spec"
-anchor = "| 16 | `u32` state word; bit `0x04` set states that the occurrence is suppressed |"
-
 [[record.gap]]
-offset = 20
-size = 93
-note = "§9.2 states no field between the state word and the site identifier."
+offset = 16
+size = 97
+note = "The state word of §9.2 is not decoded into a field; §9.2 states no other field before the site identifier."
 
 [[record.field]]
 name = "site"
@@ -1083,6 +1076,58 @@ type = "f64"
 value = 1.0
 source = "spec"
 anchor = "| 221 | `f64` `1` |"
+
+[[record]]
+name = "occurrence_structure_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.4"
+anchor = "A 20-byte header holds a `u32` entry count `n` at offset 16."
+size = 20
+
+[[record.gap]]
+offset = 0
+size = 16
+note = "§9.4 states no field before the entry count."
+
+[[record.field]]
+name = "count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "A 20-byte header holds a `u32` entry count `n` at offset 16."
+
+[[record]]
+name = "occurrence_structure_entry"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.4"
+anchor = "`n` entries of 20 bytes follow"
+size = 20
+
+[[record.field]]
+name = "flags"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence |"
+
+[[record.gap]]
+offset = 4
+size = 4
+note = "§9.4 states no field between the flags and the occurrence identifier."
+
+[[record.field]]
+name = "object"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |"
+
+[[record.gap]]
+offset = 12
+size = 8
+note = "§9.4 states no field after the occurrence identifier."
 
 [[record]]
 name = "file_moniker"

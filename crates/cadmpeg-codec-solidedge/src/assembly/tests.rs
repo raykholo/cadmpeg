@@ -8,7 +8,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 
 use crate::test_support::{
-    assembly_document, mirror_document, MirrorSpec, OccurrenceSpec, SiteSpec,
+    assembly_document, assembly_document_with_structure, family_document, family_info,
+    member_table, member_table_of, mirror_document, structure_stream, MemberSpec, MirrorSpec,
+    OccurrenceSpec, RecordSpec, SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -93,7 +95,7 @@ fn identity_occurrence_states_its_document() {
     let [occurrence] = occurrences(&result) else {
         panic!("one occurrence")
     };
-    assert_eq!(occurrence.suppressed, Some(false));
+    assert_eq!(occurrence.suppressed, None);
     assert_eq!(occurrence.visible, None);
     assert!(near(
         place(occurrence, [40.0, 5.0, -3.0]),
@@ -171,10 +173,11 @@ fn occurrences_of_one_site_share_a_definition() {
 }
 
 #[test]
-fn suppressed_bit_is_the_state_word_bit_four() {
-    for (state, suppressed) in [(2, false), (6, true), (4, true), (0, false)] {
+fn state_word_states_no_suppression() {
+    for state in [2, 4, 6, 0] {
         let result = single(|spec| spec.state = state);
-        assert_eq!(occurrences(&result)[0].suppressed, Some(suppressed));
+        assert_eq!(occurrences(&result).len(), 1);
+        assert_eq!(occurrences(&result)[0].suppressed, None);
     }
 }
 
@@ -261,6 +264,65 @@ fn site_that_is_not_a_site_object_is_not_transferred() {
     assert_eq!(count(&result, "assembly.occurrence-unread"), 1);
 }
 
+const SHOWN: u32 = 0x4000_0001;
+const HIDDEN: u32 = 0x4000_0003;
+
+/// Two occurrences, objects 20 and 22, with the structure list `structure`.
+fn pair(structure: Option<Vec<u8>>) -> DecodeResult {
+    decode(assembly_document_with_structure(
+        &[20, 22],
+        &[
+            OccurrenceSpec::at_identity(20, SITE),
+            OccurrenceSpec::at_identity(22, SITE),
+        ],
+        &[site()],
+        structure,
+    ))
+}
+
+#[test]
+fn structure_list_states_shown_hidden_and_suppressed() {
+    let result = pair(Some(structure_stream(&[(SHOWN, 20), (HIDDEN, 22)])));
+    let [first, second] = occurrences(&result) else {
+        panic!("two occurrences")
+    };
+    assert_eq!((first.suppressed, first.visible), (Some(false), Some(true)));
+    assert_eq!(
+        (second.suppressed, second.visible),
+        (Some(false), Some(false))
+    );
+    assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+
+    let result = pair(Some(structure_stream(&[(SHOWN, 20)])));
+    let [first, second] = occurrences(&result) else {
+        panic!("two occurrences")
+    };
+    assert_eq!((first.suppressed, first.visible), (Some(false), Some(true)));
+    assert_eq!(second.suppressed, Some(true));
+    assert_eq!(second.visible, None);
+    assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+}
+
+#[test]
+fn structure_list_of_the_wrong_length_states_nothing() {
+    let mut stream = structure_stream(&[(SHOWN, 20), (SHOWN, 22)]);
+    stream.pop();
+    let result = pair(Some(stream));
+    for occurrence in occurrences(&result) {
+        assert_eq!((occurrence.suppressed, occurrence.visible), (None, None));
+    }
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
+}
+
+#[test]
+fn structure_list_naming_an_occurrence_twice_states_nothing() {
+    let result = pair(Some(structure_stream(&[(SHOWN, 20), (HIDDEN, 20)])));
+    for occurrence in occurrences(&result) {
+        assert_eq!(occurrence.suppressed, None);
+    }
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
+}
+
 #[test]
 fn no_occurrence_adds_no_visibility_loss() {
     let result = decode(assembly_document(&[], &[], &[]));
@@ -279,4 +341,124 @@ fn document_without_a_collection_adds_nothing() {
     assert!(codes(&result)
         .iter()
         .all(|code| !code.starts_with("assembly.")));
+}
+
+fn member<'a>(name: &'a str, listed: &'a [u32], ids: &[u32]) -> MemberSpec<'a> {
+    MemberSpec {
+        name,
+        listed,
+        occurrences: ids
+            .iter()
+            .map(|&id| OccurrenceSpec::at_identity(id, SITE))
+            .collect(),
+    }
+}
+
+fn ids(result: &DecodeResult) -> Vec<String> {
+    occurrences(result)
+        .iter()
+        .map(|occurrence| occurrence.id.to_string())
+        .collect()
+}
+
+#[test]
+fn family_places_the_occurrences_the_active_member_lists() {
+    let members = [
+        member("alpha", &[20], &[20, 21]),
+        member("beta", &[20, 21], &[20]),
+    ];
+    let result = decode(family_document(
+        family_info("alpha"),
+        None,
+        &members,
+        &[site()],
+    ));
+    assert_eq!(ids(&result), ["solidedge:model:occurrence#20"]);
+    assert_eq!(count(&result, "family.member-unread"), 0);
+    let result = decode(family_document(
+        family_info("BETA"),
+        None,
+        &members,
+        &[site()],
+    ));
+    assert_eq!(ids(&result), ["solidedge:model:occurrence#20"]);
+    let all = [member("alpha", &[20, 21], &[20, 21])];
+    let result = decode(family_document(family_info("alpha"), None, &all, &[site()]));
+    assert_eq!(occurrences(&result).len(), 2);
+}
+
+#[test]
+fn family_without_a_member_record_keeps_every_occurrence() {
+    let members = [member("alpha", &[20], &[20, 21])];
+    let table = member_table(&[("other", &[20])]);
+    let result = decode(family_document(
+        family_info("alpha"),
+        Some(table),
+        &members,
+        &[site()],
+    ));
+    assert_eq!(occurrences(&result).len(), 2);
+    assert_eq!(count(&result, "family.member-unread"), 1);
+}
+
+#[test]
+fn family_naming_no_member_storage_places_nothing() {
+    let members = [member("alpha", &[20], &[20])];
+    let result = decode(family_document(
+        family_info("gone"),
+        None,
+        &members,
+        &[site()],
+    ));
+    assert!(occurrences(&result).is_empty());
+    assert_eq!(count(&result, "family.member-unread"), 1);
+}
+
+/// Occurrence identifiers of a family of four, in insertion order.
+const FOUR: [u32; 4] = [20, 21, 22, 23];
+
+/// The suppression of each occurrence of a family of four whose second member
+/// excludes `excluded`, with the first record's last word `word`.
+fn suppression(word: u32, excluded: &[u32]) -> Vec<Option<bool>> {
+    let table = member_table_of(&[
+        RecordSpec {
+            name: "alpha",
+            excluded: &[],
+            listed: &FOUR,
+            word,
+        },
+        RecordSpec {
+            name: "beta",
+            excluded,
+            listed: &FOUR,
+            word: 3,
+        },
+    ]);
+    let members = [member("alpha", &FOUR, &FOUR)];
+    let result = decode(family_document(
+        family_info("alpha"),
+        Some(table),
+        &members,
+        &[site()],
+    ));
+    assert_eq!(count(&result, "family.member-unread"), 0);
+    occurrences(&result)
+        .iter()
+        .map(|occurrence| occurrence.suppressed)
+        .collect()
+}
+
+#[test]
+fn family_member_state_suppresses_the_excluded_occurrences_it_keeps() {
+    // The family documents hold no structure list, so only an excluded
+    // occurrence states its suppression.
+    let off = None;
+    let on = Some(true);
+    // The first member is active: nothing is excluded.
+    assert_eq!(suppression(3, &[21]), [off; 4]);
+    // The second member is active.
+    assert_eq!(suppression(1, &[]), [off; 4]);
+    assert_eq!(suppression(1, &[20]), [on, off, off, off]);
+    assert_eq!(suppression(1, &[23]), [off, off, off, on]);
+    assert_eq!(suppression(1, &[21, 23]), [off, on, off, on]);
 }

@@ -16,6 +16,7 @@ mod dimension;
 mod dressup;
 mod edge;
 mod extents;
+mod family;
 mod features;
 mod geometry;
 mod intersection;
