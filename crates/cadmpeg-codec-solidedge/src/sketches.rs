@@ -89,9 +89,6 @@ fn profile_offsets(function: &str) -> &'static [usize] {
         | "JMBaseContourFlangeFunction"
         | "JMFastPatternFunction" => &[PROFILE_AFTER_NAME_SHORT],
         "JMHelixProtrusionFunction" => &[PROFILE_AFTER_NAME_HELIX],
-        "JMHoleFunction" | "JMFlangeFunction" | "JMFastPatternFunction" => {
-            &[PROFILE_AFTER_NAME_SHORT]
-        }
         _ => &[],
     }
 }
