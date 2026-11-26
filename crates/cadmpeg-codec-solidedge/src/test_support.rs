@@ -1160,6 +1160,9 @@ pub(crate) use flange::{flange_document, FlangeSpec};
 mod kinds;
 pub(crate) use kinds::{kind_document, EdgeSpec, Operand};
 
+mod helix;
+pub(crate) use helix::{helix_document, HelixSpec};
+
 pub(crate) fn with_partitions(streams: &[Vec<u8>]) -> Vec<u8> {
     let fat = 2 + 8 * streams.len();
     let mut file = vec![0u8; (fat + 2) * 512];

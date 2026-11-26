@@ -102,6 +102,33 @@ pub(crate) struct Profile {
     arcs: Vec<ModelArc>,
 }
 
+impl Profile {
+    /// Sample points of the profile curves: the line ends, the arc ends and
+    /// the four quadrant points of each circle.
+    pub(crate) fn samples(&self) -> Vec<Vector3> {
+        let mut samples = self.points.clone();
+        for arc in &self.arcs {
+            let at = |t: f64| {
+                let (cos, sin) = (t.cos(), t.sin());
+                Vector3::new(
+                    arc.centre.x + arc.u.x * cos + arc.v.x * sin,
+                    arc.centre.y + arc.u.y * cos + arc.v.y * sin,
+                    arc.centre.z + arc.u.z * cos + arc.v.z * sin,
+                )
+            };
+            if arc.sweep >= std::f64::consts::TAU {
+                for quarter in 0..4 {
+                    samples.push(at(f64::from(quarter) * std::f64::consts::FRAC_PI_2));
+                }
+            } else {
+                samples.push(at(arc.start));
+                samples.push(at(arc.start + arc.sweep));
+            }
+        }
+        samples
+    }
+}
+
 /// A circle or arc in model space: the points `centre + u cos t + v sin t`
 /// for `t` from `start` through `sweep` radians.
 struct ModelArc {
@@ -307,7 +334,19 @@ fn axis(
     object: &Object<'_>,
     end: usize,
 ) -> Result<AxisValue, String> {
-    let id = slot(object, end, AXIS_AFTER_NAME)?;
+    axis_at(cluster, types, object, end, AXIS_AFTER_NAME)
+}
+
+/// The axis of the `CLSID_JMRefAxis` object stored `after` bytes past the
+/// function name ending at `end` (§6.4), in millimetres.
+pub(crate) fn axis_at(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+    end: usize,
+    after: usize,
+) -> Result<AxisValue, String> {
+    let id = slot(object, end, after)?;
     let (found, class) = named(cluster, types, id, "axis")?;
     if class != AXIS_CLASS {
         return Err(format!("the axis object is of class {class}"));

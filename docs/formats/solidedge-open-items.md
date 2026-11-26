@@ -160,3 +160,11 @@
 **Known.** Each block starts with `u32` `1` and ends with `u32` `0`. The 12 bytes are zero in every record. The 112 bytes after the second list, the state word excluded, are equal in every record of every family. The last 3 bytes of an entry are zero. The state word of the second record is 3 in both active states of a family of two members.
 
 **Need.** Families of three or more members with each member active in turn, a family whose `FamilyInfo` names a member other than the first, and members that differ in replaced and moved components, with the stored member table of each state.
+
+### DR-1054. Helical protrusion constants, taper and start
+
+**Question.** Which options set the helical protrusion slots at 352, 408, 436, 464, 492 and 520 (§6.5), and where does a helical protrusion store a taper, a start angle and a start away from the profile?
+
+**Known.** The slots at 352, 408, 436, 464 and 492 hold `0` and the slot at 520 holds `1` in every stored helical protrusion. Every stored helical protrusion has a finite extent and a circular section.
+
+**Need.** Helical protrusions with a taper angle, with a taper ratio, with a start angle, with a start plane away from the profile, with the profile on each side of the axis, and a copy of each with one option cleared.
