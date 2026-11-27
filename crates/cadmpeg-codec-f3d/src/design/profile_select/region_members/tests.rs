@@ -66,8 +66,8 @@ fn an_unlisted_corner_arc_closes_the_selected_region() {
             tail_marker: None,
         })
         .collect::<Vec<_>>();
-    let members = (1..=4).map(|primary| serde_json::json!({"kind_offset":0,"curve_primary_id":primary,"curve_primary_id_offset":0,"incidence_words_offset":0,"incidence_words":[0,0,0,0,1,1,0,0],"kind":3})).collect::<Vec<_>>();
-    let profile: DesignSketchProfileOperand = serde_json::from_value(serde_json::json!({
+    let members = (1..=4).map(|primary| cadmpeg_core::json!({"kind_offset":0,"curve_primary_id":primary,"curve_primary_id_offset":0,"incidence_words_offset":0,"incidence_words":[0,0,0,0,1,1,0,0],"kind":3})).collect::<Vec<_>>();
+    let profile: DesignSketchProfileOperand = cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "scope_reference_ordinal":0,"record_index":1,"byte_offset":0,"class_tag":"411","asset_id":"00000000-0000-0000-0000-000000000001","asset_id_offset":1,"entity_id":"1_42","entity_suffix":42,"entity_reference_offset":2,"paired_class_tag":"262","paired_byte_offset":3,
         "region_selection":{"record_index":4,"byte_offset":0,"class_tag":"382","region_count_offset":0,"regions":[{"member_count_offset":0,"members":members}],"companion_class_tag":"291","companion_byte_offset":0}
     })).unwrap();

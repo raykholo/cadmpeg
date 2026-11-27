@@ -199,10 +199,14 @@ fn numbered_inch_size_retains_decimal_and_number() {
     assert_eq!(size.numbered_inches(), Some(0.216));
     assert!(!size.is_decimal());
     let mut wire = thread_wire();
-    wire["nominal_size_text"] = serde_json::json!("0.216(#12)");
-    wire["nominal_size"] = serde_json::json!(0.216);
-    let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(construction).unwrap(), wire);
+    wire["nominal_size_text"] = cadmpeg_core::json!("0.216(#12)");
+    wire["nominal_size"] = cadmpeg_core::json!(0.216);
+    let construction: DesignThreadConstruction =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(construction).unwrap(),
+        wire
+    );
     for text in [
         "0(#12)",
         "-0.216(#12)",
