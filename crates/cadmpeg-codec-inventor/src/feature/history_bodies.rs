@@ -30,7 +30,7 @@ use super::history_views::{decode_scratch, Scratch};
 use crate::kernel::ActiveCarrier;
 
 /// Cap of nests per part. A nest materializes and decodes a whole history state.
-pub(crate) const MAX_HISTORY_BODIES: usize = 8;
+pub(crate) const MAX_HISTORY_BODIES: usize = 64;
 /// Cap of records materialized for all nests of a part.
 pub(crate) const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 /// Scope of every identity in a nest.
@@ -127,6 +127,27 @@ impl Outcome {
 fn wants(records: &[FeatureHistoryState], outcome: &mut Outcome) -> Vec<Want> {
     let mut wants = Vec::new();
     for (record, state) in records.iter().enumerate() {
+        if state.kind == "native:DeleteFace" {
+            if let (Binding::Bound, Some(key), Some(after)) =
+                (state.binding, state.body_key, state.state_after)
+            {
+                for (role, ordinal) in [
+                    (Role::Split, state.state_before),
+                    (Role::Base, Some(after.ordinal)),
+                ] {
+                    if let Some(ordinal) = ordinal {
+                        wants.push(Want {
+                            record,
+                            ordinal,
+                            state_id: 0,
+                            key,
+                            role,
+                        });
+                    }
+                }
+            }
+            continue;
+        }
         let role = match state.kind.as_str() {
             SPLIT_TAG => Role::Split,
             BASE_TAG | NATIVE_BASE_KIND => Role::Base,
@@ -239,6 +260,30 @@ pub(crate) fn build(
                 .iter()
                 .find(|(_, candidate)| Some(*candidate) == key)
                 .map(|(body, _)| body.as_str());
+            if let Some(body) = body {
+                if let Ok((reached, _)) = reach(ctx, &scratch.geometry, body) {
+                    let faces = scratch
+                        .geometry
+                        .faces
+                        .iter()
+                        .filter(|f| reached.contains(f.id.as_str()))
+                        .count();
+                    let kind = scratch
+                        .geometry
+                        .bodies
+                        .iter()
+                        .find(|b| b.id.as_str() == body)
+                        .map(|b| format!("{:?}", b.kind));
+                    eprintln!(
+                        "DFPROBE feat={} role={:?} ord={} faces={} kind={:?}",
+                        records[wants[index].record].feature,
+                        wants[index].role,
+                        ordinal,
+                        faces,
+                        kind
+                    );
+                }
+            }
             let result = match body {
                 Some(body) => extract(ctx, &scratch.geometry, body),
                 None => Ok(Extract::Absent),

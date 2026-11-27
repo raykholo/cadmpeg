@@ -368,6 +368,7 @@ enum Check {
     None,
     Split,
     Base,
+    Delete,
 }
 
 /// One `PmDc` feature joined to its history states.
@@ -515,6 +516,32 @@ pub(crate) fn join(index: &StateIndex, inputs: &Inputs<'_>) -> Vec<FeatureHistor
                 })
                 .map(|(_, output)| output.id()),
             ),
+            "native:DeleteFace" => (
+                Check::Delete,
+                feature
+                    .properties
+                    .references()
+                    .get(3)
+                    .and_then(|reference| {
+                        properties.get(&(
+                            feature.identity.segment_token.as_str(),
+                            reference.record_ordinal()?,
+                        ))
+                    })
+                    .and_then(|selection| match &selection.kind {
+                        super::PmDcFeaturePropertyKind::References { items, .. } => {
+                            items.references().first().copied()
+                        }
+                        _ => None,
+                    })
+                    .and_then(|member| {
+                        properties.get(&(
+                            feature.identity.segment_token.as_str(),
+                            member.record_ordinal()?,
+                        ))
+                    })
+                    .map(|wrapper| wrapper.id()),
+            ),
             _ => (Check::None, None),
         };
         let link = wrapper
@@ -593,6 +620,7 @@ fn bind(
     let confirmed = match check {
         Check::Split => in_before && !in_after,
         Check::Base => in_after && !in_before,
+        Check::Delete => in_before && in_after,
         Check::None => true,
     };
     if !confirmed {
