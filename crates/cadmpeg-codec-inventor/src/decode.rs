@@ -1241,6 +1241,9 @@ fn decode_container<'a>(
             &feature_inventory,
             &ir.model.features,
         ));
+        losses.extend(crate::feature::delete_face::assumption_losses(
+            &ir.model.features,
+        ));
         losses.extend(unresolved.edge_treatment_losses);
         losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.split_losses);

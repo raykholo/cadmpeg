@@ -2117,10 +2117,40 @@ fn validate_features(
                 cadmpeg_ir::features::FeatureOperation::DeleteFace { .. }
             )
         ) {
-            if let Err(reason) = crate::feature::delete_face::admission(raw_feature) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::delete_face::operation(
+                raw_feature,
+                |reference| {
+                    let ordinal = reference.record_ordinal()?;
+                    feature_properties.get(&(token, ordinal))?.as_ref().copied()
+                },
+                |ordinal| {
+                    thicken_record_types
+                        .get(&(token, ordinal))?
+                        .as_ref()
+                        .copied()
+                },
+            );
+            let matches_operands = matches!(
+                (&expected, feature.evaluation.definition()),
+                (
+                    Ok(expected),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(actual)
+                ) if expected == actual
+            );
+            if !matches_operands {
                 findings.push(finding(
                     Check::NativeLinks,
-                    format!("Inventor neutral DeleteFace refused: {}.", reason.detail()),
+                    match expected {
+                        Err(reason) => format!(
+                            "Inventor neutral DeleteFace refused: {}.",
+                            reason.detail()
+                        ),
+                        Ok(_) => {
+                            "Inventor neutral DeleteFace operands do not match their PmDc slots"
+                                .to_owned()
+                        }
+                    },
                     Some(feature.id.as_str().to_owned()),
                 ));
             }

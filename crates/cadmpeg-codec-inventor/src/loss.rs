@@ -203,8 +203,10 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleVersionUnread,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
-    /// `DeleteFace` Boolean construction roles remain unresolved.
+    /// `DeleteFace` operands differ from the admitted four-slot form.
     FeatureDeleteFaceOperandsNative,
+    /// A `DeleteFace` slot-1 control reads as one construction role without a stored proof.
+    FeatureDeleteFaceHealAssumed,
     /// Fillet construction operands remain native.
     FeatureFilletOperandsNative,
     /// Chamfer construction operands remain native.
@@ -445,6 +447,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalStyleVersionUnread,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
+        Self::FeatureDeleteFaceHealAssumed,
         Self::FeatureFilletOperandsNative,
         Self::FeatureChamferOperandsNative,
         Self::FeatureMirrorOperandsNative,
@@ -655,6 +658,7 @@ impl InventorLossCode {
             Self::FeatureChamferOperandsNative => "feature.chamfer-operands-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureDeleteFaceOperandsNative => "feature.delete-face-operands-native",
+            Self::FeatureDeleteFaceHealAssumed => "feature.delete-face-heal-assumed",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
             Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
@@ -823,6 +827,7 @@ impl InventorLossCode {
             | Self::FeatureChamferOperandsNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureDeleteFaceOperandsNative
+            | Self::FeatureDeleteFaceHealAssumed
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
             | Self::FeatureRevolveControlUnresolved
@@ -1012,6 +1017,7 @@ mod tests {
                 "feature.sheet-metal-style-version-unread",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
+                "feature.delete-face-heal-assumed",
                 "feature.fillet-operands-native",
                 "feature.chamfer-operands-native",
                 "feature.mirror-operands-native",

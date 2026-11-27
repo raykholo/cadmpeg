@@ -436,6 +436,8 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     SheetMetalAttachmentSelections,
     TransformList,
     BodySelection,
+    /// The slot-0 face naming selector list of a DeleteFace.
+    FaceSelectors,
     /// The slot-4 list of an Unfold or Refold.
     SheetMetalFoldList,
 }
@@ -1163,7 +1165,8 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         _ => sheet_metal::property_parser(type_id)
             .or_else(|| split::property_parser(type_id))
             .or_else(|| motion::parser(type_id))
-            .or_else(|| thicken::property_parser(type_id)),
+            .or_else(|| thicken::property_parser(type_id))
+            .or_else(|| delete_face::property_parser(type_id)),
     }
 }
 
@@ -2605,6 +2608,14 @@ pub(crate) fn project(
                 .transpose()?
                 .map(|feature| (feature, None)),
         };
+        let value = match value {
+            Some(value) => Some(value),
+            None => label
+                .filter(|label| label.class_id() == delete_face::CLASS_ID)
+                .and_then(|label| project_delete_face(ctx, feature, label, &index, inventory))
+                .transpose()?
+                .map(|feature| (feature, None)),
+        };
         match value {
             Some((projected_feature, result)) => {
                 neutral += 1;
@@ -3308,6 +3319,54 @@ pub(crate) fn thread_face_collection<'a>(
         }
     }
     Some(faces)
+}
+
+fn project_delete_face(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    inventory: &FeatureInventory,
+) -> Option<Result<Feature, CodecError>> {
+    let token = source.identity.segment_token.as_str();
+    let operation = delete_face::operation(
+        source,
+        |reference| resolve_property(token, reference.index(), index),
+        |ordinal| {
+            inventory
+                .record_types
+                .get(&source.identity.segment_token)?
+                .get(&ordinal)?
+                .as_deref()
+        },
+    )
+    .ok()?;
+    if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
+        return Some(Err(error));
+    }
+    let key = match source.identity.key() {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(Feature {
+        product_definition: None,
+        id: FeatureId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+            key,
+        ),
+        ordinal: u64::from(label.index),
+        name: label.name().map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: boolean_properties(source, &[1], index),
+        source_tag: Some(delete_face::SOURCE_TAG.into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(operation),
+        ),
+        native_ref: Some(source.id()),
+    }))
 }
 
 fn project_thread(
