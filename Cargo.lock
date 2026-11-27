@@ -252,6 +252,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "serde_json",
 ]
