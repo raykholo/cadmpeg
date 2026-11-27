@@ -179,6 +179,12 @@ pub(super) fn hole_termination(
         .iter()
         .filter(|(_, p)| p.source_kind() == "HoleDepth");
     let depth = depths.next();
+    if std::env::var_os("HOLEDBG").is_some() {
+        let n = parameters.iter().filter(|(_, p)| p.source_kind() == "HoleDepth").count();
+        let hsf = hole_start_faces_only(scope, face_operands);
+        let ef = hole_extent_face(scope, groups, face_operands).is_some();
+        eprintln!("HOLEDBG scope={} ctl={:?} snd={:?} ndepth={} hsf={:?} extface={}", scope.id, extent.extent_control, extent.saved_non_distance_depth, n, hsf, ef);
+    }
     if depths.next().is_some() {
         return None;
     }
