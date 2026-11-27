@@ -192,8 +192,6 @@ A loft result with the `NMx_*` class chains requires a result check for a side f
 
 A line whose stored endpoints differ, with each coordinate difference at most four times the machine epsilon of binary64 times the larger coordinate magnitude of the pair, is read as one position and reports `sketch.line-endpoints-rounding-assumed`. Such a difference requires a rule that proves it is rounding.
 
-DeleteFace Boolean slots 1 and 2 require their construction roles and polarity. Its slot-3 body selection requires operand/result ownership and a body-revision join. Its slot-0 face items require selected-input-face revision joins.
-
 Tagging slot 0 requires its input and result body revisions, its topology-naming effect, and its geometry-effect rule before a neutral construction or a non-modeling history node can represent it. Multiple slot-0 collection members require their body-order and naming rules. The Tagging state, outline value, property-list metadata, collection-list metadata, and other segment versions require their meanings.
 
 ### DE-02. Compound parameter units and function expressions
@@ -385,6 +383,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 **Need.** At least three distinct designs with stored states before and after the Cut. The profile, active depth parameter or termination rule, sheet-normal relation, and direction require exact joins that reproduce each stored result. Controlled changes must separate a zero depth, an inactive parameter, and a sheet-thickness termination.
 
 **Note.** The decoder reports `feature.extrusion-operands-native` for this form. Projection and validation use the same extrusion-operand predicate.
+
+### DE-28. DeleteFace operands
+
+**Question.** What do the slot-1 Boolean values of a DeleteFace feature select, and how do its slot-0 face selectors, slot-2 selection, and slot-3 result array join to the faces of the body before and after the feature?
+
+**Known.** Section 13.7 defines the four slots and their record grammars. The slot-1 Boolean is false in nearly all stored features and true in one design. The slot-2 body selection has one member in every stored feature except one face-collection form.
+
+**Need.** The meaning of a true slot 1 requires at least three independent designs with a true value and the stored face sets before and after the feature. Each face selector requires a join to a face revision of the input body, and the faces absent from the result body require agreement with the selected set. The slot-3 array requires its result-entity role.
 
 ### DE-27. Rectangular-pattern direction from several cached lines
 

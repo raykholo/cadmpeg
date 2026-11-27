@@ -1394,12 +1394,12 @@ Feature-label class `686e16d3334f637161a6a19bdd3d2be8` identifies DeleteFace. It
 
 | Slot | Record type | Property |
 | ---: | --- | --- |
-| 0 | `f1b2bc24d01121dd0008d0bc0663dc09` | Face collection |
+| 0 | `744d8790d011f8d10008cabc0663dc09` | Face selector list |
 | 1 | `284d8790d011f8d10008cabc0663dc09` | Boolean |
-| 2 | `284d8790d011f8d10008cabc0663dc09` | Boolean |
-| 3 | `83aadad54f4375dacd1003b260a8a422` | Ordered body selection |
+| 2 | `83aadad54f4375dacd1003b260a8a422` ordered body selection, or `f1b2bc24d01121dd0008d0bc0663dc09` face collection | Body or face selection |
+| 3 | `e0291ea3c5454f60dc9ca38c8e08262c` | Result entity array |
 
-The face collection references face-item records of type `ccb59f50d1114f6b0008a1ba32a3dc09`. Each face item stores its type-2 u32 index-reference list with the grammar in section 13. The ordered body selection references surface-body wrappers of type `474d8790d011f8d10008cabc0663dc09`. Property references, face-collection member references, and body-selection member references select records in the feature's PmDc segment.
+Every property reference is qualified. The type-`744d8790d011f8d10008cabc0663dc09` record stores the versioned content header, a type-2 reference list with one or more members, and one qualified reference to its own record. Each list member is a face naming selector of type `2c81aa03d211ff2600081fbb32a3dc09` in the feature's PmDc segment. The ordered body selection has one member. The member is a surface-body wrapper of type `474d8790d011f8d10008cabc0663dc09` or a record of type `aa677f3cd74d8a84040c58894ab06552`. The face-collection form has the same members as slot 0 and no body selection. The type-`e0291ea3c5454f60dc9ca38c8e08262c` record stores the versioned content header, a type-8 reference array with one member, a qualified reference to the record whose ordinal follows the feature's ordinal, and one qualified reference to its own record. Property references, selector references, and body-selection member references select records in the feature's PmDc segment.
 
 ### 13.8 Tagging selections
 
