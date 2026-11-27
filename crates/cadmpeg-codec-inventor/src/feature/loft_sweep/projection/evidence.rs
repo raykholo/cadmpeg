@@ -804,6 +804,7 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
     let mut caps = HashSet::new();
     let mut first_curves = HashSet::new();
     let mut last_curves = HashSet::new();
+    let (mut ncap, mut nside, mut nonplane, mut badcap, mut badside, mut dupcap) = (0, 0, 0, 0, 0, 0);
     for named in legacy_owned_faces(ir, generator)? {
         let surface = geometry
             .surfaces
@@ -813,25 +814,32 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
             &surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
         ) {
-            return None;
+            nonplane += 1;
+            continue;
         }
         if named.cap {
+            ncap += 1;
             let [0, section, 260] = named.tail[..] else {
-                return None;
+                badcap += 1;
+                continue;
             };
             if !sections.iter().any(|source| i64::from(*source) == section) || !caps.insert(section)
             {
-                return None;
+                dupcap += 1;
+                continue;
             }
         } else {
-            let (first, last) = legacy_side_groups(&named.tail, sections)?;
-            if !first.into_iter().all(|curve| first_curves.insert(curve))
-                || !last.into_iter().all(|curve| last_curves.insert(curve))
-            {
-                return None;
-            }
+            nside += 1;
+            let Some((first, last)) = legacy_side_groups(&named.tail, sections) else { badside += 1; continue; };
+            for c in first { first_curves.insert(c); }
+            for c in last { last_curves.insert(c); }
         }
     }
+    let e0 = section_curves(0);
+    let e1 = section_curves(1);
+    eprintln!("DBG legacy ncap={ncap} caps={} nside={nside} nonplane={nonplane} badcap={badcap} dupcap={dupcap} badside={badside} found0={} exp0={} hit0={} found1={} exp1={} hit1={}",
+        caps.len(), first_curves.len(), e0.len(), e0.iter().filter(|n| first_curves.contains(n)).count(),
+        last_curves.len(), e1.len(), e1.iter().filter(|n| last_curves.contains(n)).count());
     let complete = |found: &HashSet<i64>, section: usize| {
         let expected = section_curves(section);
         !expected.is_empty()
