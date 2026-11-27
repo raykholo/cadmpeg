@@ -1628,6 +1628,23 @@ An edge name record of type `a6e032bfd111464a000888ba32a3dc09` has the prefix of
 
 Each selection item of an intent gives one target. An item gives the target that all of its selectors select, when they agree. An unresolved item has a selector without a selected entity, a malformed selector, or two selectors that select different entities.
 
+### 13.12 Stitch Surface
+
+Feature-label class `608ba39ed6117473279943ad7fbe0b63` identifies a Stitch Surface. Its feature record has six property slots and property-list metadata `[6, 0]`:
+
+| Slot | Property |
+| --- | --- |
+| 0 | A record of type `744d8790d011f8d10008cabc0663dc09`, the record that every feature stores in slot 0 |
+| 1 | Null |
+| 2 | Boolean property |
+| 3 | Boundary-patch reference list with at most one item |
+| 4 | Boolean property |
+| 5 | Surface-body wrapper of the result |
+
+The record stores no reference to an operand. The operands of the stitch are the bodies that leave the model between `state_before` and `state_after` of the feature (section 13.10): the body keys that are live in `state_before` and in no body record live in `state_after`. The result is the one body key that is live in `state_after` and in no body record live in `state_before`. It is the body key of the slot-5 wrapper (section 13.4). Two or more operands leave the model. Every operand body has at least one face, and the face count of the result body is the sum of the face counts of the operands. A feature that does not show this rule has no resolved operands.
+
+The slot-3 list item is an enumeration property of type `28be9a72d111440900084eba32a3dc09`.
+
 ## 14. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.
