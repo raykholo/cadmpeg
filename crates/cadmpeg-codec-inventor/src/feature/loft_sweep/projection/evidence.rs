@@ -598,14 +598,17 @@ pub(in crate::feature::loft_sweep) fn loft_join_proof(
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
 ) -> Result<(), Unproved> {
-    let states = states.ok_or(Unproved::Result)?;
+    let states = states.ok_or_else(|| { eprintln!("DBG nostates"); Unproved::Result })?;
     let after = states.after(ctx, generator).map_err(Unproved::Codec)?;
     let foreign = match &*after {
         StateModel::Model(model) => {
-            joined_result(model, generator, sections, &section_curves).ok_or(Unproved::Result)?
+            eprintln!("DBG after model faces={} solid={}", model.geometry.faces.len(), solid_faces(model));
+            let r = joined_result(model, generator, sections, &section_curves);
+            eprintln!("DBG joined_result={:?}", r);
+            r.ok_or(Unproved::Result)?
         }
-        StateModel::Unavailable => return Err(Unproved::Result),
-        StateModel::Failed => return Err(Unproved::StateFailed),
+        StateModel::Unavailable => { eprintln!("DBG after unavailable"); return Err(Unproved::Result) }
+        StateModel::Failed => { eprintln!("DBG after failed"); return Err(Unproved::StateFailed) }
         StateModel::Bounded => return Err(Unproved::Bounded),
     };
     if foreign == 0 {
@@ -613,8 +616,8 @@ pub(in crate::feature::loft_sweep) fn loft_join_proof(
     }
     let before = states.before(ctx, generator).map_err(Unproved::Codec)?;
     match &*before {
-        StateModel::Model(model) if solid_faces(model) >= foreign => Ok(()),
-        StateModel::Model(_) | StateModel::Unavailable => Err(Unproved::NotJoined),
+        StateModel::Model(model) => { eprintln!("DBG before solid={} foreign={}", solid_faces(model), foreign); if solid_faces(model) >= foreign { Ok(()) } else { Err(Unproved::NotJoined) } }
+        StateModel::Unavailable => { eprintln!("DBG before unavailable"); Err(Unproved::NotJoined) }
         StateModel::Failed => Err(Unproved::StateFailed),
         StateModel::Bounded => Err(Unproved::Bounded),
     }
@@ -656,7 +659,8 @@ fn joined_result(
         |section, name| section_curves(section).contains(&name),
         true,
     )
-    .or_else(|| legacy_loft(ir, generator, sections, section_curves))?;
+    .or_else(|| legacy_loft(ir, generator, sections, section_curves))
+    .or_else(|| { eprintln!("DBG loft_in/legacy fail owned_joined={} legacy_owned={}", owned_faces_in(ir, generator, true).is_some(), legacy_owned_faces(ir, generator).is_some()); None })?;
     let owned = owned_faces_in(ir, generator, true)
         .map(|faces| {
             faces
