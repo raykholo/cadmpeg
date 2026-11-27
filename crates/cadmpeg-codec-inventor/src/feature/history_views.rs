@@ -196,18 +196,15 @@ pub(crate) fn decode_scratch(
     }
 }
 
-impl ResultStates for StateViews<'_, '_> {
-    fn after(
+impl StateViews<'_, '_> {
+    /// The model of the state at oldest-first `ordinal`. Requests for one
+    /// state share one decode.
+    pub(crate) fn at(
         &self,
         ctx: &DecodeContext<'_>,
-        source_index: u32,
+        ordinal: u32,
     ) -> Result<Rc<StateModel>, CodecError> {
-        // Bind the state and the header first: a source that no state lists
-        // never builds the archive.
-        let (Some(&ordinal), Ok(header)) = (
-            self.closed.index.first.get(&source_index),
-            self.carrier.header.as_ref(),
-        ) else {
+        let Ok(header) = self.carrier.header.as_ref() else {
             return Ok(Rc::new(StateModel::Unavailable));
         };
         if let Some(model) = self.decoded.borrow().get(&ordinal) {
@@ -225,6 +222,21 @@ impl ResultStates for StateViews<'_, '_> {
             );
         }
         Ok(model)
+    }
+}
+
+impl ResultStates for StateViews<'_, '_> {
+    fn after(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
+        // Bind the state first: a source that no state lists never builds the
+        // archive.
+        let Some(&ordinal) = self.closed.index.first.get(&source_index) else {
+            return Ok(Rc::new(StateModel::Unavailable));
+        };
+        self.at(ctx, ordinal)
     }
 }
 

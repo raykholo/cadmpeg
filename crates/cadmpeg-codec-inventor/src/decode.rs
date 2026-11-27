@@ -872,6 +872,7 @@ fn decode_container<'a>(
                 .set_arena(ctx, "body_wrapper_links", &links)?;
         }
         if delivered >= DecodeDepth::Design {
+            let stitch_index = crate::feature::history_states::StateIndex::default();
             if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
                 let history = crate::feature::history_states::project(
                     ctx,
@@ -910,6 +911,23 @@ fn decode_container<'a>(
                     ));
                 }
                 ir.model.history_bodies = history.bodies.bodies;
+                let outcome = crate::feature::stitch::resolve(
+                    ctx,
+                    state_views.as_ref(),
+                    match &history_read {
+                        crate::feature::history_states::Read::Closed(closed) => &closed.index,
+                        _ => &stitch_index,
+                    },
+                    &history.records,
+                    &crate::feature::stitch::Inputs {
+                        kernel_links: &feature_inventory.kernel_entity_links,
+                        wrapper_links: &links,
+                        properties: &feature_inventory.properties,
+                        features: &feature_inventory.features,
+                    },
+                    &mut ir.model.features,
+                )?;
+                losses.extend(crate::feature::stitch::losses(&outcome));
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
