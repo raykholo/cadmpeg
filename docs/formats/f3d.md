@@ -652,6 +652,8 @@ An executed `Fillet` or `Chamfer` group whose member recipes each reference exac
 
 A legacy single-member `Fillet` or `Chamfer` group with a zero-payload two-side recipe may use a result-boundary edge when no operand boundary delta exists, that edge is named by at least two changed-reference contexts, it is the sole changed-reference edge in the result boundary, and it is absent from the preceding candidate boundary.
 
+A single-member `Fillet` or `Chamfer` group whose operand is not otherwise resolved selects every edge that its transition deletes when three conditions hold. The deleted edges equal the set of edges that lie between the two support faces of an inserted treatment face. Every inserted face contributes at least one such edge and none outside the set. The edges form one simple path or loop of the preceding state, so that every vertex carries at most two of them. The member is then the seed of a tangent chain. The selection charges `history.edge-selection-deleted-set-assumed`.
+
 Standalone persistent-reference properties named `pt_tag`, `crv_primary_id`, and `crv_secondary_id` store the u32 pair `(2, 14)`, a 14-byte property slot, LP-ASCII `IntrinsicMetaTypeuint64`, and the referenced u64. The compact properties embedded in sketch point and curve records omit the `(2, 14)` pair and property slot.
 
 A generic face or edge tag group may carry a zero Design-reference count. Its selector and token remain native attribute data, but the group has no Design join and does not supply a recipe candidate. The group is retained and can be written with an empty reference run.
