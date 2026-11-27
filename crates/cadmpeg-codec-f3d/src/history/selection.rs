@@ -2129,6 +2129,7 @@ pub(crate) fn bind_edge_identity_history(
         radii: Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate>,
         treatment_edges: Vec<i64>,
         deleted_edges: Vec<i64>,
+        path_proof: bool,
     }
 
     if projection_was_finalized(histories.get()) {
@@ -2175,6 +2176,7 @@ pub(crate) fn bind_edge_identity_history(
         operand.historical = None;
         operand.treatment_radius_candidates.clear();
         operand.transition_edge_candidates.clear();
+        operand.deleted_path_proof = false;
         operand.resolved_edge_slots.clear();
         operand.resolved_edge_slot = None;
         operand.resolution_identity_id = None;
@@ -2311,12 +2313,22 @@ pub(crate) fn bind_edge_identity_history(
                                     &mut treatment_cache,
                                 );
 
+                                let path_proof =
+                                    super::treatment_candidates::deleted_edges_form_treatment_path(
+                                        &inserted_faces,
+                                        result,
+                                        topology,
+                                        &treatment_edges,
+                                        &deleted_edges,
+                                        &mut treatment_cache,
+                                    );
                                 treatment_candidates_by_transition.insert(
                                     (history.id.clone(), current_state_id, previous_state_id),
                                     EdgeTreatmentTransitionCandidates {
                                         radii,
                                         treatment_edges,
                                         deleted_edges,
+                                        path_proof,
                                     },
                                 );
                             }
@@ -2326,6 +2338,9 @@ pub(crate) fn bind_edge_identity_history(
                                 .treatment_radius_candidates
                                 .clone_from(&candidates.radii);
                             let mut treatment_edges = candidates.treatment_edges.clone();
+                            operand.deleted_path_proof = candidates.path_proof
+                                && !lineage_scopes.contains(&scope.id)
+                                && !treatment_edges.is_empty();
                             // The geometric chain is transition-scoped. The deleted-
                             // set fallback is group-scoped because its proof depends
                             // on this operand group's compact member count.

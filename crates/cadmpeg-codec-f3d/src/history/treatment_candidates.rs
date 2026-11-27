@@ -71,6 +71,91 @@ pub(super) fn treatment_radius_candidates<'a>(
     .0
 }
 
+/// Whether the edges that the transition deletes are exactly the treatment
+/// edges of its inserted faces, every inserted face borders at least one of
+/// them and none outside them, and they form one simple path or loop of the
+/// preceding topology (every vertex has at most two of them).
+pub(super) fn deleted_edges_form_treatment_path<'a>(
+    inserted_faces: &[i64],
+    result: &'a AsmHistoricalTopology,
+    preceding: &'a AsmHistoricalTopology,
+    treatment_edges: &[i64],
+    deleted_edges: &[i64],
+    treatment_cache: &mut TreatmentCache<'a>,
+) -> bool {
+    use std::collections::{BTreeMap, BTreeSet};
+    if treatment_edges.is_empty() || inserted_faces.is_empty() {
+        return false;
+    }
+    let path = treatment_edges.iter().copied().collect::<BTreeSet<_>>();
+    let deleted = deleted_edges.iter().copied().collect::<BTreeSet<_>>();
+    if path != deleted {
+        return false;
+    }
+    let mut covered = BTreeSet::new();
+    for face in inserted_faces {
+        let (_, edges) = treatment_edge_candidates(
+            None,
+            std::slice::from_ref(face),
+            result,
+            preceding,
+            deleted_edges,
+            treatment_cache,
+        );
+        if edges.is_empty() || edges.iter().any(|edge| !path.contains(edge)) {
+            return false;
+        }
+        covered.extend(edges);
+    }
+    if covered != path {
+        return false;
+    }
+    let mut ends = BTreeMap::new();
+    for row in &preceding.edge_vertices {
+        if path.contains(&row.edge)
+            && ends
+                .insert(row.edge, (row.start_vertex, row.end_vertex))
+                .is_some()
+        {
+            return false;
+        }
+    }
+    if ends.len() != path.len() {
+        return false;
+    }
+    let mut degree = BTreeMap::<i64, usize>::new();
+    let mut parent = BTreeMap::<i64, i64>::new();
+    fn root(parent: &mut BTreeMap<i64, i64>, vertex: i64) -> i64 {
+        let mut current = vertex;
+        while let Some(&next) = parent.get(&current) {
+            if next == current {
+                break;
+            }
+            current = next;
+        }
+        current
+    }
+    for &(start, end) in ends.values() {
+        for vertex in [start, end] {
+            *degree.entry(vertex).or_default() += 1;
+            parent.entry(vertex).or_insert(vertex);
+        }
+        let (a, b) = (root(&mut parent, start), root(&mut parent, end));
+        if a != b {
+            parent.insert(a, b);
+        }
+    }
+    if degree.values().any(|&count| count > 2) {
+        return false;
+    }
+    let vertices = parent.keys().copied().collect::<Vec<_>>();
+    let roots = vertices
+        .into_iter()
+        .map(|vertex| root(&mut parent, vertex))
+        .collect::<BTreeSet<_>>();
+    roots.len() == 1
+}
+
 pub(super) fn treatment_edge_candidates<'a>(
     result_candidate_faces: Option<&[cadmpeg_ir::ids::FaceId]>,
     inserted_faces: &[i64],

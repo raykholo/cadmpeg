@@ -102,6 +102,10 @@ pub(crate) struct DesignEdgeIdentityOperand {
     /// Native identity or embedded bounded-face operand proving the resolved
     /// edge selection.
     pub(crate) resolution_identity_id: Option<String>,
+    /// The transition-deleted edges form one simple path, equal the deleted
+    /// treatment edges of every inserted treatment face, and every inserted
+    /// face borders one of them. Set during topology binding; never serialized.
+    pub(crate) deleted_path_proof: bool,
 }
 
 #[cfg(test)]
@@ -130,6 +134,7 @@ impl Clone for DesignEdgeIdentityOperand {
             resolved_edge_slots: self.resolved_edge_slots.clone(),
             resolved_edge_slot: self.resolved_edge_slot,
             resolution_identity_id: self.resolution_identity_id.clone(),
+            deleted_path_proof: self.deleted_path_proof,
         }
     }
 }
@@ -216,6 +221,7 @@ impl DesignEdgeIdentityOperand {
             resolved_edge_slots: draft.resolved_edge_slots,
             resolved_edge_slot: draft.resolved_edge_slot,
             resolution_identity_id: draft.resolution_identity_id,
+            deleted_path_proof: false,
         };
         if value.asset_id_offset() != draft.asset_id_offset {
             return Err("asset_id_offset disagrees with frame layout".into());
@@ -402,6 +408,7 @@ impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
             resolved_edge_slots: wire.resolved_edge_slots,
             resolved_edge_slot: wire.resolved_edge_slot,
             resolution_identity_id: wire.resolution_identity_id,
+            deleted_path_proof: false,
         })
     }
 }

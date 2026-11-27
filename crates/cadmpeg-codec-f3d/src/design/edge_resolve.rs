@@ -1062,6 +1062,23 @@ fn resolved_edge_group_with_transition_chain(
     } else {
         transition_slots()?
     };
+    // One member that seeds a tangent chain: the transition deletes exactly
+    // the edges that its inserted treatment faces border, and they form one
+    // simple path of the preceding state.
+    let resolved_slots = match (resolved_slots, identity_matches.as_deref()) {
+        (None, Some([operand]))
+            if allow_edge_treatment_transition_chain
+                && members.len() == 1
+                && transition_state_id.is_some()
+                && group.lost_edge_references.is_empty()
+                && operand.deleted_path_proof
+                && !operand.transition_edge_candidates.is_empty() =>
+        {
+            *deleted_set_assumed = true;
+            Some(sorted_transition_slots(&operand.transition_edge_candidates))
+        }
+        (slots, _) => slots,
+    };
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
             return lost_selection();

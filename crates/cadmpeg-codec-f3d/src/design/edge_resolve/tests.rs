@@ -1971,3 +1971,51 @@ fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
 mod candidate_intersection;
 
 mod standard_recipes;
+
+#[test]
+fn single_member_with_a_proven_deleted_path_selects_the_whole_path() {
+    let selection_group = group(2, 10);
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    operand.recipe_state_id = Some(7);
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 1,
+            sides: vec![
+                crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+                    header_value: 1,
+                    scalars: Vec::new(),
+                    payload_prefix: Vec::new(),
+                    entries: Vec::new(),
+                },
+            ],
+        },
+    );
+    let mut persistent_identity = identity(10, &[(17, 1.0), (18, 1.0), (19, 1.0)]);
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer")
+        .expect("identity grammar");
+    let resolve = |identity: &DesignEdgeIdentityOperand| {
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            std::slice::from_ref(&operand),
+            std::slice::from_ref(identity),
+            Some(7),
+            &feature_id,
+            None,
+        )
+        .unwrap()
+    };
+
+    assert!(matches!(
+        resolve(&persistent_identity),
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
+    ));
+
+    persistent_identity.deleted_path_proof = true;
+    match resolve(&persistent_identity) {
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. } => {
+            assert_eq!(edges.as_slice().len(), 3);
+        }
+        other => panic!("expected a historical selection, found {other:?}"),
+    }
+}
