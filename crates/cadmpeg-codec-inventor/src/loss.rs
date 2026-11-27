@@ -150,6 +150,12 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Thicken retains a construction form with unresolved operands.
     FeatureThickenConstructionNative,
+    /// A typed Stitch Surface keeps its Boolean controls as source properties
+    /// and leaves its tolerance and boundary-patch item unrepresented.
+    FeatureStitchControlsNative,
+    /// A Stitch Surface keeps unresolved operands because its history states
+    /// do not show the stitch rule.
+    FeatureStitchOperandsUnresolved,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
     /// Attachment type-9 modes, Boolean controls, and states have no construction map.
@@ -418,6 +424,8 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureThickenConstructionNative,
+        Self::FeatureStitchControlsNative,
+        Self::FeatureStitchOperandsUnresolved,
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
@@ -594,6 +602,8 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
+            Self::FeatureStitchControlsNative => "feature.stitch-controls-native",
+            Self::FeatureStitchOperandsUnresolved => "feature.stitch-operands-unresolved",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
             Self::FeatureSheetMetalAttachmentControlsNative => {
                 "feature.sheet-metal-attachment-controls-native"
@@ -782,6 +792,8 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
+            | Self::FeatureStitchControlsNative
+            | Self::FeatureStitchOperandsUnresolved
             | Self::FeatureDesignOperationNative
             | Self::SketchDesignConstraintNative
             | Self::FeatureShellDefinitionPartial
