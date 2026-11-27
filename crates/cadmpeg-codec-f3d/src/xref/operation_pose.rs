@@ -769,7 +769,7 @@ pub(crate) fn project_in_members(
         }
     }
     crate::design::assembly::release_joint_placed(losses, left_identity);
-    let ns = ir.native.namespace_mut("f3d");
+    let ns = ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d"));
     for name in ["xref_references", "design_component_occurrences"] {
         if let Some(records) = ns.arenas_mut().get_mut(name) {
             for r in records {
@@ -787,7 +787,7 @@ pub(crate) fn project_in_members(
                 let mut fields = r.copy_fields(ctx)?;
                 fields.insert(
                     "operation_pose".into(),
-                    serde_json::to_value(operation)
+                    cadmpeg_core::serde_erase::to_json_value(&operation)
                         .map_err(|e| CodecError::malformed(e.to_string()))?,
                 );
                 *r = cadmpeg_ir::NativeRecord::new(
