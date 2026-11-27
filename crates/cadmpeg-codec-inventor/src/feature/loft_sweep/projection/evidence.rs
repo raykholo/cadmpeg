@@ -652,14 +652,17 @@ fn joined_result(
     sections: [u32; 2],
     section_curves: &impl Fn(usize) -> Vec<i64>,
 ) -> Option<usize> {
-    loft_in(
+    JOINDBG.store(true, std::sync::atomic::Ordering::Relaxed);
+    let lr = loft_in(
         ir,
         generator,
         sections,
         |section, name| section_curves(section).contains(&name),
         true,
     )
-    .or_else(|| legacy_loft(ir, generator, sections, section_curves))
+    .or_else(|| legacy_loft(ir, generator, sections, section_curves));
+    JOINDBG.store(false, std::sync::atomic::Ordering::Relaxed);
+    lr
     .or_else(|| { eprintln!("DBG loft_in/legacy fail owned_joined={} legacy_owned={}", owned_faces_in(ir, generator, true).is_some(), legacy_owned_faces(ir, generator).is_some()); None })?;
     let owned = owned_faces_in(ir, generator, true)
         .map(|faces| {
@@ -690,6 +693,7 @@ fn joined_result(
         Some(&region.body)
     };
     let body = body_of(owned.first()?)?;
+    eprintln!("DBGJ owned={} inbody={}", owned.len(), ir.geometry.faces.iter().filter(|f| body_of(f) == Some(body)).count());
     let in_body = ir
         .geometry
         .faces
@@ -699,6 +703,7 @@ fn joined_result(
     in_body.checked_sub(owned.len())
 }
 
+static JOINDBG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const LEGACY_CAP_CLASS: &str =
     "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
 const LEGACY_SIDE_CLASS: &str =
@@ -837,9 +842,9 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
     }
     let e0 = section_curves(0);
     let e1 = section_curves(1);
-    eprintln!("DBG legacy ncap={ncap} caps={} nside={nside} nonplane={nonplane} badcap={badcap} dupcap={dupcap} badside={badside} found0={} exp0={} hit0={} found1={} exp1={} hit1={}",
+    if JOINDBG.load(std::sync::atomic::Ordering::Relaxed) { eprintln!("DBGJ legacy ncap={ncap} caps={} nside={nside} nonplane={nonplane} badcap={badcap} dupcap={dupcap} badside={badside} found0={} exp0={} hit0={} found1={} exp1={} hit1={}",
         caps.len(), first_curves.len(), e0.len(), e0.iter().filter(|n| first_curves.contains(n)).count(),
-        last_curves.len(), e1.len(), e1.iter().filter(|n| last_curves.contains(n)).count());
+        last_curves.len(), e1.len(), e1.iter().filter(|n| last_curves.contains(n)).count()); }
     let complete = |found: &HashSet<i64>, section: usize| {
         let expected = section_curves(section);
         !expected.is_empty()
