@@ -353,6 +353,7 @@ fn parse(
             if selection_form != cached_edge::SELECTION_FORM_VALUE
                 || curve_form != cached_edge::CURVE_FORM_VALUE
             {
+                eprintln!("UNRES t={:02x} state={} sf={} cf={} len={}", type_id[0], state, selection_form, curve_form, body_len);
                 return Ok(Operand::Unresolved);
             }
             let expected_len = if type_id == EDGE_DIRECTION_TYPE {
@@ -614,6 +615,7 @@ fn axis(
         12
     };
     let count = count_at(source, base + axis, index).g(616)?;
+    eprintln!("SPACING ref={:?}", slot(source, base + 2 + axis).map(|r| r.index()));
     let spacing = PositiveLength::try_from(length_reference(
         source.identity.segment_token.as_str(),
         slot(source, base + 2 + axis).g(619)?.index(),
@@ -625,6 +627,7 @@ fn axis(
         .into_iter()
         .any(|offset| bool_at(source, base + offset + axis, index) != Some(false))
     {
+        eprintln!("FLAGS {:?}", [6, 8, 10, 12].map(|o| bool_at(source, base + o + axis, index)));
         { eprintln!("RPGATE r628"); return None; }
     }
     Some(LinearPatternDirection {
@@ -680,6 +683,7 @@ fn construction<'a>(
     operands: &'a Operands,
 ) -> Option<LinearConstruction<'a>> {
     if !fixed_header(source) || !fixed_properties(|number| property_at(source, number, index)) {
+        eprintln!("HDR header={} props={} fam={:?} ver={} n={}", fixed_header(source), fixed_properties(|number| property_at(source, number, index)), source.family, source.save_version_major, source.property_slots.len());
         { eprintln!("RPGATE r683"); return None; }
     }
     let bodies_mode = bool_at(source, 6, index).g(685)?;
