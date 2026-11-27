@@ -469,7 +469,7 @@ fn property_at<'a>(
 ) -> Option<&'a PmDcFeatureProperty> {
     resolve_property(
         source.identity.segment_token.as_str(),
-        slot(source, slot_number)?.index(),
+        slot(source, slot_number).g(472)?.index(),
         index,
     )
 }
@@ -479,7 +479,7 @@ fn bool_at(
     slot_number: usize,
     index: &ProjectionIndex<'_>,
 ) -> Option<bool> {
-    match property_at(source, slot_number, index)?.kind {
+    match property_at(source, slot_number, index).g(482)?.kind {
         PmDcFeaturePropertyKind::Boolean { value, .. } => Some(value),
         _ => None,
     }
@@ -490,7 +490,7 @@ fn count_at(
     slot_number: usize,
     index: &ProjectionIndex<'_>,
 ) -> Option<u32> {
-    match property_at(source, slot_number, index)?.kind {
+    match property_at(source, slot_number, index).g(493)?.kind {
         PmDcFeaturePropertyKind::RdxVariable {
             nominal_value,
             model_value,
@@ -507,20 +507,20 @@ fn direction(
     operands: &Operands,
 ) -> Option<FeatureDirection3> {
     let token = source.identity.segment_token.as_str();
-    let reference = slot(source, slot_number)?;
+    let reference = slot(source, slot_number).g(510)?;
     if !operands.resolves(token, reference) {
-        return None;
+        { eprintln!("RPGATE r512"); return None; }
     }
     if let Some(record) = index
         .directions
-        .get(&(token, reference.record_ordinal()?))
+        .get(&(token, reference.record_ordinal().g(516)?))
         .and_then(Option::as_ref)
     {
         if record.entity_flags != 0
             || record.parameter.get() != 0.0
             || record.extension.is_some_and(|value| value != 0)
         {
-            return None;
+            { eprintln!("RPGATE r523"); return None; }
         }
         return cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
             record.direction[0].get(),
@@ -535,37 +535,37 @@ fn direction(
         geometry,
         links,
         span,
-    } = operands.get_for(source, reference)?
+    } = operands.get_for(source, reference).g(538)?
     else {
-        return None;
+        { eprintln!("RPGATE r540"); return None; }
     };
     let type_id = operands
         .raw
-        .get(&(token.to_owned(), reference.record_ordinal()?))?
-        .as_ref()?;
+        .get(&(token.to_owned(), reference.record_ordinal().g(544)?)).g(544)?
+        .as_ref().g(545)?;
     if !matches!(
         (*type_id, *state),
         (LINE_DIRECTION_TYPE, -1) | (EDGE_DIRECTION_TYPE, 1 | 2)
     ) || !operands.resolves(token, *geometry)
         || !links.iter().all(|link| operands.resolves(token, *link))
     {
-        return None;
+        { eprintln!("RPGATE r552"); return None; }
     }
-    let mut vector = cadmpeg_ir::units::UnitVector3::normalized(*span)?;
+    let mut vector = cadmpeg_ir::units::UnitVector3::normalized(*span).g(554)?;
     if operands
         .raw
-        .get(&(token.to_owned(), geometry.record_ordinal()?))
+        .get(&(token.to_owned(), geometry.record_ordinal().g(557)?))
         == Some(&Some(WORK_AXIS_TYPE))
     {
         let axis = axis_direction(
-            resolve_property(token, geometry.index(), index)?,
+            resolve_property(token, geometry.index(), index).g(561)?,
             source.save_version_major,
-        )?;
+        ).g(563)?;
         if vector != axis {
-            return None;
+            { eprintln!("RPGATE r565"); return None; }
         }
     }
-    match resolve_property(token, reverse.index(), index)?.kind {
+    match resolve_property(token, reverse.index(), index).g(568)?.kind {
         PmDcFeaturePropertyKind::Boolean { value: true, .. } => vector = vector.reversed(),
         PmDcFeaturePropertyKind::Boolean { value: false, .. } => {}
         _ => return None,
@@ -587,13 +587,13 @@ fn axis_direction(
         ..
     } = &record.kind
     else {
-        return None;
+        { eprintln!("RPGATE r590"); return None; }
     };
     if values.len() != if version > 21 { 3 } else { 2 }
         || values.iter().any(|value| *value != 0)
         || !references.references().is_empty()
     {
-        return None;
+        { eprintln!("RPGATE r596"); return None; }
     }
     cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
         span[0].get(),
@@ -613,19 +613,19 @@ fn axis(
     } else {
         12
     };
-    let count = count_at(source, base + axis, index)?;
+    let count = count_at(source, base + axis, index).g(616)?;
     let spacing = PositiveLength::try_from(length_reference(
         source.identity.segment_token.as_str(),
-        slot(source, base + 2 + axis)?.index(),
+        slot(source, base + 2 + axis).g(619)?.index(),
         index,
-    )?)
-    .ok()?;
-    let direction = direction(source, base + 4 + axis, index, operands)?;
+    ).g(621)?)
+    .ok().g(622)?;
+    let direction = direction(source, base + 4 + axis, index, operands).g(623)?;
     if [6, 8, 10, 12]
         .into_iter()
         .any(|offset| bool_at(source, base + offset + axis, index) != Some(false))
     {
-        return None;
+        { eprintln!("RPGATE r628"); return None; }
     }
     Some(LinearPatternDirection {
         direction,
@@ -680,55 +680,55 @@ fn construction<'a>(
     operands: &'a Operands,
 ) -> Option<LinearConstruction<'a>> {
     if !fixed_header(source) || !fixed_properties(|number| property_at(source, number, index)) {
-        return None;
+        { eprintln!("RPGATE r683"); return None; }
     }
-    let bodies_mode = bool_at(source, 6, index)?;
-    if slot(source, if bodies_mode { 9 } else { 10 })?.index() != 0
+    let bodies_mode = bool_at(source, 6, index).g(685)?;
+    if slot(source, if bodies_mode { 9 } else { 10 }).g(686)?.index() != 0
         || (bodies_mode && !source.participants.references().is_empty())
     {
-        return None;
+        { eprintln!("RPGATE r689"); return None; }
     }
     let token = source.identity.segment_token.as_str();
-    let Operand::Suppression { pairs: suppressed } = operands.get_for(source, slot(source, 1)?)?
+    let Operand::Suppression { pairs: suppressed } = operands.get_for(source, slot(source, 1).g(692)?).g(692)?
     else {
-        return None;
+        { eprintln!("RPGATE r694"); return None; }
     };
     let Operand::SelectionControl { references, value } =
-        operands.get_for(source, slot(source, 4)?)?
+        operands.get_for(source, slot(source, 4).g(697)?).g(697)?
     else {
-        return None;
+        { eprintln!("RPGATE r699"); return None; }
     };
     if *value != 0 || references.iter().any(|reference| reference.index() != 0) {
-        return None;
+        { eprintln!("RPGATE r702"); return None; }
     }
     let placement_transform = index
         .transforms
-        .get(&(token, slot(source, 0)?.record_ordinal()?))?
-        .as_ref()?;
+        .get(&(token, slot(source, 0).g(706)?.record_ordinal().g(706)?)).g(706)?
+        .as_ref().g(707)?;
     if placement_transform.matrix.rows() != IDENTITY_PLACEMENT {
-        return None;
+        { eprintln!("RPGATE r709"); return None; }
     }
-    let first = axis(source, 0, index, operands)?;
+    let first = axis(source, 0, index, operands).g(711)?;
     let base = if source.save_version_major >= 21 {
         18
     } else {
         12
     };
-    let second = if slot(source, base + 1)?.index() == 0 {
+    let second = if slot(source, base + 1).g(717)?.index() == 0 {
         if [3, 5, 7, 9, 11, 13].into_iter().any(|offset| {
             slot(source, base + offset).is_none_or(|reference| reference.index() != 0)
         }) {
-            return None;
+            { eprintln!("RPGATE r721"); return None; }
         }
         None
     } else {
-        Some(axis(source, 1, index, operands)?)
+        Some(axis(source, 1, index, operands).g(725)?)
     };
     let count = first
         .count
-        .checked_mul(second.as_ref().map_or(1, |axis| axis.count))?;
+        .checked_mul(second.as_ref().map_or(1, |axis| axis.count)).g(729)?;
     if !fixed_extensions(source, count) || count < 2 {
-        return None;
+        { eprintln!("RPGATE r731"); return None; }
     }
     let mut distinct = HashSet::new();
     if suppressed.iter().any(|pair| {
@@ -738,7 +738,7 @@ fn construction<'a>(
             || pair[1] > second.as_ref().map_or(1, |axis| axis.count)
             || !distinct.insert(*pair)
     }) {
-        return None;
+        { eprintln!("RPGATE r741"); return None; }
     }
     Some(LinearConstruction {
         first,
@@ -759,7 +759,7 @@ impl LinearConstruction<'_> {
             self.suppressed.len(),
             [0; 2],
             "project Inventor pattern instance omissions",
-        )?;
+        ).g(762)?;
         for (position, pair) in omitted_instances.iter_mut().zip(self.suppressed) {
             let (Some(first), Some(second)) = (pair[0].checked_sub(1), pair[1].checked_sub(1))
             else {
@@ -827,9 +827,9 @@ fn seed_kind(
 ) -> Option<&'static str> {
     let key = (
         source.identity.segment_token.as_str().to_owned(),
-        reference.record_ordinal()?,
+        reference.record_ordinal().g(830)?,
     );
-    match *operands.raw.get(&key)?.as_ref()? {
+    match *operands.raw.get(&key).g(832)?.as_ref().g(832)? {
         super::FEATURE_TYPE => Some("feature"),
         super::RECTANGULAR_PATTERN_FEATURE_TYPE | super::MIRROR_FEATURE_TYPE => {
             Some("pattern-feature")
@@ -849,13 +849,13 @@ fn seed_placement_is_admitted(
 }
 
 fn body_seed(source: &PmDcPatternFeature, index: &ProjectionIndex<'_>) -> Option<PatternSeed> {
-    let collection = property_at(source, 10, index)?;
+    let collection = property_at(source, 10, index).g(852)?;
     let PmDcFeaturePropertyKind::References {
         family: super::PmDcFeatureReferenceFamily::ObjectCollection,
         items,
     } = &collection.kind
     else {
-        return None;
+        { eprintln!("RPGATE r858"); return None; }
     };
     let mut wrappers = Vec::new();
     for reference in items.references() {
@@ -863,14 +863,14 @@ fn body_seed(source: &PmDcPatternFeature, index: &ProjectionIndex<'_>) -> Option
             source.identity.segment_token.as_str(),
             reference.index(),
             index,
-        )?;
+        ).g(866)?;
         if !matches!(wrapper.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
-            return None;
+            { eprintln!("RPGATE r868"); return None; }
         }
         wrappers.push(wrapper.id());
     }
     Some(PatternSeed::Bodies(
-        cadmpeg_ir::features::selections::BodySelection::local(wrappers, collection.id()).ok()?,
+        cadmpeg_ir::features::selections::BodySelection::local(wrappers, collection.id()).ok().g(873)?,
     ))
 }
 
@@ -882,21 +882,21 @@ pub(super) fn project(
     operands: &Operands,
     history: &history::History,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let construction = construction(source, index, operands)?;
-    let placement = history.placement(source.identity.record_ordinal)?;
+    let construction = construction(source, index, operands).g(885)?;
+    let placement = history.placement(source.identity.record_ordinal).g(886)?;
     if !placement.model_history {
-        return None;
+        { eprintln!("RPGATE r888"); return None; }
     }
-    let bodies_mode = bool_at(source, 6, index)?;
+    let bodies_mode = bool_at(source, 6, index).g(890)?;
     let mut seeds = Vec::new();
     if bodies_mode {
-        seeds.push(body_seed(source, index)?);
+        seeds.push(body_seed(source, index).g(893)?);
     }
     let mut distinct = HashSet::new();
     for reference in source.participants.references() {
-        seed_kind(source, *reference, operands)?;
-        let ordinal = reference.record_ordinal()?;
-        let seed = history.placement(ordinal)?;
+        seed_kind(source, *reference, operands).g(897)?;
+        let ordinal = reference.record_ordinal().g(898)?;
+        let seed = history.placement(ordinal).g(899)?;
         if !distinct.insert(ordinal)
             || !seed_placement_is_admitted(
                 seed.ordinal,
@@ -906,7 +906,7 @@ pub(super) fn project(
                 seed.kind == history::HistoryNodeKind::Sketch,
             )
         {
-            return None;
+            { eprintln!("RPGATE r909"); return None; }
         }
         let mut identity = source.identity.clone();
         identity.record_ordinal = ordinal;
@@ -917,10 +917,10 @@ pub(super) fn project(
         seeds.push(PatternSeed::Feature(id));
     }
     if seeds.is_empty() {
-        return None;
+        { eprintln!("RPGATE r920"); return None; }
     }
-    let collection = property_at(source, if bodies_mode { 10 } else { 9 }, index)?;
-    let (id, result) = match result_from_collection(ctx, &source.identity, collection, index)? {
+    let collection = property_at(source, if bodies_mode { 10 } else { 9 }, index).g(922)?;
+    let (id, result) = match result_from_collection(ctx, &source.identity, collection, index).g(923)? {
         Ok(result) => result,
         Err(error) => return Some(Err(error)),
     };
@@ -1130,3 +1130,7 @@ pub(crate) fn native_losses<'a>(
 
 #[cfg(test)]
 mod tests;
+
+trait G { fn g(self, n: u32) -> Self; }
+impl<T> G for Option<T> { fn g(self, n: u32) -> Self { if self.is_none() { eprintln!("RPGATE {n}"); } self } }
+impl<T, E> G for Result<T, E> { fn g(self, _n: u32) -> Self { self } }
