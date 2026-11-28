@@ -1264,6 +1264,12 @@ pub(crate) enum F3dLossCode {
     XrefLineageDisagrees,
     XrefIdentityBlank,
     XrefArchiveIdentityDisagrees,
+    /// A reference resolved to its archive member by lineage and version
+    /// URNs because the document has no redirection table.
+    XrefRedirectionFromLineage,
+    /// More than one archive member states the lineage and version URNs of a
+    /// reference, so the reference keeps its target path.
+    XrefLineageAmbiguous,
 
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
@@ -2262,6 +2268,8 @@ impl F3dLossCode {
         Self::XrefLineageDisagrees,
         Self::XrefIdentityBlank,
         Self::XrefArchiveIdentityDisagrees,
+        Self::XrefRedirectionFromLineage,
+        Self::XrefLineageAmbiguous,
         Self::XrefPlacementUndecoded,
         Self::XrefPlacementPoseUnstated,
         Self::XrefOccurrenceUnplaced,
@@ -3503,6 +3511,8 @@ impl F3dLossCode {
             Self::XrefLineageDisagrees => "xref.lineage-disagrees",
             Self::XrefIdentityBlank => "xref.identity-blank",
             Self::XrefArchiveIdentityDisagrees => "xref.archive-identity-disagrees",
+            Self::XrefRedirectionFromLineage => "xref.redirection-from-lineage",
+            Self::XrefLineageAmbiguous => "xref.lineage-ambiguous",
 
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefPlacementPoseUnstated => "xref.placement-pose-unstated",
@@ -4418,6 +4428,8 @@ impl F3dLossCode {
             | Self::MeshCollectionWordsNative
             | Self::XrefLineageDisagrees
             | Self::XrefIdentityBlank
+            | Self::XrefRedirectionFromLineage
+            | Self::XrefLineageAmbiguous
             | Self::XrefArchiveIdentityDisagrees
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementPoseUnstated
@@ -4654,6 +4666,8 @@ impl F3dLossCode {
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
+            | Self::XrefRedirectionFromLineage
+            | Self::XrefLineageAmbiguous
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
@@ -6170,6 +6184,8 @@ mod tests {
                 "xref.lineage-disagrees",
                 "xref.identity-blank",
                 "xref.archive-identity-disagrees",
+                "xref.redirection-from-lineage",
+                "xref.lineage-ambiguous",
                 "xref.placement-undecoded",
                 "xref.placement-pose-unstated",
                 "xref.occurrence-unplaced",
