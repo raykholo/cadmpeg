@@ -52,7 +52,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
-use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::refs::{Member, Position};
@@ -305,6 +304,7 @@ pub(crate) fn project(
         .features
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
+        .map(|(feature, owner)| (feature.clone(), owner.clone()))
         .collect::<HashMap<_, _>>();
     let joints = joint_records.as_ref().map(|records| {
         records
@@ -314,29 +314,9 @@ pub(crate) fn project(
     let mut restated = Vec::new();
     let mut root = None;
     let mut unwalked = Vec::new();
+    let mut scoped_features = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
-        let Span {
-            definitions: spanned,
-            bodies,
-        } = spans.remove(&prefix).unwrap_or_default();
-        if spanned.len() > 1 {
-            let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
-            for feature in &mut projected.features {
-                let owner = owners
-                    .get(&feature.id)
-                    .copied()
-                    .filter(|owner| spanned.contains(*owner));
-                feature.component = owner.and_then(|owner| member_component(feature, owner));
-                if let (Some(owner), None) = (owner, &feature.component) {
-                    *withheld.entry(owner).or_default() += 1;
-                }
-            }
-            for (owner, count) in withheld {
-                losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
-                    "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
-                )));
-            }
-        }
+        let Span { bodies } = spans.remove(&prefix).unwrap_or_default();
         if let Some(joints) = &joints {
             restated.extend(joint::project(
                 &mut projected.features,
@@ -410,6 +390,14 @@ pub(crate) fn project(
             losses,
         )?;
         ctx.charge_entities(1, "project F3D v11 design scope")?;
+        scoped_features.push((
+            definition.clone(),
+            projected
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect::<BTreeSet<_>>(),
+        ));
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
             definition: definition.clone(),
@@ -436,6 +424,8 @@ pub(crate) fn project(
         }
     }
     joint::record(&mut ir.model, restated);
+    let unstated = unstated_components(&scope_records);
+    settle_components(ir, &scoped_features, &owners, &unstated, losses);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -646,13 +636,16 @@ impl JointRecords {
     }
 }
 
-/// The component a feature names: `owner`, for a feature of the root
-/// document. The span above counts the definitions each document hosts, which
-/// does not match the span of an archive member's own scope: naming the owner
-/// of a member's feature, even one that stands in the member's own document,
-/// makes the checker read the scope as spanning the files its occurrences
-/// place. A member's feature names no component.
-fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<ProductDefinitionId> {
+/// Most rounds `settle_components` runs: naming a component other than the
+/// scope's own definition makes the scope span several, and that changes what
+/// it spans.
+const SETTLE_ROUNDS: usize = 4;
+
+#[cfg(test)]
+fn member_component(
+    feature: &cadmpeg_ir::design::feature::Feature,
+    owner: &ProductDefinitionId,
+) -> Option<ProductDefinitionId> {
     let stream = feature
         .native_ref
         .as_deref()
@@ -660,6 +653,91 @@ fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<Pr
     timeline::document_prefix(stream)
         .is_empty()
         .then(|| owner.clone())
+}
+
+fn unstated_components(
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> BTreeSet<&str> {
+    scopes
+        .iter()
+        .filter(|scope| {
+            matches!(
+                scope.kind_name(),
+                "Base Feature" | "CutPaste" | "Component Insert"
+            )
+        })
+        .map(|scope| scope.id.as_str())
+        .collect()
+}
+
+fn settle_components(
+    ir: &mut CadIr,
+    scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
+    owners: &HashMap<FeatureId, ProductDefinitionId>,
+    unstated: &BTreeSet<&str>,
+    losses: &mut Vec<LossNote>,
+) {
+    let mut spans = vec![BTreeSet::<String>::new(); scoped.len()];
+    let mut unsettled = Vec::new();
+    for _ in 0..SETTLE_ROUNDS {
+        let mut now = ir.spanned_definitions_of_scopes();
+        unsettled.clear();
+        for (index, (definition, members)) in scoped.iter().enumerate() {
+            let span = now.remove(definition.as_str()).unwrap_or_default();
+            if span == spans[index] {
+                continue;
+            }
+            spans[index] = span;
+            unsettled.push(index);
+            for feature in ir
+                .design
+                .features
+                .iter_mut()
+                .filter(|feature| members.contains(&feature.id))
+            {
+                feature.component = owners
+                    .get(&feature.id)
+                    .filter(|owner| {
+                        !feature
+                            .native_ref
+                            .as_deref()
+                            .is_some_and(|id| unstated.contains(id))
+                            && spans[index].len() > 1
+                            && spans[index].contains(owner.as_str())
+                    })
+                    .cloned();
+            }
+        }
+        if unsettled.is_empty() {
+            break;
+        }
+    }
+    for index in unsettled {
+        for feature in ir
+            .design
+            .features
+            .iter_mut()
+            .filter(|feature| scoped[index].1.contains(&feature.id))
+        {
+            feature.component = None;
+        }
+    }
+    for (definition, members) in scoped {
+        let mut withheld = BTreeMap::<&ProductDefinitionId, Vec<&str>>::new();
+        for feature in &ir.design.features {
+            if members.contains(&feature.id) && feature.component.is_none() {
+                if let Some(owner) = owners.get(&feature.id).filter(|owner| *owner != definition) {
+                    withheld.entry(owner).or_default().push(feature.id.as_str());
+                }
+            }
+        }
+        for (owner, features) in withheld {
+            losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+                "scope {definition}: features {} retain component None; their model owner is {owner}",
+                features.join(", ")
+            )));
+        }
+    }
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last
@@ -748,10 +826,9 @@ fn root_definition(definitions: &[ProductDefinition]) -> ProductDefinitionId {
         })
 }
 
-/// The definitions a scope spans and the bodies of its current state.
+/// The bodies of a scope's current state.
 #[derive(Default)]
 struct Span {
-    definitions: BTreeSet<ProductDefinitionId>,
     bodies: BTreeSet<BodyId>,
 }
 
@@ -780,7 +857,6 @@ fn span<T>(
         };
         if let Some(prefix) = prefix {
             let span = out.entry(prefix).or_default();
-            span.definitions.insert(definition.id.clone());
             span.bodies.extend(definition.bodies.iter().cloned());
         }
     }
