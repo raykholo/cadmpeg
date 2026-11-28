@@ -42,6 +42,7 @@ use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
@@ -187,20 +188,11 @@ pub(crate) fn project(
         .features
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
+        .map(|(feature, owner)| (feature.clone(), owner.clone()))
         .collect::<HashMap<_, _>>();
-    for (prefix, (definition, mut projected)) in scopes {
-        let Span {
-            definitions: spanned,
-            bodies,
-        } = spans.remove(&prefix).unwrap_or_default();
-        if spanned.len() > 1 {
-            for feature in &mut projected.features {
-                feature.component = owners
-                    .get(&feature.id)
-                    .filter(|owner| spanned.contains(**owner))
-                    .map(|owner| (*owner).clone());
-            }
-        }
+    let mut scoped_features = Vec::new();
+    for (prefix, (definition, projected)) in scopes {
+        let Span { bodies, .. } = spans.remove(&prefix).unwrap_or_default();
         let Some(Container::Ordered {
             id,
             members,
@@ -222,6 +214,14 @@ pub(crate) fn project(
             .into_iter()
             .collect();
         ctx.charge_entities(1, "project F3D v11 design scope")?;
+        scoped_features.push((
+            definition.clone(),
+            projected
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect::<BTreeSet<_>>(),
+        ));
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
             definition,
@@ -238,6 +238,7 @@ pub(crate) fn project(
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
     }
+    settle_components(ir, &scoped_features, &owners);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -250,6 +251,64 @@ pub(crate) fn project(
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
     Ok(())
+}
+
+/// Most rounds `settle_components` runs: naming a component other than the
+/// scope's own definition makes the scope span several, and that changes what
+/// it spans.
+const SETTLE_ROUNDS: usize = 4;
+
+/// Sets `Feature.component` of each scope's features from the definitions the
+/// scope spans by the occurrence walk of §5.1, the set a reader of the
+/// document computes: a feature names its owner where the scope spans several
+/// definitions and the owner is one of them, and names none otherwise. Each
+/// round computes the span of every scope once and stops when no span changed.
+/// A scope whose span still changes after `SETTLE_ROUNDS` rounds has no
+/// established owner for its features: their component is `None`, the value
+/// that states the decoder did not establish the owner (§5.1).
+fn settle_components(
+    ir: &mut CadIr,
+    scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
+    owners: &HashMap<FeatureId, ProductDefinitionId>,
+) {
+    let mut spans = vec![BTreeSet::<String>::new(); scoped.len()];
+    let mut unsettled = Vec::new();
+    for _ in 0..SETTLE_ROUNDS {
+        let mut now = ir.spanned_definitions_of_scopes();
+        unsettled.clear();
+        for (index, (definition, members)) in scoped.iter().enumerate() {
+            let span = now.remove(definition.as_str()).unwrap_or_default();
+            if span == spans[index] {
+                continue;
+            }
+            spans[index] = span;
+            unsettled.push(index);
+            for feature in ir
+                .design
+                .features
+                .iter_mut()
+                .filter(|feature| members.contains(&feature.id))
+            {
+                feature.component = owners
+                    .get(&feature.id)
+                    .filter(|owner| spans[index].len() > 1 && spans[index].contains(owner.as_str()))
+                    .cloned();
+            }
+        }
+        if unsettled.is_empty() {
+            return;
+        }
+    }
+    for index in unsettled {
+        for feature in ir
+            .design
+            .features
+            .iter_mut()
+            .filter(|feature| scoped[index].1.contains(&feature.id))
+        {
+            feature.component = None;
+        }
+    }
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last
@@ -344,10 +403,9 @@ fn root_definition(definitions: &[ProductDefinition]) -> ProductDefinitionId {
         })
 }
 
-/// The definitions a scope spans and the bodies of its current state.
+/// The bodies of a scope's current state.
 #[derive(Default)]
 struct Span {
-    definitions: BTreeSet<ProductDefinitionId>,
     bodies: BTreeSet<BodyId>,
 }
 
@@ -376,7 +434,6 @@ fn span<T>(
         };
         if let Some(prefix) = prefix {
             let span = out.entry(prefix).or_default();
-            span.definitions.insert(definition.id.clone());
             span.bodies.extend(definition.bodies.iter().cloned());
         }
     }
