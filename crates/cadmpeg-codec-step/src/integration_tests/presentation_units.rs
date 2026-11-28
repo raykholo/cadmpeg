@@ -1,0 +1,844 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Unit ownership across geometric and presentation representations.
+
+use crate::{loss::StepLossCode, StepCodec};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::io::Cursor;
+
+// Origin: CC0 make_mixed_units.py, written from scratch for Dutchman issue #1132.
+const STYLED: &str = r"ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('mixed-units: a 10 x 10 x 2 mm box and a 0.5 x 0.5 x 0.1 inch box'),'2;1');
+FILE_NAME('mixed-units.step','2026-11-28T00:00:00',(''),(''),'','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));
+ENDSEC;
+DATA;
+#1=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));
+#2=DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.);
+#3=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);
+#4=(CONVERSION_BASED_UNIT('inch',#3)LENGTH_UNIT()NAMED_UNIT(#2));
+#5=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));
+#6=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());
+#7=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-05),#1,'distance_accuracy_value','');
+#8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#7))GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#5,#6))REPRESENTATION_CONTEXT('',''));
+#9=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));
+#10=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());
+#11=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-05),#4,'distance_accuracy_value','');
+#12=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#11))GLOBAL_UNIT_ASSIGNED_CONTEXT((#4,#9,#10))REPRESENTATION_CONTEXT('',''));
+#13=APPLICATION_CONTEXT('automotive_design');
+#14=APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#13);
+#15=PRODUCT_CONTEXT('',#13,'mechanical');
+#16=PRODUCT('mixed-units','mixed-units','',(#15));
+#17=PRODUCT_DEFINITION_FORMATION('','',#16);
+#18=PRODUCT_DEFINITION_CONTEXT('part definition',#13,'design');
+#19=PRODUCT_DEFINITION('design','',#17,#18);
+#20=PRODUCT_DEFINITION_SHAPE('','',#19);
+#21=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#22=VERTEX_POINT('',#21);
+#23=CARTESIAN_POINT('',(2.0,0.0,0.0));
+#24=VERTEX_POINT('',#23);
+#25=CARTESIAN_POINT('',(0.0,1.0,0.0));
+#26=VERTEX_POINT('',#25);
+#27=CARTESIAN_POINT('',(2.0,1.0,0.0));
+#28=VERTEX_POINT('',#27);
+#29=CARTESIAN_POINT('',(0.0,0.0,0.5));
+#30=VERTEX_POINT('',#29);
+#31=CARTESIAN_POINT('',(2.0,0.0,0.5));
+#32=VERTEX_POINT('',#31);
+#33=CARTESIAN_POINT('',(0.0,1.0,0.5));
+#34=VERTEX_POINT('',#33);
+#35=CARTESIAN_POINT('',(2.0,1.0,0.5));
+#36=VERTEX_POINT('',#35);
+#37=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#38=DIRECTION('',(0.0,1.0,0.0));
+#39=VECTOR('',#38,1.0);
+#40=LINE('',#37,#39);
+#41=EDGE_CURVE('',#22,#26,#40,.T.);
+#42=ORIENTED_EDGE('',*,*,#41,.T.);
+#43=CARTESIAN_POINT('',(0.0,1.0,0.0));
+#44=DIRECTION('',(1.0,0.0,0.0));
+#45=VECTOR('',#44,2.0);
+#46=LINE('',#43,#45);
+#47=EDGE_CURVE('',#26,#28,#46,.T.);
+#48=ORIENTED_EDGE('',*,*,#47,.T.);
+#49=CARTESIAN_POINT('',(2.0,1.0,0.0));
+#50=DIRECTION('',(0.0,-1.0,0.0));
+#51=VECTOR('',#50,1.0);
+#52=LINE('',#49,#51);
+#53=EDGE_CURVE('',#28,#24,#52,.T.);
+#54=ORIENTED_EDGE('',*,*,#53,.T.);
+#55=CARTESIAN_POINT('',(2.0,0.0,0.0));
+#56=DIRECTION('',(-1.0,0.0,0.0));
+#57=VECTOR('',#56,2.0);
+#58=LINE('',#55,#57);
+#59=EDGE_CURVE('',#24,#22,#58,.T.);
+#60=ORIENTED_EDGE('',*,*,#59,.T.);
+#61=EDGE_LOOP('',(#42,#48,#54,#60));
+#62=FACE_OUTER_BOUND('',#61,.T.);
+#63=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#64=DIRECTION('',(0.0,0.0,-1.0));
+#65=DIRECTION('',(0.0,1.0,0.0));
+#66=AXIS2_PLACEMENT_3D('',#63,#64,#65);
+#67=PLANE('',#66);
+#68=ADVANCED_FACE('',(#62),#67,.T.);
+#69=CARTESIAN_POINT('',(0.0,0.0,0.5));
+#70=DIRECTION('',(1.0,0.0,0.0));
+#71=VECTOR('',#70,2.0);
+#72=LINE('',#69,#71);
+#73=EDGE_CURVE('',#30,#32,#72,.T.);
+#74=ORIENTED_EDGE('',*,*,#73,.T.);
+#75=CARTESIAN_POINT('',(2.0,0.0,0.5));
+#76=DIRECTION('',(0.0,1.0,0.0));
+#77=VECTOR('',#76,1.0);
+#78=LINE('',#75,#77);
+#79=EDGE_CURVE('',#32,#36,#78,.T.);
+#80=ORIENTED_EDGE('',*,*,#79,.T.);
+#81=CARTESIAN_POINT('',(2.0,1.0,0.5));
+#82=DIRECTION('',(-1.0,0.0,0.0));
+#83=VECTOR('',#82,2.0);
+#84=LINE('',#81,#83);
+#85=EDGE_CURVE('',#36,#34,#84,.T.);
+#86=ORIENTED_EDGE('',*,*,#85,.T.);
+#87=CARTESIAN_POINT('',(0.0,1.0,0.5));
+#88=DIRECTION('',(0.0,-1.0,0.0));
+#89=VECTOR('',#88,1.0);
+#90=LINE('',#87,#89);
+#91=EDGE_CURVE('',#34,#30,#90,.T.);
+#92=ORIENTED_EDGE('',*,*,#91,.T.);
+#93=EDGE_LOOP('',(#74,#80,#86,#92));
+#94=FACE_OUTER_BOUND('',#93,.T.);
+#95=CARTESIAN_POINT('',(0.0,0.0,0.5));
+#96=DIRECTION('',(0.0,0.0,1.0));
+#97=DIRECTION('',(1.0,0.0,0.0));
+#98=AXIS2_PLACEMENT_3D('',#95,#96,#97);
+#99=PLANE('',#98);
+#100=ADVANCED_FACE('',(#94),#99,.T.);
+#101=ORIENTED_EDGE('',*,*,#59,.F.);
+#102=CARTESIAN_POINT('',(2.0,0.0,0.0));
+#103=DIRECTION('',(0.0,0.0,1.0));
+#104=VECTOR('',#103,0.5);
+#105=LINE('',#102,#104);
+#106=EDGE_CURVE('',#24,#32,#105,.T.);
+#107=ORIENTED_EDGE('',*,*,#106,.T.);
+#108=ORIENTED_EDGE('',*,*,#73,.F.);
+#109=CARTESIAN_POINT('',(0.0,0.0,0.5));
+#110=DIRECTION('',(0.0,0.0,-1.0));
+#111=VECTOR('',#110,0.5);
+#112=LINE('',#109,#111);
+#113=EDGE_CURVE('',#30,#22,#112,.T.);
+#114=ORIENTED_EDGE('',*,*,#113,.T.);
+#115=EDGE_LOOP('',(#101,#107,#108,#114));
+#116=FACE_OUTER_BOUND('',#115,.T.);
+#117=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#118=DIRECTION('',(0.0,-1.0,0.0));
+#119=DIRECTION('',(1.0,0.0,0.0));
+#120=AXIS2_PLACEMENT_3D('',#117,#118,#119);
+#121=PLANE('',#120);
+#122=ADVANCED_FACE('',(#116),#121,.T.);
+#123=CARTESIAN_POINT('',(0.0,1.0,0.0));
+#124=DIRECTION('',(0.0,0.0,1.0));
+#125=VECTOR('',#124,0.5);
+#126=LINE('',#123,#125);
+#127=EDGE_CURVE('',#26,#34,#126,.T.);
+#128=ORIENTED_EDGE('',*,*,#127,.T.);
+#129=ORIENTED_EDGE('',*,*,#85,.F.);
+#130=CARTESIAN_POINT('',(2.0,1.0,0.5));
+#131=DIRECTION('',(0.0,0.0,-1.0));
+#132=VECTOR('',#131,0.5);
+#133=LINE('',#130,#132);
+#134=EDGE_CURVE('',#36,#28,#133,.T.);
+#135=ORIENTED_EDGE('',*,*,#134,.T.);
+#136=ORIENTED_EDGE('',*,*,#47,.F.);
+#137=EDGE_LOOP('',(#128,#129,#135,#136));
+#138=FACE_OUTER_BOUND('',#137,.T.);
+#139=CARTESIAN_POINT('',(0.0,1.0,0.0));
+#140=DIRECTION('',(0.0,1.0,0.0));
+#141=DIRECTION('',(0.0,0.0,1.0));
+#142=AXIS2_PLACEMENT_3D('',#139,#140,#141);
+#143=PLANE('',#142);
+#144=ADVANCED_FACE('',(#138),#143,.T.);
+#145=ORIENTED_EDGE('',*,*,#113,.F.);
+#146=ORIENTED_EDGE('',*,*,#91,.F.);
+#147=ORIENTED_EDGE('',*,*,#127,.F.);
+#148=ORIENTED_EDGE('',*,*,#41,.F.);
+#149=EDGE_LOOP('',(#145,#146,#147,#148));
+#150=FACE_OUTER_BOUND('',#149,.T.);
+#151=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#152=DIRECTION('',(-1.0,0.0,0.0));
+#153=DIRECTION('',(0.0,0.0,1.0));
+#154=AXIS2_PLACEMENT_3D('',#151,#152,#153);
+#155=PLANE('',#154);
+#156=ADVANCED_FACE('',(#150),#155,.T.);
+#157=ORIENTED_EDGE('',*,*,#53,.F.);
+#158=ORIENTED_EDGE('',*,*,#134,.F.);
+#159=ORIENTED_EDGE('',*,*,#79,.F.);
+#160=ORIENTED_EDGE('',*,*,#106,.F.);
+#161=EDGE_LOOP('',(#157,#158,#159,#160));
+#162=FACE_OUTER_BOUND('',#161,.T.);
+#163=CARTESIAN_POINT('',(2.0,0.0,0.0));
+#164=DIRECTION('',(1.0,0.0,0.0));
+#165=DIRECTION('',(0.0,1.0,0.0));
+#166=AXIS2_PLACEMENT_3D('',#163,#164,#165);
+#167=PLANE('',#166);
+#168=ADVANCED_FACE('',(#162),#167,.T.);
+#169=CLOSED_SHELL('',(#68,#100,#122,#144,#156,#168));
+#170=MANIFOLD_SOLID_BREP('mm box',#169);
+#171=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#172=DIRECTION('',(0.0,0.0,1.0));
+#173=DIRECTION('',(1.0,0.0,0.0));
+#174=AXIS2_PLACEMENT_3D('',#171,#172,#173);
+#175=ADVANCED_BREP_SHAPE_REPRESENTATION('mm box',(#174,#170),#8);
+#176=CARTESIAN_POINT('',(0.1,0.0,0.0));
+#177=VERTEX_POINT('',#176);
+#178=CARTESIAN_POINT('',(0.14,0.0,0.0));
+#179=VERTEX_POINT('',#178);
+#180=CARTESIAN_POINT('',(0.1,0.04,0.0));
+#181=VERTEX_POINT('',#180);
+#182=CARTESIAN_POINT('',(0.14,0.04,0.0));
+#183=VERTEX_POINT('',#182);
+#184=CARTESIAN_POINT('',(0.1,0.0,0.02));
+#185=VERTEX_POINT('',#184);
+#186=CARTESIAN_POINT('',(0.14,0.0,0.02));
+#187=VERTEX_POINT('',#186);
+#188=CARTESIAN_POINT('',(0.1,0.04,0.02));
+#189=VERTEX_POINT('',#188);
+#190=CARTESIAN_POINT('',(0.14,0.04,0.02));
+#191=VERTEX_POINT('',#190);
+#192=CARTESIAN_POINT('',(0.1,0.0,0.0));
+#193=DIRECTION('',(0.0,1.0,0.0));
+#194=VECTOR('',#193,0.04);
+#195=LINE('',#192,#194);
+#196=EDGE_CURVE('',#177,#181,#195,.T.);
+#197=ORIENTED_EDGE('',*,*,#196,.T.);
+#198=CARTESIAN_POINT('',(0.1,0.04,0.0));
+#199=DIRECTION('',(1.0,0.0,0.0));
+#200=VECTOR('',#199,0.04000000000000001);
+#201=LINE('',#198,#200);
+#202=EDGE_CURVE('',#181,#183,#201,.T.);
+#203=ORIENTED_EDGE('',*,*,#202,.T.);
+#204=CARTESIAN_POINT('',(0.14,0.04,0.0));
+#205=DIRECTION('',(0.0,-1.0,0.0));
+#206=VECTOR('',#205,0.04);
+#207=LINE('',#204,#206);
+#208=EDGE_CURVE('',#183,#179,#207,.T.);
+#209=ORIENTED_EDGE('',*,*,#208,.T.);
+#210=CARTESIAN_POINT('',(0.14,0.0,0.0));
+#211=DIRECTION('',(-1.0,0.0,0.0));
+#212=VECTOR('',#211,0.04000000000000001);
+#213=LINE('',#210,#212);
+#214=EDGE_CURVE('',#179,#177,#213,.T.);
+#215=ORIENTED_EDGE('',*,*,#214,.T.);
+#216=EDGE_LOOP('',(#197,#203,#209,#215));
+#217=FACE_OUTER_BOUND('',#216,.T.);
+#218=CARTESIAN_POINT('',(0.1,0.0,0.0));
+#219=DIRECTION('',(0.0,0.0,-1.0));
+#220=DIRECTION('',(0.0,1.0,0.0));
+#221=AXIS2_PLACEMENT_3D('',#218,#219,#220);
+#222=PLANE('',#221);
+#223=ADVANCED_FACE('',(#217),#222,.T.);
+#224=CARTESIAN_POINT('',(0.1,0.0,0.02));
+#225=DIRECTION('',(1.0,0.0,0.0));
+#226=VECTOR('',#225,0.04000000000000001);
+#227=LINE('',#224,#226);
+#228=EDGE_CURVE('',#185,#187,#227,.T.);
+#229=ORIENTED_EDGE('',*,*,#228,.T.);
+#230=CARTESIAN_POINT('',(0.14,0.0,0.02));
+#231=DIRECTION('',(0.0,1.0,0.0));
+#232=VECTOR('',#231,0.04);
+#233=LINE('',#230,#232);
+#234=EDGE_CURVE('',#187,#191,#233,.T.);
+#235=ORIENTED_EDGE('',*,*,#234,.T.);
+#236=CARTESIAN_POINT('',(0.14,0.04,0.02));
+#237=DIRECTION('',(-1.0,0.0,0.0));
+#238=VECTOR('',#237,0.04000000000000001);
+#239=LINE('',#236,#238);
+#240=EDGE_CURVE('',#191,#189,#239,.T.);
+#241=ORIENTED_EDGE('',*,*,#240,.T.);
+#242=CARTESIAN_POINT('',(0.1,0.04,0.02));
+#243=DIRECTION('',(0.0,-1.0,0.0));
+#244=VECTOR('',#243,0.04);
+#245=LINE('',#242,#244);
+#246=EDGE_CURVE('',#189,#185,#245,.T.);
+#247=ORIENTED_EDGE('',*,*,#246,.T.);
+#248=EDGE_LOOP('',(#229,#235,#241,#247));
+#249=FACE_OUTER_BOUND('',#248,.T.);
+#250=CARTESIAN_POINT('',(0.1,0.0,0.02));
+#251=DIRECTION('',(0.0,0.0,1.0));
+#252=DIRECTION('',(1.0,0.0,0.0));
+#253=AXIS2_PLACEMENT_3D('',#250,#251,#252);
+#254=PLANE('',#253);
+#255=ADVANCED_FACE('',(#249),#254,.T.);
+#256=ORIENTED_EDGE('',*,*,#214,.F.);
+#257=CARTESIAN_POINT('',(0.14,0.0,0.0));
+#258=DIRECTION('',(0.0,0.0,1.0));
+#259=VECTOR('',#258,0.02);
+#260=LINE('',#257,#259);
+#261=EDGE_CURVE('',#179,#187,#260,.T.);
+#262=ORIENTED_EDGE('',*,*,#261,.T.);
+#263=ORIENTED_EDGE('',*,*,#228,.F.);
+#264=CARTESIAN_POINT('',(0.1,0.0,0.02));
+#265=DIRECTION('',(0.0,0.0,-1.0));
+#266=VECTOR('',#265,0.02);
+#267=LINE('',#264,#266);
+#268=EDGE_CURVE('',#185,#177,#267,.T.);
+#269=ORIENTED_EDGE('',*,*,#268,.T.);
+#270=EDGE_LOOP('',(#256,#262,#263,#269));
+#271=FACE_OUTER_BOUND('',#270,.T.);
+#272=CARTESIAN_POINT('',(0.1,0.0,0.0));
+#273=DIRECTION('',(0.0,-1.0,0.0));
+#274=DIRECTION('',(1.0,0.0,0.0));
+#275=AXIS2_PLACEMENT_3D('',#272,#273,#274);
+#276=PLANE('',#275);
+#277=ADVANCED_FACE('',(#271),#276,.T.);
+#278=CARTESIAN_POINT('',(0.1,0.04,0.0));
+#279=DIRECTION('',(0.0,0.0,1.0));
+#280=VECTOR('',#279,0.02);
+#281=LINE('',#278,#280);
+#282=EDGE_CURVE('',#181,#189,#281,.T.);
+#283=ORIENTED_EDGE('',*,*,#282,.T.);
+#284=ORIENTED_EDGE('',*,*,#240,.F.);
+#285=CARTESIAN_POINT('',(0.14,0.04,0.02));
+#286=DIRECTION('',(0.0,0.0,-1.0));
+#287=VECTOR('',#286,0.02);
+#288=LINE('',#285,#287);
+#289=EDGE_CURVE('',#191,#183,#288,.T.);
+#290=ORIENTED_EDGE('',*,*,#289,.T.);
+#291=ORIENTED_EDGE('',*,*,#202,.F.);
+#292=EDGE_LOOP('',(#283,#284,#290,#291));
+#293=FACE_OUTER_BOUND('',#292,.T.);
+#294=CARTESIAN_POINT('',(0.1,0.04,0.0));
+#295=DIRECTION('',(0.0,1.0,0.0));
+#296=DIRECTION('',(0.0,0.0,1.0));
+#297=AXIS2_PLACEMENT_3D('',#294,#295,#296);
+#298=PLANE('',#297);
+#299=ADVANCED_FACE('',(#293),#298,.T.);
+#300=ORIENTED_EDGE('',*,*,#268,.F.);
+#301=ORIENTED_EDGE('',*,*,#246,.F.);
+#302=ORIENTED_EDGE('',*,*,#282,.F.);
+#303=ORIENTED_EDGE('',*,*,#196,.F.);
+#304=EDGE_LOOP('',(#300,#301,#302,#303));
+#305=FACE_OUTER_BOUND('',#304,.T.);
+#306=CARTESIAN_POINT('',(0.1,0.0,0.0));
+#307=DIRECTION('',(-1.0,0.0,0.0));
+#308=DIRECTION('',(0.0,0.0,1.0));
+#309=AXIS2_PLACEMENT_3D('',#306,#307,#308);
+#310=PLANE('',#309);
+#311=ADVANCED_FACE('',(#305),#310,.T.);
+#312=ORIENTED_EDGE('',*,*,#208,.F.);
+#313=ORIENTED_EDGE('',*,*,#289,.F.);
+#314=ORIENTED_EDGE('',*,*,#234,.F.);
+#315=ORIENTED_EDGE('',*,*,#261,.F.);
+#316=EDGE_LOOP('',(#312,#313,#314,#315));
+#317=FACE_OUTER_BOUND('',#316,.T.);
+#318=CARTESIAN_POINT('',(0.14,0.0,0.0));
+#319=DIRECTION('',(1.0,0.0,0.0));
+#320=DIRECTION('',(0.0,1.0,0.0));
+#321=AXIS2_PLACEMENT_3D('',#318,#319,#320);
+#322=PLANE('',#321);
+#323=ADVANCED_FACE('',(#317),#322,.T.);
+#324=CLOSED_SHELL('',(#223,#255,#277,#299,#311,#323));
+#325=MANIFOLD_SOLID_BREP('inch box',#324);
+#326=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#327=DIRECTION('',(0.0,0.0,1.0));
+#328=DIRECTION('',(1.0,0.0,0.0));
+#329=AXIS2_PLACEMENT_3D('',#326,#327,#328);
+#330=ADVANCED_BREP_SHAPE_REPRESENTATION('inch box',(#329,#325),#12);
+#331=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#332=DIRECTION('',(0.0,0.0,1.0));
+#333=DIRECTION('',(1.0,0.0,0.0));
+#334=AXIS2_PLACEMENT_3D('',#331,#332,#333);
+#335=SHAPE_REPRESENTATION('mixed-units',(#334),#8);
+#336=SHAPE_DEFINITION_REPRESENTATION(#20,#335);
+#337=SHAPE_REPRESENTATION_RELATIONSHIP('','',#335,#175);
+#338=SHAPE_REPRESENTATION_RELATIONSHIP('','',#335,#330);
+#339=COLOUR_RGB('',0.2,0.4,0.8);
+#340=FILL_AREA_STYLE_COLOUR('',#339);
+#341=FILL_AREA_STYLE('',(#340));
+#342=SURFACE_STYLE_FILL_AREA(#341);
+#343=SURFACE_SIDE_STYLE('',(#342));
+#344=SURFACE_STYLE_USAGE(.BOTH.,#343);
+#345=PRESENTATION_STYLE_ASSIGNMENT((#344));
+#346=STYLED_ITEM('color',(#345),#170);
+#347=COLOUR_RGB('',0.8,0.4,0.2);
+#348=FILL_AREA_STYLE_COLOUR('',#347);
+#349=FILL_AREA_STYLE('',(#348));
+#350=SURFACE_STYLE_FILL_AREA(#349);
+#351=SURFACE_SIDE_STYLE('',(#350));
+#352=SURFACE_STYLE_USAGE(.BOTH.,#351);
+#353=PRESENTATION_STYLE_ASSIGNMENT((#352));
+#354=STYLED_ITEM('color',(#353),#325);
+#355=MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#346,#354),#8);
+ENDSEC;
+END-ISO-10303-21;
+";
+
+const LARGE_STYLED: &str = r"ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('mixed-units: a 10 x 10 x 2 mm box and a 0.5 x 0.5 x 0.1 inch box'),'2;1');
+FILE_NAME('mixed-units.step','2026-11-28T00:00:00',(''),(''),'','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));
+ENDSEC;
+DATA;
+#1=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));
+#2=DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.);
+#3=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);
+#4=(CONVERSION_BASED_UNIT('inch',#3)LENGTH_UNIT()NAMED_UNIT(#2));
+#5=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));
+#6=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());
+#7=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-05),#1,'distance_accuracy_value','');
+#8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#7))GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#5,#6))REPRESENTATION_CONTEXT('',''));
+#9=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));
+#10=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());
+#11=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-05),#4,'distance_accuracy_value','');
+#12=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#11))GLOBAL_UNIT_ASSIGNED_CONTEXT((#4,#9,#10))REPRESENTATION_CONTEXT('',''));
+#13=APPLICATION_CONTEXT('automotive_design');
+#14=APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#13);
+#15=PRODUCT_CONTEXT('',#13,'mechanical');
+#16=PRODUCT('mixed-units','mixed-units','',(#15));
+#17=PRODUCT_DEFINITION_FORMATION('','',#16);
+#18=PRODUCT_DEFINITION_CONTEXT('part definition',#13,'design');
+#19=PRODUCT_DEFINITION('design','',#17,#18);
+#20=PRODUCT_DEFINITION_SHAPE('','',#19);
+#21=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#22=VERTEX_POINT('',#21);
+#23=CARTESIAN_POINT('',(10.0,0.0,0.0));
+#24=VERTEX_POINT('',#23);
+#25=CARTESIAN_POINT('',(0.0,10.0,0.0));
+#26=VERTEX_POINT('',#25);
+#27=CARTESIAN_POINT('',(10.0,10.0,0.0));
+#28=VERTEX_POINT('',#27);
+#29=CARTESIAN_POINT('',(0.0,0.0,2.0));
+#30=VERTEX_POINT('',#29);
+#31=CARTESIAN_POINT('',(10.0,0.0,2.0));
+#32=VERTEX_POINT('',#31);
+#33=CARTESIAN_POINT('',(0.0,10.0,2.0));
+#34=VERTEX_POINT('',#33);
+#35=CARTESIAN_POINT('',(10.0,10.0,2.0));
+#36=VERTEX_POINT('',#35);
+#37=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#38=DIRECTION('',(0.0,1.0,0.0));
+#39=VECTOR('',#38,10.0);
+#40=LINE('',#37,#39);
+#41=EDGE_CURVE('',#22,#26,#40,.T.);
+#42=ORIENTED_EDGE('',*,*,#41,.T.);
+#43=CARTESIAN_POINT('',(0.0,10.0,0.0));
+#44=DIRECTION('',(1.0,0.0,0.0));
+#45=VECTOR('',#44,10.0);
+#46=LINE('',#43,#45);
+#47=EDGE_CURVE('',#26,#28,#46,.T.);
+#48=ORIENTED_EDGE('',*,*,#47,.T.);
+#49=CARTESIAN_POINT('',(10.0,10.0,0.0));
+#50=DIRECTION('',(0.0,-1.0,0.0));
+#51=VECTOR('',#50,10.0);
+#52=LINE('',#49,#51);
+#53=EDGE_CURVE('',#28,#24,#52,.T.);
+#54=ORIENTED_EDGE('',*,*,#53,.T.);
+#55=CARTESIAN_POINT('',(10.0,0.0,0.0));
+#56=DIRECTION('',(-1.0,0.0,0.0));
+#57=VECTOR('',#56,10.0);
+#58=LINE('',#55,#57);
+#59=EDGE_CURVE('',#24,#22,#58,.T.);
+#60=ORIENTED_EDGE('',*,*,#59,.T.);
+#61=EDGE_LOOP('',(#42,#48,#54,#60));
+#62=FACE_OUTER_BOUND('',#61,.T.);
+#63=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#64=DIRECTION('',(0.0,0.0,-1.0));
+#65=DIRECTION('',(0.0,1.0,0.0));
+#66=AXIS2_PLACEMENT_3D('',#63,#64,#65);
+#67=PLANE('',#66);
+#68=ADVANCED_FACE('',(#62),#67,.T.);
+#69=CARTESIAN_POINT('',(0.0,0.0,2.0));
+#70=DIRECTION('',(1.0,0.0,0.0));
+#71=VECTOR('',#70,10.0);
+#72=LINE('',#69,#71);
+#73=EDGE_CURVE('',#30,#32,#72,.T.);
+#74=ORIENTED_EDGE('',*,*,#73,.T.);
+#75=CARTESIAN_POINT('',(10.0,0.0,2.0));
+#76=DIRECTION('',(0.0,1.0,0.0));
+#77=VECTOR('',#76,10.0);
+#78=LINE('',#75,#77);
+#79=EDGE_CURVE('',#32,#36,#78,.T.);
+#80=ORIENTED_EDGE('',*,*,#79,.T.);
+#81=CARTESIAN_POINT('',(10.0,10.0,2.0));
+#82=DIRECTION('',(-1.0,0.0,0.0));
+#83=VECTOR('',#82,10.0);
+#84=LINE('',#81,#83);
+#85=EDGE_CURVE('',#36,#34,#84,.T.);
+#86=ORIENTED_EDGE('',*,*,#85,.T.);
+#87=CARTESIAN_POINT('',(0.0,10.0,2.0));
+#88=DIRECTION('',(0.0,-1.0,0.0));
+#89=VECTOR('',#88,10.0);
+#90=LINE('',#87,#89);
+#91=EDGE_CURVE('',#34,#30,#90,.T.);
+#92=ORIENTED_EDGE('',*,*,#91,.T.);
+#93=EDGE_LOOP('',(#74,#80,#86,#92));
+#94=FACE_OUTER_BOUND('',#93,.T.);
+#95=CARTESIAN_POINT('',(0.0,0.0,2.0));
+#96=DIRECTION('',(0.0,0.0,1.0));
+#97=DIRECTION('',(1.0,0.0,0.0));
+#98=AXIS2_PLACEMENT_3D('',#95,#96,#97);
+#99=PLANE('',#98);
+#100=ADVANCED_FACE('',(#94),#99,.T.);
+#101=ORIENTED_EDGE('',*,*,#59,.F.);
+#102=CARTESIAN_POINT('',(10.0,0.0,0.0));
+#103=DIRECTION('',(0.0,0.0,1.0));
+#104=VECTOR('',#103,2.0);
+#105=LINE('',#102,#104);
+#106=EDGE_CURVE('',#24,#32,#105,.T.);
+#107=ORIENTED_EDGE('',*,*,#106,.T.);
+#108=ORIENTED_EDGE('',*,*,#73,.F.);
+#109=CARTESIAN_POINT('',(0.0,0.0,2.0));
+#110=DIRECTION('',(0.0,0.0,-1.0));
+#111=VECTOR('',#110,2.0);
+#112=LINE('',#109,#111);
+#113=EDGE_CURVE('',#30,#22,#112,.T.);
+#114=ORIENTED_EDGE('',*,*,#113,.T.);
+#115=EDGE_LOOP('',(#101,#107,#108,#114));
+#116=FACE_OUTER_BOUND('',#115,.T.);
+#117=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#118=DIRECTION('',(0.0,-1.0,0.0));
+#119=DIRECTION('',(1.0,0.0,0.0));
+#120=AXIS2_PLACEMENT_3D('',#117,#118,#119);
+#121=PLANE('',#120);
+#122=ADVANCED_FACE('',(#116),#121,.T.);
+#123=CARTESIAN_POINT('',(0.0,10.0,0.0));
+#124=DIRECTION('',(0.0,0.0,1.0));
+#125=VECTOR('',#124,2.0);
+#126=LINE('',#123,#125);
+#127=EDGE_CURVE('',#26,#34,#126,.T.);
+#128=ORIENTED_EDGE('',*,*,#127,.T.);
+#129=ORIENTED_EDGE('',*,*,#85,.F.);
+#130=CARTESIAN_POINT('',(10.0,10.0,2.0));
+#131=DIRECTION('',(0.0,0.0,-1.0));
+#132=VECTOR('',#131,2.0);
+#133=LINE('',#130,#132);
+#134=EDGE_CURVE('',#36,#28,#133,.T.);
+#135=ORIENTED_EDGE('',*,*,#134,.T.);
+#136=ORIENTED_EDGE('',*,*,#47,.F.);
+#137=EDGE_LOOP('',(#128,#129,#135,#136));
+#138=FACE_OUTER_BOUND('',#137,.T.);
+#139=CARTESIAN_POINT('',(0.0,10.0,0.0));
+#140=DIRECTION('',(0.0,1.0,0.0));
+#141=DIRECTION('',(0.0,0.0,1.0));
+#142=AXIS2_PLACEMENT_3D('',#139,#140,#141);
+#143=PLANE('',#142);
+#144=ADVANCED_FACE('',(#138),#143,.T.);
+#145=ORIENTED_EDGE('',*,*,#113,.F.);
+#146=ORIENTED_EDGE('',*,*,#91,.F.);
+#147=ORIENTED_EDGE('',*,*,#127,.F.);
+#148=ORIENTED_EDGE('',*,*,#41,.F.);
+#149=EDGE_LOOP('',(#145,#146,#147,#148));
+#150=FACE_OUTER_BOUND('',#149,.T.);
+#151=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#152=DIRECTION('',(-1.0,0.0,0.0));
+#153=DIRECTION('',(0.0,0.0,1.0));
+#154=AXIS2_PLACEMENT_3D('',#151,#152,#153);
+#155=PLANE('',#154);
+#156=ADVANCED_FACE('',(#150),#155,.T.);
+#157=ORIENTED_EDGE('',*,*,#53,.F.);
+#158=ORIENTED_EDGE('',*,*,#134,.F.);
+#159=ORIENTED_EDGE('',*,*,#79,.F.);
+#160=ORIENTED_EDGE('',*,*,#106,.F.);
+#161=EDGE_LOOP('',(#157,#158,#159,#160));
+#162=FACE_OUTER_BOUND('',#161,.T.);
+#163=CARTESIAN_POINT('',(10.0,0.0,0.0));
+#164=DIRECTION('',(1.0,0.0,0.0));
+#165=DIRECTION('',(0.0,1.0,0.0));
+#166=AXIS2_PLACEMENT_3D('',#163,#164,#165);
+#167=PLANE('',#166);
+#168=ADVANCED_FACE('',(#162),#167,.T.);
+#169=CLOSED_SHELL('',(#68,#100,#122,#144,#156,#168));
+#170=MANIFOLD_SOLID_BREP('mm box',#169);
+#171=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#172=DIRECTION('',(0.0,0.0,1.0));
+#173=DIRECTION('',(1.0,0.0,0.0));
+#174=AXIS2_PLACEMENT_3D('',#171,#172,#173);
+#175=ADVANCED_BREP_SHAPE_REPRESENTATION('mm box',(#174,#170),#8);
+#176=CARTESIAN_POINT('',(0.5,0.0,0.0));
+#177=VERTEX_POINT('',#176);
+#178=CARTESIAN_POINT('',(1.0,0.0,0.0));
+#179=VERTEX_POINT('',#178);
+#180=CARTESIAN_POINT('',(0.5,0.5,0.0));
+#181=VERTEX_POINT('',#180);
+#182=CARTESIAN_POINT('',(1.0,0.5,0.0));
+#183=VERTEX_POINT('',#182);
+#184=CARTESIAN_POINT('',(0.5,0.0,0.1));
+#185=VERTEX_POINT('',#184);
+#186=CARTESIAN_POINT('',(1.0,0.0,0.1));
+#187=VERTEX_POINT('',#186);
+#188=CARTESIAN_POINT('',(0.5,0.5,0.1));
+#189=VERTEX_POINT('',#188);
+#190=CARTESIAN_POINT('',(1.0,0.5,0.1));
+#191=VERTEX_POINT('',#190);
+#192=CARTESIAN_POINT('',(0.5,0.0,0.0));
+#193=DIRECTION('',(0.0,1.0,0.0));
+#194=VECTOR('',#193,0.5);
+#195=LINE('',#192,#194);
+#196=EDGE_CURVE('',#177,#181,#195,.T.);
+#197=ORIENTED_EDGE('',*,*,#196,.T.);
+#198=CARTESIAN_POINT('',(0.5,0.5,0.0));
+#199=DIRECTION('',(1.0,0.0,0.0));
+#200=VECTOR('',#199,0.5);
+#201=LINE('',#198,#200);
+#202=EDGE_CURVE('',#181,#183,#201,.T.);
+#203=ORIENTED_EDGE('',*,*,#202,.T.);
+#204=CARTESIAN_POINT('',(1.0,0.5,0.0));
+#205=DIRECTION('',(0.0,-1.0,0.0));
+#206=VECTOR('',#205,0.5);
+#207=LINE('',#204,#206);
+#208=EDGE_CURVE('',#183,#179,#207,.T.);
+#209=ORIENTED_EDGE('',*,*,#208,.T.);
+#210=CARTESIAN_POINT('',(1.0,0.0,0.0));
+#211=DIRECTION('',(-1.0,0.0,0.0));
+#212=VECTOR('',#211,0.5);
+#213=LINE('',#210,#212);
+#214=EDGE_CURVE('',#179,#177,#213,.T.);
+#215=ORIENTED_EDGE('',*,*,#214,.T.);
+#216=EDGE_LOOP('',(#197,#203,#209,#215));
+#217=FACE_OUTER_BOUND('',#216,.T.);
+#218=CARTESIAN_POINT('',(0.5,0.0,0.0));
+#219=DIRECTION('',(0.0,0.0,-1.0));
+#220=DIRECTION('',(0.0,1.0,0.0));
+#221=AXIS2_PLACEMENT_3D('',#218,#219,#220);
+#222=PLANE('',#221);
+#223=ADVANCED_FACE('',(#217),#222,.T.);
+#224=CARTESIAN_POINT('',(0.5,0.0,0.1));
+#225=DIRECTION('',(1.0,0.0,0.0));
+#226=VECTOR('',#225,0.5);
+#227=LINE('',#224,#226);
+#228=EDGE_CURVE('',#185,#187,#227,.T.);
+#229=ORIENTED_EDGE('',*,*,#228,.T.);
+#230=CARTESIAN_POINT('',(1.0,0.0,0.1));
+#231=DIRECTION('',(0.0,1.0,0.0));
+#232=VECTOR('',#231,0.5);
+#233=LINE('',#230,#232);
+#234=EDGE_CURVE('',#187,#191,#233,.T.);
+#235=ORIENTED_EDGE('',*,*,#234,.T.);
+#236=CARTESIAN_POINT('',(1.0,0.5,0.1));
+#237=DIRECTION('',(-1.0,0.0,0.0));
+#238=VECTOR('',#237,0.5);
+#239=LINE('',#236,#238);
+#240=EDGE_CURVE('',#191,#189,#239,.T.);
+#241=ORIENTED_EDGE('',*,*,#240,.T.);
+#242=CARTESIAN_POINT('',(0.5,0.5,0.1));
+#243=DIRECTION('',(0.0,-1.0,0.0));
+#244=VECTOR('',#243,0.5);
+#245=LINE('',#242,#244);
+#246=EDGE_CURVE('',#189,#185,#245,.T.);
+#247=ORIENTED_EDGE('',*,*,#246,.T.);
+#248=EDGE_LOOP('',(#229,#235,#241,#247));
+#249=FACE_OUTER_BOUND('',#248,.T.);
+#250=CARTESIAN_POINT('',(0.5,0.0,0.1));
+#251=DIRECTION('',(0.0,0.0,1.0));
+#252=DIRECTION('',(1.0,0.0,0.0));
+#253=AXIS2_PLACEMENT_3D('',#250,#251,#252);
+#254=PLANE('',#253);
+#255=ADVANCED_FACE('',(#249),#254,.T.);
+#256=ORIENTED_EDGE('',*,*,#214,.F.);
+#257=CARTESIAN_POINT('',(1.0,0.0,0.0));
+#258=DIRECTION('',(0.0,0.0,1.0));
+#259=VECTOR('',#258,0.1);
+#260=LINE('',#257,#259);
+#261=EDGE_CURVE('',#179,#187,#260,.T.);
+#262=ORIENTED_EDGE('',*,*,#261,.T.);
+#263=ORIENTED_EDGE('',*,*,#228,.F.);
+#264=CARTESIAN_POINT('',(0.5,0.0,0.1));
+#265=DIRECTION('',(0.0,0.0,-1.0));
+#266=VECTOR('',#265,0.1);
+#267=LINE('',#264,#266);
+#268=EDGE_CURVE('',#185,#177,#267,.T.);
+#269=ORIENTED_EDGE('',*,*,#268,.T.);
+#270=EDGE_LOOP('',(#256,#262,#263,#269));
+#271=FACE_OUTER_BOUND('',#270,.T.);
+#272=CARTESIAN_POINT('',(0.5,0.0,0.0));
+#273=DIRECTION('',(0.0,-1.0,0.0));
+#274=DIRECTION('',(1.0,0.0,0.0));
+#275=AXIS2_PLACEMENT_3D('',#272,#273,#274);
+#276=PLANE('',#275);
+#277=ADVANCED_FACE('',(#271),#276,.T.);
+#278=CARTESIAN_POINT('',(0.5,0.5,0.0));
+#279=DIRECTION('',(0.0,0.0,1.0));
+#280=VECTOR('',#279,0.1);
+#281=LINE('',#278,#280);
+#282=EDGE_CURVE('',#181,#189,#281,.T.);
+#283=ORIENTED_EDGE('',*,*,#282,.T.);
+#284=ORIENTED_EDGE('',*,*,#240,.F.);
+#285=CARTESIAN_POINT('',(1.0,0.5,0.1));
+#286=DIRECTION('',(0.0,0.0,-1.0));
+#287=VECTOR('',#286,0.1);
+#288=LINE('',#285,#287);
+#289=EDGE_CURVE('',#191,#183,#288,.T.);
+#290=ORIENTED_EDGE('',*,*,#289,.T.);
+#291=ORIENTED_EDGE('',*,*,#202,.F.);
+#292=EDGE_LOOP('',(#283,#284,#290,#291));
+#293=FACE_OUTER_BOUND('',#292,.T.);
+#294=CARTESIAN_POINT('',(0.5,0.5,0.0));
+#295=DIRECTION('',(0.0,1.0,0.0));
+#296=DIRECTION('',(0.0,0.0,1.0));
+#297=AXIS2_PLACEMENT_3D('',#294,#295,#296);
+#298=PLANE('',#297);
+#299=ADVANCED_FACE('',(#293),#298,.T.);
+#300=ORIENTED_EDGE('',*,*,#268,.F.);
+#301=ORIENTED_EDGE('',*,*,#246,.F.);
+#302=ORIENTED_EDGE('',*,*,#282,.F.);
+#303=ORIENTED_EDGE('',*,*,#196,.F.);
+#304=EDGE_LOOP('',(#300,#301,#302,#303));
+#305=FACE_OUTER_BOUND('',#304,.T.);
+#306=CARTESIAN_POINT('',(0.5,0.0,0.0));
+#307=DIRECTION('',(-1.0,0.0,0.0));
+#308=DIRECTION('',(0.0,0.0,1.0));
+#309=AXIS2_PLACEMENT_3D('',#306,#307,#308);
+#310=PLANE('',#309);
+#311=ADVANCED_FACE('',(#305),#310,.T.);
+#312=ORIENTED_EDGE('',*,*,#208,.F.);
+#313=ORIENTED_EDGE('',*,*,#289,.F.);
+#314=ORIENTED_EDGE('',*,*,#234,.F.);
+#315=ORIENTED_EDGE('',*,*,#261,.F.);
+#316=EDGE_LOOP('',(#312,#313,#314,#315));
+#317=FACE_OUTER_BOUND('',#316,.T.);
+#318=CARTESIAN_POINT('',(1.0,0.0,0.0));
+#319=DIRECTION('',(1.0,0.0,0.0));
+#320=DIRECTION('',(0.0,1.0,0.0));
+#321=AXIS2_PLACEMENT_3D('',#318,#319,#320);
+#322=PLANE('',#321);
+#323=ADVANCED_FACE('',(#317),#322,.T.);
+#324=CLOSED_SHELL('',(#223,#255,#277,#299,#311,#323));
+#325=MANIFOLD_SOLID_BREP('inch box',#324);
+#326=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#327=DIRECTION('',(0.0,0.0,1.0));
+#328=DIRECTION('',(1.0,0.0,0.0));
+#329=AXIS2_PLACEMENT_3D('',#326,#327,#328);
+#330=ADVANCED_BREP_SHAPE_REPRESENTATION('inch box',(#329,#325),#12);
+#331=CARTESIAN_POINT('',(0.0,0.0,0.0));
+#332=DIRECTION('',(0.0,0.0,1.0));
+#333=DIRECTION('',(1.0,0.0,0.0));
+#334=AXIS2_PLACEMENT_3D('',#331,#332,#333);
+#335=SHAPE_REPRESENTATION('mixed-units',(#334),#8);
+#336=SHAPE_DEFINITION_REPRESENTATION(#20,#335);
+#337=SHAPE_REPRESENTATION_RELATIONSHIP('','',#335,#175);
+#338=SHAPE_REPRESENTATION_RELATIONSHIP('','',#335,#330);
+#339=COLOUR_RGB('',0.2,0.4,0.8);
+#340=FILL_AREA_STYLE_COLOUR('',#339);
+#341=FILL_AREA_STYLE('',(#340));
+#342=SURFACE_STYLE_FILL_AREA(#341);
+#343=SURFACE_SIDE_STYLE('',(#342));
+#344=SURFACE_STYLE_USAGE(.BOTH.,#343);
+#345=PRESENTATION_STYLE_ASSIGNMENT((#344));
+#346=STYLED_ITEM('color',(#345),#170);
+#347=COLOUR_RGB('',0.8,0.4,0.2);
+#348=FILL_AREA_STYLE_COLOUR('',#347);
+#349=FILL_AREA_STYLE('',(#348));
+#350=SURFACE_STYLE_FILL_AREA(#349);
+#351=SURFACE_SIDE_STYLE('',(#350));
+#352=SURFACE_STYLE_USAGE(.BOTH.,#351);
+#353=PRESENTATION_STYLE_ASSIGNMENT((#352));
+#354=STYLED_ITEM('color',(#353),#325);
+#355=MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#346,#354),#8);
+ENDSEC;
+END-ISO-10303-21;
+";
+
+#[test]
+fn presentation_preserves_mixed_body_units_and_colors() {
+    let control = STYLED
+        .lines()
+        .filter(|line| !line.contains("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let reversed = STYLED
+        .lines()
+        .filter(|line| line.starts_with('#'))
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n");
+    let reversed = format!(
+        "{}\n{}\nENDSEC;\nEND-ISO-10303-21;",
+        STYLED.split("DATA;").next().expect("header").to_owned() + "DATA;",
+        reversed
+    );
+    for source in [STYLED.to_owned(), control, reversed, LARGE_STYLED.to_owned(),
+        STYLED.replace("(#345),#170", "(#345),#68").replace("(#353),#325", "(#353),#223"),
+        STYLED.replace("#355=MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION", "#355=SHAPE_REPRESENTATION"),
+        STYLED.replace("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION", "GEOMETRIC_PRESENTATION_REPRESENTATION"),
+        STYLED.replace("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#346,#354),#8)", "(REPRESENTATION('',(#346,#354),#8) MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION())")
+    ] {
+        let result = StepCodec::default().decode(&mut Cursor::new(source.as_bytes()), &DecodeOptions::default()).expect("mixed units");
+        assert!(!result.report().losses.iter().any(|loss| loss.code == StepLossCode::ConflictingRepresentationUnits.kind()));
+        let ir = result.ir();
+        for (red, green, blue) in [(0.2, 0.4, 0.8), (0.8, 0.4, 0.2)] {
+            assert!(ir.model.appearances.iter().any(|appearance| {
+                appearance.base_color.is_some_and(|color| {
+                    (color.r() - red).abs() < 1.0e-6
+                        && (color.g() - green).abs() < 1.0e-6
+                        && (color.b() - blue).abs() < 1.0e-6
+                })
+            }));
+        }
+        let mut bounds = [([f64::INFINITY;3], [f64::NEG_INFINITY;3]);2];
+        for vertex in &ir.geometry.vertices {
+            let point = ir.geometry.points.iter().find(|point| point.id == vertex.point).expect("vertex point").position().get();
+            let group = usize::from(point.x > if source == LARGE_STYLED { 10.0 } else { 2.0 });
+            for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+                bounds[group].0[axis] = bounds[group].0[axis].min(value);
+                bounds[group].1[axis] = bounds[group].1[axis].max(value);
+            }
+        }
+        let expected = if source == LARGE_STYLED {
+            [([0.,0.,0.],[10.,10.,2.]),([12.7,0.,0.],[25.4,12.7,2.54])]
+        } else {
+            [([0.,0.,0.],[2.,1.,0.5]),([2.54,0.,0.],[3.556,1.016,0.508])]
+        };
+        for (actual, expected) in bounds.into_iter().zip(expected) {
+            for (a,e) in actual.0.into_iter().chain(actual.1).zip(expected.0.into_iter().chain(expected.1)) {
+                assert!((a-e).abs() < 1.0e-10, "{a} != {e}");
+            }
+        }
+    }
+}
+
+#[test]
+fn geometric_owners_keep_unit_conflict_diagnostic() {
+    let source = STYLED.replace(
+        "ENDSEC;\nEND-ISO",
+        "#1000=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#325),#8);\nENDSEC;\nEND-ISO",
+    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("shared geometry");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ConflictingRepresentationUnits.kind()));
+}
+
+#[test]
+fn draughting_model_keeps_its_length_unit() {
+    let source = STYLED.replace(
+        "#330=ADVANCED_BREP_SHAPE_REPRESENTATION('inch box',(#329,#325),#12);",
+        "#330=(DRAUGHTING_MODEL() REPRESENTATION('inch box',(#329,#325),#12));",
+    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("draughting unit scope");
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ConflictingRepresentationUnits.kind()));
+    for expected in [[2.54, 0.0, 0.0], [3.556, 1.016, 0.508]] {
+        assert!(result.ir().geometry.points.iter().any(|point| {
+            let position = point.position().get();
+            [position.x, position.y, position.z]
+                .into_iter()
+                .zip(expected)
+                .all(|(actual, expected)| (actual - expected).abs() < 1.0e-10)
+        }));
+    }
+}

@@ -3738,7 +3738,7 @@ fn resolve_unit_scales(
     for representation in exchange
         .records()
         .values()
-        .filter(|record| is_representation_record(record))
+        .filter(|record| is_unit_owning_representation(record))
     {
         let Some(context_id) = representation_context(representation) else {
             continue;
@@ -3764,7 +3764,7 @@ fn resolve_unit_scales(
     let mut length_candidates = BTreeMap::<u64, Option<PositiveReal>>::new();
     let mut angle_candidates = BTreeMap::<u64, Option<PositiveReal>>::new();
     for (&representation_id, representation) in exchange.records() {
-        if !is_representation_record(representation) {
+        if !is_unit_owning_representation(representation) {
             continue;
         }
         let Some(context_id) = representation_context(representation) else {
@@ -3874,6 +3874,28 @@ pub(super) fn is_representation_record(record: &RawRecord) -> bool {
         .any(|partial| super::representation::is_representation_name(&partial.name))
 }
 
+fn is_presentation_or_style_record(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "PRESENTATION_REPRESENTATION"
+                | "GEOMETRIC_PRESENTATION_REPRESENTATION"
+                | "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"
+                | "PRESENTATION_AREA"
+                | "PRESENTATION_VIEW"
+                | "STYLED_ITEM"
+                | "OVER_RIDING_STYLED_ITEM"
+                | "CONTEXT_DEPENDENT_OVER_RIDING_STYLED_ITEM"
+                | "PRESENTATION_STYLE_ASSIGNMENT"
+                | "PRESENTATION_STYLE_BY_CONTEXT"
+        )
+    })
+}
+
+fn is_unit_owning_representation(record: &RawRecord) -> bool {
+    is_representation_record(record) && !is_presentation_or_style_record(record)
+}
+
 pub(super) fn representation_context(record: &RawRecord) -> Option<u64> {
     record
         .partials
@@ -3929,7 +3951,10 @@ fn collect_unit_scope_members(
         let Some(record) = exchange.records().get(&current) else {
             continue;
         };
-        if is_unit_record(record) || is_representation_context_record(record) {
+        if is_unit_record(record)
+            || is_representation_context_record(record)
+            || is_presentation_or_style_record(record)
+        {
             continue;
         }
         if !members.insert(current) || record.partial("PCURVE").is_some() {

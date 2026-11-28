@@ -11,6 +11,7 @@ mod header_attributes;
 mod partial_geometry;
 mod plant_units;
 mod pmi_scope;
+mod presentation_units;
 mod schema_module_edition;
 mod spindle_sheets;
 mod tessellated_parts;
