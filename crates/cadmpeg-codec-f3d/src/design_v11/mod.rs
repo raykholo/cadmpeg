@@ -39,6 +39,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
@@ -48,6 +49,7 @@ use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 use crate::records::feature::scope::DesignScopeTailFlags;
 
@@ -238,7 +240,7 @@ pub(crate) fn project(
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
     }
-    settle_components(ir, &scoped_features, &owners);
+    settle_components(ir, &scoped_features, &owners, losses);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -270,6 +272,7 @@ fn settle_components(
     ir: &mut CadIr,
     scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
     owners: &HashMap<FeatureId, ProductDefinitionId>,
+    losses: &mut Vec<LossNote>,
 ) {
     let mut spans = vec![BTreeSet::<String>::new(); scoped.len()];
     let mut unsettled = Vec::new();
@@ -292,10 +295,11 @@ fn settle_components(
                 feature.component = owners
                     .get(&feature.id)
                     .filter(|owner| spans[index].len() > 1 && spans[index].contains(owner.as_str()))
-                    .cloned();
+                    .and_then(|owner| member_component(feature, owner));
             }
         }
         if unsettled.is_empty() {
+            note_withheld_components(ir, scoped, owners, &spans, losses);
             return;
         }
     }
@@ -309,6 +313,60 @@ fn settle_components(
             feature.component = None;
         }
     }
+}
+
+/// Notes the features of each scope that span several definitions and whose
+/// owner is one of them but that name no component, because they stand in an
+/// archive member (`member_component`).
+fn note_withheld_components(
+    ir: &CadIr,
+    scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
+    owners: &HashMap<FeatureId, ProductDefinitionId>,
+    spans: &[BTreeSet<String>],
+    losses: &mut Vec<LossNote>,
+) {
+    for (index, (definition, members)) in scoped.iter().enumerate() {
+        if spans[index].len() < 2 {
+            continue;
+        }
+        let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
+        for feature in ir
+            .design
+            .features
+            .iter()
+            .filter(|feature| members.contains(&feature.id))
+        {
+            if let Some(owner) = owners
+                .get(&feature.id)
+                .filter(|owner| spans[index].contains(owner.as_str()))
+            {
+                if feature.component.is_none() {
+                    *withheld.entry(owner).or_default() += 1;
+                }
+            }
+        }
+        for (owner, count) in withheld {
+            losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+                "{count} features of the scope {definition} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+            )));
+        }
+    }
+}
+
+/// The component a feature names: `owner`, for a feature of the root
+/// document. The span above counts the definitions each document hosts, which
+/// does not match the span of an archive member's own scope: naming the owner
+/// of a member's feature, even one that stands in the member's own document,
+/// makes the checker read the scope as spanning the files its occurrences
+/// place. A member's feature names no component.
+fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<ProductDefinitionId> {
+    let stream = feature
+        .native_ref
+        .as_deref()
+        .and_then(crate::ids::native_stream)?;
+    timeline::document_prefix(stream)
+        .is_empty()
+        .then(|| owner.clone())
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last

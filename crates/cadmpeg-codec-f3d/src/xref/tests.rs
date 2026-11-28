@@ -2008,4 +2008,5 @@ mod reference_rows;
 mod compact_generation;
 
 mod compact_legacy_placement;
+mod local_path_closure;
 mod partial_tables;
