@@ -24,6 +24,18 @@ use cadmpeg_ir::report::{
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum F3dLossCode {
+    CamToolNumberReferenceAssumed,
+    CamStructureAssumed,
+    CamSetupAssumed,
+    CamToolReferenceLastAssumed,
+    CamDocumentUnreadable,
+    CamSetupUnreadable,
+    CamOperationUnreadable,
+    CamToolUnreadable,
+    CamSelectionUnresolved,
+    CamStockOffsetModeUnread,
+    CamRecordFormUnread,
+    CamParameterUnitUnread,
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
     /// The `AssetSettings` direction pair is neither the Y-up nor the Z-up
@@ -1483,6 +1495,18 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::CamToolNumberReferenceAssumed,
+        Self::CamStructureAssumed,
+        Self::CamSetupAssumed,
+        Self::CamToolReferenceLastAssumed,
+        Self::CamDocumentUnreadable,
+        Self::CamSetupUnreadable,
+        Self::CamOperationUnreadable,
+        Self::CamToolUnreadable,
+        Self::CamSelectionUnresolved,
+        Self::CamStockOffsetModeUnread,
+        Self::CamRecordFormUnread,
+        Self::CamParameterUnitUnread,
         Self::SceneOverrideRefused,
         Self::SettingsUpAxisUnrecognized,
         Self::SettingsUpAxisRecordUnreadable,
@@ -2346,6 +2370,18 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::CamToolNumberReferenceAssumed => "cam.tool-number-reference-assumed",
+            Self::CamStructureAssumed => "cam.structure-assumed",
+            Self::CamSetupAssumed => "cam.setup-assumed",
+            Self::CamToolReferenceLastAssumed => "cam.tool-reference-last-assumed",
+            Self::CamDocumentUnreadable => "cam.document-unreadable",
+            Self::CamSetupUnreadable => "cam.setup-unreadable",
+            Self::CamOperationUnreadable => "cam.operation-unreadable",
+            Self::CamToolUnreadable => "cam.tool-unreadable",
+            Self::CamSelectionUnresolved => "cam.selection-unresolved",
+            Self::CamStockOffsetModeUnread => "cam.stock-offset-mode-unread",
+            Self::CamRecordFormUnread => "cam.record-form-unread",
+            Self::CamParameterUnitUnread => "cam.parameter-unit-unread",
             Self::SceneOverrideRefused => "scene.override-refused",
             Self::SettingsUpAxisUnrecognized => "settings.up-axis-unrecognized",
             Self::SettingsUpAxisRecordUnreadable => "settings.up-axis-record-unreadable",
@@ -3615,6 +3651,18 @@ impl F3dLossCode {
             Self::FeatureBodyHistoryIncomplete
             | Self::FeatureBodyHistoryOwnerUnresolved
             | Self::FeatureBodyHistoryUnread => Severity::Warning,
+            Self::CamToolNumberReferenceAssumed => Severity::Warning,
+            Self::CamStructureAssumed => Severity::Warning,
+            Self::CamSetupAssumed => Severity::Warning,
+            Self::CamToolReferenceLastAssumed => Severity::Warning,
+            Self::CamDocumentUnreadable => Severity::Warning,
+            Self::CamSetupUnreadable => Severity::Warning,
+            Self::CamOperationUnreadable => Severity::Warning,
+            Self::CamToolUnreadable => Severity::Warning,
+            Self::CamSelectionUnresolved => Severity::Warning,
+            Self::CamStockOffsetModeUnread => Severity::Warning,
+            Self::CamRecordFormUnread => Severity::Warning,
+            Self::CamParameterUnitUnread => Severity::Warning,
             Self::SceneOverrideRefused
             | Self::SettingsUpAxisUnrecognized
             | Self::SettingsUpAxisRecordUnreadable => Severity::Warning,
@@ -4475,6 +4523,18 @@ impl F3dLossCode {
             Self::FeatureBodyHistoryIncomplete
             | Self::FeatureBodyHistoryOwnerUnresolved
             | Self::FeatureBodyHistoryUnread => LossTaxonomy::FeatureHistoryRetained,
+            Self::CamToolNumberReferenceAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamStructureAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamSetupAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamToolReferenceLastAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamDocumentUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamSetupUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamOperationUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamToolUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamSelectionUnresolved => LossTaxonomy::SourceAssociationOmitted,
+            Self::CamStockOffsetModeUnread => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamRecordFormUnread => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamParameterUnitUnread => LossTaxonomy::ProcessRecordOmitted,
             Self::SceneOverrideRefused
             | Self::SettingsUpAxisUnrecognized
             | Self::SettingsUpAxisRecordUnreadable => LossTaxonomy::RecordNotTyped,
@@ -5456,6 +5516,18 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "cam.tool-number-reference-assumed",
+                "cam.structure-assumed",
+                "cam.setup-assumed",
+                "cam.tool-reference-last-assumed",
+                "cam.document-unreadable",
+                "cam.setup-unreadable",
+                "cam.operation-unreadable",
+                "cam.tool-unreadable",
+                "cam.selection-unresolved",
+                "cam.stock-offset-mode-unread",
+                "cam.record-form-unread",
+                "cam.parameter-unit-unread",
                 "scene.override-refused",
                 "settings.up-axis-unrecognized",
                 "settings.up-axis-record-unreadable",

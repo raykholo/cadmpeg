@@ -4448,3 +4448,57 @@ Each of these codes records a Design record that the decoder keeps with less con
 | `f3d/design.intent-undecoded` | The document keeps its product and geometry records and one design-intent failure record, and holds none of the records that design-intent decoding makes. When the source holds Design records, the Design class is untyped. |
 
 A code that records only a record that the decoder gives up has no strict floor. The `record.unreadable` loss of that give-up (CADIR §3.3) refuses a pinned decode. A given-up Design record whose frame the decoder holds is a `design-record` part: its offset is the frame start in the Design stream, and the part keeps the frame bytes. A given-up Design record without a frame has the id `f3d:<stream>:design-entity#<record index>`. A given-up archive entry is an `archive-entry` part. Two directory entries that name one stored span give up one part. A given-up parameter frame is a `parameter-frame` part. Two give-ups of one Design frame start are one part, which spans the longest of the frames and states each cause. A topology record that the model decode of an ASM stream reads and leaves out (a face whose surface reference is null or names no record, an edge, coedge, loop, vertex, point, or region whose references the decode does not hold) is a part of its topology kind in the stream of its BREP entry, at the record's offset in the entry, and keeps the record bytes; a given-up face drops its loops and coedges. A `delta_state` marker that ends the BREP entry stores no header and states no state. An ASM history whose `delta_state` records do not read is an `asm-history` part from the history preamble, or from the first `delta_state` record of a stream without one, to the end of the BREP entry. When design-intent decoding fails, each Design stream and each Design configuration entry is an `archive-entry` part that holds Design content, and each history BREP whose solved-record boundary is followed by more than a bare `delta_state` marker is an `asm-history` part from that boundary to the end of the BREP entry. A Protein entry that opens no archive, or whose instance pages frame no record, is an `archive-entry` part. A Protein instance record that neither the schema reader nor a fixed source-less layout reads is a `protein-record` part in the stream `<Protein entry>/<instance member>`, at the record's offset in the dechunked instance stream. An external-reference table that does not decode gives up the stored bytes it is read from: the `ComponentReferenceData.json` or `RedirectionsStream.dat` entry, or, in a document with no `RedirectionsStream.dat`, a `manifest-references` part over the reference extension of `Manifest.dat`.
+
+## 5. Manufacture XML
+
+`Toolpath/Iron.Document/*.irondoc` and
+`Toolpath[IDENTIFIER]/Iron.Document/*.irondoc` contain XML with a `document`
+root and a `model` tree. `model/docObjects/object` records form a flat tree.
+An object's `id` identifies it within the document; `parent` refers to its
+parent object's `id`. `strategy="setup"` identifies a setup.
+`strategy="folder"` identifies an operation group. An operation's parent
+chain identifies its setup. `displayName` holds the record name.
+`Parameters/Parameter` elements hold named values. The `value` attribute
+holds the evaluated value text. `expression` holds the source expression;
+its spelling can differ from the evaluated value text. An `expression` that
+is a numeric literal followed by a unit suffix states the unit the user typed:
+`mm`, `cm`, or `in` for a length; `mmpm`, `cmpm`, or `inpm` for a feed; `rpm`
+for a spindle speed. `value` does not depend on the suffix: it is the number
+in millimeters, millimeters per minute, or revolutions per minute (`0.2cm`
+stores `value="2"`; `39.37007874inpm` stores `value="1000"`, up to
+floating-point rounding). An `expression` of any other form states no
+unit, and `value` is then a number with no stated unit.
+
+Setup parameters use the `job_` prefix. Stock parameters use `job_stock`;
+WCS orientation and origin parameters use `wcs_orientation_` and
+`wcs_origin_`. Tool parameters use `tool_`, and holder parameters use
+`holder_`. `job_stockMode="default"` selects a relative stock box; every other
+`job_stockMode` value names a rule outside the relative stock box.
+`job_stockOffsetMode="simple"` applies `job_stockOffsetSides` to both X
+sides and both Y sides, `job_stockOffsetTop` to high Z, and
+`job_stockOffsetBottom` to low Z. The stored offsets of any other
+`job_stockOffsetMode` value have no stated placement.
+`wcs_orientation_mode="modelOrientation"` uses the model axes. `wcs_origin_mode="stockPoint"` selects the stock box
+point named by `wcs_origin_boxPoint`.
+
+The tool table uses the `http://www.hsmworks.com/xml/2004/cnc/tool-library`
+namespace. A `tool` record's `id` is the operation's `toolId` reference.
+The tool's `type` and `unit` attributes identify its cutter type and units.
+`nc` attributes hold the tool number and post settings. `body` attributes
+hold cutter dimensions and flute count; `overall-length` is the cutter's
+overall length and `body-length` is a separate dimension. `motion` attributes hold feed and
+spindle settings. `holder` attributes hold holder dimensions.
+
+An operation object is an `object` with a `parent`, whose `strategy` is not
+`setup`, not `folder`, and not empty. A `toolpath` element inside an
+operation object belongs to that object. An operation object's `valid`
+Boolean states computed-path validity.
+`toolpathToolView` describes the toolpath frame. `toolpath` descriptors carry
+a `valid` Boolean.
+Strategy names identify machining families; `face` identifies planar face
+milling. `CadRef`, `CadChain`, and `CadContours2D` contain native model and
+geometry selections.
+
+Computed toolpaths, NC code, slice data, simulation results, and machine
+definitions occupy separate `Iron.Toolpath`, `Iron.NcCode`,
+`Iron.ToolpathSliceData`, `Iron.ProcessSimResults`, and `Iron.Machine` data.
