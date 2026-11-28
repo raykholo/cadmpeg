@@ -827,7 +827,7 @@ fn component_document(
             placement: None,
             component: Some(owner.clone()),
             driven_by: None,
-            native_ref: None,
+            native_ref: Some(format!("{STREAM}:feature#{key}")),
         });
         ids.insert(id.clone());
         owners.insert(id, owner);
@@ -889,6 +889,7 @@ fn a_feature_names_a_component_the_scope_reaches_through_an_occurrence() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &mut Vec::new(),
     );
     let components = ir
         .design
@@ -938,6 +939,7 @@ fn a_component_named_in_one_round_widens_the_span_of_the_next() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &mut Vec::new(),
     );
     let components = ir
         .design
@@ -953,6 +955,67 @@ fn a_component_named_in_one_round_widens_the_span_of_the_next() {
             Some(child.as_str())
         ]
     );
+}
+
+#[test]
+fn member_component_notes_group_features_by_document_within_one_scope() {
+    let scope = "f3d:archive:product-definition#0";
+    let placed = "f3d:model:component#placed";
+    let unplaced = "f3d:model:component#unplaced";
+    let occurrence = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#0").unwrap();
+    let mut root = file_definition(scope);
+    root.occurrences.push(occurrence.clone());
+    let (mut ir, ids, owners) = component_document(
+        scope,
+        vec![
+            root,
+            definition(placed, Storage::Embedded, &[]),
+            definition(unplaced, Storage::Embedded, &[]),
+        ],
+        &[
+            ("a", placed),
+            ("b", placed),
+            ("c", placed),
+            ("root", placed),
+            ("missing", placed),
+            ("outside", unplaced),
+        ],
+    );
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            occurrence,
+            ProductDefinitionId::mint(placed).unwrap(),
+            None,
+        ));
+    for (feature, prefix) in ir.design.features.iter_mut().zip([
+        Some("member-a@"),
+        Some("member-a@"),
+        Some("member-b@"),
+        Some(""),
+        None,
+        Some("member-a@"),
+    ]) {
+        feature.native_ref = prefix.map(|prefix| format!("f3d:{prefix}design:feature#0"));
+    }
+    let mut losses = Vec::new();
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(scope).unwrap(), ids)],
+        &owners,
+        &mut losses,
+    );
+    assert_eq!(losses.len(), 2);
+    for (loss, prefix, count) in [(&losses[0], "member-a@", 2), (&losses[1], "member-b@", 1)] {
+        assert_eq!(
+            loss.message,
+            format!("{count} features of document {prefix} name no component: their owner {placed} stands in an archive member whose scope the checker reads as spanning the files its occurrences place")
+        );
+    }
+    assert!(ir.design.features[3].component.is_some());
+    for index in [0, 1, 2, 4, 5] {
+        assert!(ir.design.features[index].component.is_none());
+    }
 }
 
 #[test]
@@ -972,6 +1035,7 @@ fn a_scope_that_reaches_no_other_definition_names_no_component() {
         &mut ir,
         &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
         &owners,
+        &mut Vec::new(),
     );
     assert!(ir
         .design

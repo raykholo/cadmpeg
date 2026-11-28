@@ -315,9 +315,6 @@ fn settle_components(
     }
 }
 
-/// Notes the features of each scope that span several definitions and whose
-/// owner is one of them but that name no component, because they stand in an
-/// archive member (`member_component`).
 fn note_withheld_components(
     ir: &CadIr,
     scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
@@ -325,31 +322,42 @@ fn note_withheld_components(
     spans: &[BTreeSet<String>],
     losses: &mut Vec<LossNote>,
 ) {
-    for (index, (definition, members)) in scoped.iter().enumerate() {
+    let mut withheld = BTreeMap::<(&str, &ProductDefinitionId), BTreeSet<&FeatureId>>::new();
+    for (index, (_, members)) in scoped.iter().enumerate() {
         if spans[index].len() < 2 {
             continue;
         }
-        let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
         for feature in ir
             .design
             .features
             .iter()
-            .filter(|feature| members.contains(&feature.id))
+            .filter(|feature| members.contains(&feature.id) && feature.component.is_none())
         {
+            let Some(prefix) = feature
+                .native_ref
+                .as_deref()
+                .and_then(crate::ids::native_stream)
+                .map(timeline::document_prefix)
+                .filter(|prefix| !prefix.is_empty())
+            else {
+                continue;
+            };
             if let Some(owner) = owners
                 .get(&feature.id)
                 .filter(|owner| spans[index].contains(owner.as_str()))
             {
-                if feature.component.is_none() {
-                    *withheld.entry(owner).or_default() += 1;
-                }
+                withheld
+                    .entry((prefix, owner))
+                    .or_default()
+                    .insert(&feature.id);
             }
         }
-        for (owner, count) in withheld {
-            losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
-                "{count} features of the scope {definition} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
-            )));
-        }
+    }
+    for ((prefix, owner), features) in withheld {
+        let count = features.len();
+        losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+            "{count} features of document {prefix} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+        )));
     }
 }
 
