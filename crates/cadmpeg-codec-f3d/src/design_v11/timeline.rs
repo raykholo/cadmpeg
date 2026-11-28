@@ -289,9 +289,12 @@ pub(super) fn project_ordered(
 
 /// The rollback marker of the timeline `id` from the rolled-back flag of each
 /// of its `members` (`None` where the flags are unread): before the first
-/// rolled-back item when no later item is read as built, else after the last
-/// item. A loss names a marker the flags leave open: an unread item before the
-/// first rolled-back item, or after it.
+/// rolled-back item, else after the last item. The marker is one position, so
+/// an unread item that a read built item follows stands before it, and an
+/// unread item after the first rolled-back item stands after it. A loss names
+/// a marker the flags leave open: an unread item after the last read built
+/// item of a timeline with no rolled-back item, or an unread item directly
+/// before the first rolled-back item.
 fn rollback(
     id: &ContainerId,
     members: &[Member],
@@ -299,7 +302,11 @@ fn rollback(
     losses: &mut Vec<LossNote>,
 ) -> Rollback {
     let Some(first) = rolled_back.iter().position(|flag| *flag == Some(true)) else {
-        if rolled_back.contains(&None) {
+        let built_through = rolled_back
+            .iter()
+            .rposition(|flag| *flag == Some(false))
+            .map_or(0, |last| last + 1);
+        if built_through < rolled_back.len() {
             losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
                 "timeline {id}: rollback marker not read; stated built through its last item"
             )));
@@ -323,11 +330,6 @@ fn rollback(
     {
         losses.push(F3dLossCode::HistoryRollbackBoundUnread.note(format!(
             "timeline {id}: the item before the first rolled-back item is unread; the rollback marker can stand before it"
-        )));
-    }
-    if rolled_back.iter().skip(first).any(Option::is_none) {
-        losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
-            "timeline {id}: an item after the first rolled-back item is unread; stated rolled back from the first rolled-back item"
         )));
     }
     members
